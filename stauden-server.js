@@ -181,45 +181,46 @@ function buildSystemPrompt(kandidaten, wissen) {
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
 app.get('/', (req, res) => {
-  // Inject SEO content from DB into the SPA
-  const pflanzenCount = db.prepare('SELECT COUNT(*) as n FROM pflanzen').get().n;
-  let wissenCount = 0;
-  try { wissenCount = db.prepare('SELECT COUNT(*) as n FROM wissen').get().n; } catch {}
+  try {
+    // Inject SEO content from DB into the SPA
+    const pflanzenCount = db.prepare('SELECT COUNT(*) as n FROM pflanzen').get().n;
+    let wissenCount = 0;
+    try { wissenCount = db.prepare('SELECT COUNT(*) as n FROM wissen').get().n; } catch {}
 
-  // Featured ratgeber (first 6)
-  let ratgeberPreviews = [];
-  try { ratgeberPreviews = db.prepare('SELECT rowid, titel, kategorie, inhalt FROM wissen ORDER BY rowid LIMIT 6').all(); } catch {}
+    // Featured ratgeber (first 6)
+    let ratgeberPreviews = [];
+    try { ratgeberPreviews = db.prepare('SELECT rowid, titel, kategorie, inhalt FROM wissen ORDER BY rowid LIMIT 6').all(); } catch {}
 
-  // Featured plants (diverse selection)
-  const featuredPflanzen = db.prepare(`
-    SELECT name_deutsch, name_botanisch, licht, bluehzeit, farbe, beschreibung
-    FROM pflanzen ORDER BY RANDOM() LIMIT 8
-  `).all();
+    // Featured plants (diverse selection)
+    const featuredPflanzen = db.prepare(`
+      SELECT name_deutsch, name_botanisch, licht, bluehzeit, farbe, beschreibung
+      FROM pflanzen ORDER BY RANDOM() LIMIT 8
+    `).all();
 
-  function slugify(s) {
-    return s.toLowerCase()
-      .replace(/ä/g,'ae').replace(/ö/g,'oe').replace(/ü/g,'ue').replace(/ß/g,'ss')
-      .replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
-  }
+    function slugify(s) {
+      return s.toLowerCase()
+        .replace(/ä/g,'ae').replace(/ö/g,'oe').replace(/ü/g,'ue').replace(/ß/g,'ss')
+        .replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+    }
 
-  const ratgeberHTML = ratgeberPreviews.map(r => `
-    <a class="seo-artikel-card" href="/ratgeber/${slugify(r.titel)}">
-      <span class="sac-kat">${r.kategorie}</span>
-      <span class="sac-titel">${r.titel}</span>
-      <span class="sac-excerpt">${r.inhalt.substring(0,100)}…</span>
-      <span class="sac-more">Weiterlesen →</span>
-    </a>`).join('');
+    const ratgeberHTML = ratgeberPreviews.map(r => `
+      <a class="seo-artikel-card" href="/ratgeber/${slugify(r.titel)}">
+        <span class="sac-kat">${r.kategorie}</span>
+        <span class="sac-titel">${r.titel}</span>
+        <span class="sac-excerpt">${r.inhalt.substring(0,100)}…</span>
+        <span class="sac-more">Weiterlesen →</span>
+      </a>`).join('');
 
-  const pflanzenHTML = featuredPflanzen.map(p => `
-    <a class="seo-pflanze-card" href="/pflanze/${slugify(p.name_botanisch)}">
-      <span class="spc-name">${p.name_deutsch}</span>
-      <span class="spc-bot">${p.name_botanisch}</span>
-      ${p.bluehzeit ? `<span class="spc-tag">${p.bluehzeit}</span>` : ''}
-      ${p.licht ? `<span class="spc-tag">${p.licht.split('|')[0]}</span>` : ''}
-    </a>`).join('');
+    const pflanzenHTML = featuredPflanzen.map(p => `
+      <a class="seo-pflanze-card" href="/pflanze/${slugify(p.name_botanisch)}">
+        <span class="spc-name">${p.name_deutsch}</span>
+        <span class="spc-bot">${p.name_botanisch}</span>
+        ${p.bluehzeit ? `<span class="spc-tag">${p.bluehzeit}</span>` : ''}
+        ${p.licht ? `<span class="spc-tag">${p.licht.split('|')[0]}</span>` : ''}
+      </a>`).join('');
 
-  const fs = require('fs');
-  let html = fs.readFileSync(path.join(__dirname, 'stauden-portal.html'), 'utf8');
+    const fs = require('fs');
+    let html = fs.readFileSync(path.join(__dirname, 'stauden-portal.html'), 'utf8');
 
   // Inject SEO sections before </body>
   const seoSection = `
@@ -380,8 +381,12 @@ app.get('/', (req, res) => {
 }
 </style>`;
 
-  html = html.replace('</body>', seoSection + '</body>');
-  res.send(html);
+    html = html.replace('</body>', seoSection + '</body>');
+    res.send(html);
+  } catch (err) {
+    console.error('Root route Fehler:', err.message);
+    res.status(500).send(`<h1>Fehler beim Laden der Startseite</h1><p>${err.message}</p><a href="/">Zurück</a>`);
+  }
 });
 
 app.post('/api/plan', planLimiter, async (req, res) => {
