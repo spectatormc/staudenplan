@@ -1,0 +1,21 @@
+{
+  "name": "stauden-portal",
+  "version": "1.0.0",
+  "description": "KI-gestützte Bepflanzungsplanung mit Shop-Anbindung",
+  "main": "stauden-server.js",
+  "scripts": {
+    "start": "node stauden-server.js",
+    "dev": "nodemon stauden-server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.10.0",
+    "dotenv": "^16.4.7",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
+    "nodemailer": "^8.0.7",
+    "openai": "^4.104.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  }
+}

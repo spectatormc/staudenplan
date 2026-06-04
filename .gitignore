@@ -1,0 +1,7 @@
+node_modules/
+.env
+stauden.db
+stauden.db-wal
+stauden.db-shm
+*.db-wal
+*.db-shm

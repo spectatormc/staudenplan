@@ -1,0 +1,2539 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Staudenplan.de — Bepflanzungsplan kostenlos erstellen | KI-Gartenplaner</title>
+  <meta name="description" content="Staudenplan.de: KI-gestützter Bepflanzungsplaner mit 220+ winterharten Stauden. In 2 Minuten zum personalisierten Staudenbeet-Plan mit Visualisierung, Stückliste und Bestellmöglichkeit — kostenlos.">
+  <meta name="keywords" content="Bepflanzungsplan, Staudenbeet planen, Bepflanzungsplan kostenlos, Staudenplan, Gartenplanung, Stauden kaufen, Bepflanzungsplanung">
+  <meta property="og:title" content="Staudenplan.de — Bepflanzungsplan kostenlos erstellen">
+  <meta property="og:description" content="Personalisierter Staudenbeet-Plan in 2 Minuten. 220+ geprüfte Stauden, KI-Planung, grafischer Plan mit Stückliste.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://www.staudenplan.de/">
+  <meta property="og:site_name" content="Staudenplan.de">
+  <link rel="canonical" href="https://www.staudenplan.de/">
+  <meta name="robots" content="index, follow">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"Staudenplan.de","url":"https://www.staudenplan.de","description":"KI-gestützter Bepflanzungsplaner für Privatgärten mit über 220 winterharten Stauden","applicationCategory":"LifestyleApplication","operatingSystem":"Web","offers":{"@type":"Offer","price":"0","priceCurrency":"EUR"}}</script>
+  <style>
+    :root {
+      --green-dark: #1b4332;
+      --green-mid: #2d6a4f;
+      --green-light: #52b788;
+      --green-pale: #d8f3dc;
+      --earth: #6b4226;
+      --cream: #f8f4ef;
+      --sand: #e9dcc9;
+      --text: #1a1a1a;
+      --text-light: #555;
+      --shadow: 0 4px 24px rgba(0,0,0,0.10);
+      --radius: 14px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--cream);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* HEADER */
+    header {
+      background: var(--green-dark);
+      color: #fff;
+      padding: 18px 32px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    header .logo { font-size: 1.5rem; }
+    header h1 { font-size: 1.1rem; font-weight: 600; letter-spacing: 0.02em; }
+    header p { font-size: 0.78rem; opacity: 0.7; margin-top: 2px; }
+
+    /* HERO */
+    #view-hero {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: calc(100vh - 64px);
+      padding: 40px 20px;
+      background: linear-gradient(160deg, var(--green-dark) 0%, var(--green-mid) 55%, var(--green-light) 100%);
+      text-align: center;
+      color: #fff;
+    }
+    #view-hero .hero-icon { font-size: 5rem; margin-bottom: 20px; }
+    #view-hero h2 { font-size: 2.2rem; font-weight: 700; line-height: 1.2; margin-bottom: 16px; }
+    #view-hero p { font-size: 1.1rem; opacity: 0.88; max-width: 480px; margin-bottom: 36px; line-height: 1.6; }
+    .steps-preview {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-bottom: 40px;
+    }
+    .steps-preview .sp-item {
+      background: rgba(255,255,255,0.15);
+      border-radius: 10px;
+      padding: 12px 18px;
+      font-size: 0.88rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn-primary {
+      background: #fff;
+      color: var(--green-dark);
+      border: none;
+      border-radius: 50px;
+      padding: 16px 44px;
+      font-size: 1.1rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.15s, box-shadow 0.15s;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+    }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(0,0,0,0.25); }
+    .btn-primary:active { transform: translateY(0); }
+
+    /* FRAGEBOGEN */
+    #view-fragebogen { display: none; max-width: 640px; margin: 0 auto; padding: 32px 20px 60px; }
+
+    .progress-bar {
+      height: 6px;
+      background: var(--sand);
+      border-radius: 3px;
+      margin-bottom: 10px;
+      overflow: hidden;
+    }
+    .progress-bar-inner {
+      height: 100%;
+      background: var(--green-light);
+      border-radius: 3px;
+      transition: width 0.4s ease;
+    }
+    .step-counter { font-size: 0.82rem; color: var(--text-light); margin-bottom: 28px; }
+
+    .step { display: none; animation: fadeIn 0.3s ease; }
+    .step.active { display: block; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+
+    .step h2 { font-size: 1.6rem; color: var(--green-dark); margin-bottom: 8px; }
+    .step p.hint { font-size: 0.9rem; color: var(--text-light); margin-bottom: 24px; }
+
+    .option-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 28px;
+    }
+    .option-card {
+      background: #fff;
+      border: 2px solid var(--sand);
+      border-radius: var(--radius);
+      padding: 16px;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      text-align: center;
+    }
+    .option-card:hover { border-color: var(--green-light); background: var(--green-pale); }
+    .option-card.selected { border-color: var(--green-mid); background: var(--green-pale); }
+    .option-card .oc-icon { font-size: 2rem; margin-bottom: 8px; }
+    .option-card .oc-label { font-weight: 600; font-size: 0.95rem; }
+    .option-card .oc-sub { font-size: 0.78rem; color: var(--text-light); margin-top: 4px; }
+
+    label.field-label { display: block; font-weight: 600; margin-bottom: 8px; }
+    input[type="number"], input[type="text"], input[type="email"], textarea, select {
+      width: 100%;
+      padding: 12px 16px;
+      border: 2px solid var(--sand);
+      border-radius: 10px;
+      font-size: 1rem;
+      background: #fff;
+      transition: border-color 0.15s;
+      font-family: inherit;
+    }
+    input:focus, textarea:focus, select:focus {
+      outline: none;
+      border-color: var(--green-light);
+    }
+    .input-unit { position: relative; }
+    .input-unit span {
+      position: absolute;
+      right: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-light);
+      font-size: 0.9rem;
+      pointer-events: none;
+    }
+    .input-unit input { padding-right: 48px; }
+
+    .btn-row {
+      display: flex;
+      gap: 12px;
+      margin-top: 8px;
+    }
+    .btn-back {
+      background: #fff;
+      border: 2px solid var(--sand);
+      border-radius: 50px;
+      padding: 12px 28px;
+      font-size: 0.95rem;
+      cursor: pointer;
+      color: var(--text-light);
+      font-family: inherit;
+      transition: border-color 0.15s;
+    }
+    .btn-back:hover { border-color: var(--green-light); }
+    .btn-next {
+      flex: 1;
+      background: var(--green-mid);
+      color: #fff;
+      border: none;
+      border-radius: 50px;
+      padding: 14px 28px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+      font-family: inherit;
+    }
+    .btn-next:hover { background: var(--green-dark); }
+    .btn-next:active { transform: scale(0.98); }
+    .btn-next:disabled { background: #ccc; cursor: not-allowed; }
+
+    .optional-tag {
+      font-size: 0.75rem;
+      color: var(--text-light);
+      font-weight: normal;
+      margin-left: 6px;
+    }
+
+    /* LOADING */
+    #view-loading {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: calc(100vh - 64px);
+      text-align: center;
+      padding: 40px 20px;
+    }
+    .spinner {
+      width: 64px;
+      height: 64px;
+      border: 5px solid var(--sand);
+      border-top-color: var(--green-mid);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 28px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #view-loading h2 { font-size: 1.5rem; color: var(--green-dark); margin-bottom: 10px; }
+    #view-loading p { color: var(--text-light); }
+    .loading-steps { margin-top: 28px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+    .loading-step { display: flex; align-items: center; gap: 10px; font-size: 0.9rem; color: var(--text-light); }
+    .loading-step .ls-icon { font-size: 1.1rem; }
+    .loading-step.done { color: var(--green-mid); }
+
+    /* ERGEBNIS */
+    #view-ergebnis { display: none; padding: 32px 20px 80px; max-width: 900px; margin: 0 auto; }
+    #view-ergebnis .ergebnis-header {
+      background: linear-gradient(135deg, var(--green-dark), var(--green-mid));
+      color: #fff;
+      border-radius: var(--radius);
+      padding: 28px 32px;
+      margin-bottom: 28px;
+    }
+    #view-ergebnis .ergebnis-header h2 { font-size: 1.5rem; margin-bottom: 6px; }
+    #view-ergebnis .ergebnis-header p { opacity: 0.85; font-size: 0.95rem; }
+    .ergebnis-meta {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+    }
+    .ergebnis-meta .em-item {
+      background: rgba(255,255,255,0.15);
+      border-radius: 8px;
+      padding: 8px 14px;
+      font-size: 0.85rem;
+    }
+    .ergebnis-meta .em-item strong { display: block; font-size: 1.1rem; }
+
+    .section-title {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--green-dark);
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .pflanzen-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 16px;
+      margin-bottom: 36px;
+    }
+    .pflanze-card {
+      background: #fff;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      transition: transform 0.15s;
+    }
+    .pflanze-card:hover { transform: translateY(-3px); }
+    .pflanze-card-top {
+      background: var(--green-pale);
+      padding: 20px 20px 12px;
+      text-align: center;
+    }
+    .pflanze-emoji { font-size: 3rem; }
+    .pflanze-card-body { padding: 16px 18px 18px; }
+    .pflanze-name { font-weight: 700; font-size: 1rem; color: var(--green-dark); }
+    .pflanze-botanisch { font-size: 0.78rem; color: var(--text-light); font-style: italic; margin-bottom: 8px; }
+    .pflanze-beschreibung { font-size: 0.85rem; color: var(--text); line-height: 1.5; margin-bottom: 12px; }
+    .pflanze-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+    .tag {
+      background: var(--green-pale);
+      color: var(--green-dark);
+      border-radius: 6px;
+      padding: 3px 9px;
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+    .tag.tag-erde { background: #f3e5d0; color: var(--earth); }
+    .tag.tag-stueck { background: #e8f4f8; color: #1a607a; }
+    .pflanze-preis {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.88rem;
+      color: var(--text-light);
+      margin-bottom: 12px;
+    }
+    .pflanze-preis strong { color: var(--earth); font-size: 1rem; }
+    .pflege-sterne { color: var(--green-light); letter-spacing: 2px; }
+    .btn-kaufen {
+      display: block;
+      width: 100%;
+      background: var(--green-mid);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 10px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      text-decoration: none;
+      text-align: center;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-kaufen:hover { background: var(--green-dark); }
+
+    /* Jahreskalender */
+    .kalender-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 12px;
+      margin-bottom: 36px;
+    }
+    .kalender-card {
+      background: #fff;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 16px;
+    }
+    .kalender-card h4 { font-size: 0.95rem; color: var(--green-dark); margin-bottom: 10px; }
+    .kalender-card ul { list-style: none; padding: 0; }
+    .kalender-card ul li { font-size: 0.83rem; color: var(--text-light); padding: 3px 0; display: flex; gap: 6px; }
+    .kalender-card ul li::before { content: '→'; color: var(--green-light); flex-shrink: 0; }
+
+    /* Tipps */
+    .tipps-list { background: var(--green-pale); border-radius: var(--radius); padding: 20px 24px; margin-bottom: 36px; }
+    .tipps-list li { font-size: 0.9rem; color: var(--green-dark); padding: 6px 0; display: flex; gap: 10px; list-style: none; }
+    .tipps-list li::before { content: '🌿'; flex-shrink: 0; }
+
+    /* CTA Anfrage */
+    .anfrage-cta {
+      background: linear-gradient(135deg, var(--earth), #9a5e38);
+      color: #fff;
+      border-radius: var(--radius);
+      padding: 32px;
+      text-align: center;
+      margin-bottom: 36px;
+    }
+    .anfrage-cta h3 { font-size: 1.4rem; margin-bottom: 10px; }
+    .anfrage-cta p { opacity: 0.88; margin-bottom: 24px; font-size: 0.95rem; line-height: 1.6; }
+    .btn-anfrage {
+      background: #fff;
+      color: var(--earth);
+      border: none;
+      border-radius: 50px;
+      padding: 14px 40px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.15s, box-shadow 0.15s;
+      font-family: inherit;
+    }
+    .btn-anfrage:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.2); }
+    .btn-neustart {
+      display: block;
+      width: 100%;
+      text-align: center;
+      background: none;
+      border: 2px solid var(--sand);
+      border-radius: 50px;
+      padding: 12px;
+      font-size: 0.9rem;
+      color: var(--text-light);
+      cursor: pointer;
+      font-family: inherit;
+      transition: border-color 0.15s;
+    }
+    .btn-neustart:hover { border-color: var(--green-light); color: var(--green-mid); }
+
+    /* MODAL */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: #fff;
+      border-radius: var(--radius);
+      padding: 32px;
+      max-width: 520px;
+      width: 100%;
+      max-height: 90vh;
+      overflow-y: auto;
+      animation: fadeIn 0.25s ease;
+    }
+    .modal h3 { font-size: 1.4rem; color: var(--green-dark); margin-bottom: 6px; }
+    .modal p.modal-sub { font-size: 0.88rem; color: var(--text-light); margin-bottom: 24px; }
+    .form-group { margin-bottom: 18px; }
+    .form-group label { display: block; font-weight: 600; font-size: 0.9rem; margin-bottom: 6px; }
+    .modal .btn-primary {
+      background: var(--green-mid);
+      color: #fff;
+      border-radius: 50px;
+      width: 100%;
+      margin-top: 8px;
+      font-size: 1rem;
+    }
+    .modal .btn-primary:hover { background: var(--green-dark); }
+    .modal-close {
+      float: right;
+      background: none;
+      border: none;
+      font-size: 1.4rem;
+      cursor: pointer;
+      color: var(--text-light);
+      margin-left: 8px;
+    }
+    .success-msg {
+      text-align: center;
+      padding: 20px 0;
+    }
+    .success-msg .success-icon { font-size: 3.5rem; margin-bottom: 12px; }
+    .success-msg h3 { color: var(--green-dark); margin-bottom: 10px; }
+    .success-msg p { color: var(--text-light); font-size: 0.9rem; line-height: 1.6; }
+
+    /* ERROR */
+    .error-msg {
+      background: #fef2f2;
+      border: 1px solid #fca5a5;
+      color: #b91c1c;
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 0.88rem;
+      margin-bottom: 16px;
+    }
+
+    /* ── TABS ──────────────────────────────────────────── */
+    .result-tabs {
+      display: flex;
+      gap: 6px;
+      max-width: 900px;
+      margin: 0 auto 28px;
+      padding: 0 20px;
+      flex-wrap: wrap;
+    }
+    .rtab {
+      background: #fff;
+      border: 2px solid var(--sand);
+      border-radius: 50px;
+      padding: 10px 20px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      color: var(--text-light);
+      font-family: inherit;
+      transition: all 0.15s;
+    }
+    .rtab:hover { border-color: var(--green-light); color: var(--green-mid); }
+    .rtab.active { background: var(--green-mid); border-color: var(--green-mid); color: #fff; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ── STÜCKLISTE ─────────────────────────────────────── */
+    .sl-wrap { max-width: 900px; margin: 0 auto; padding: 0 20px 60px; }
+    .sl-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .sl-toolbar h3 { font-size: 1.2rem; color: var(--green-dark); }
+    .btn-print {
+      background: var(--green-mid);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 9px 20px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .btn-print:hover { background: var(--green-dark); }
+    .sl-table { width: 100%; border-collapse: collapse; background: #fff; border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
+    .sl-table th { background: var(--green-dark); color: #fff; padding: 12px 14px; text-align: left; font-size: 0.85rem; font-weight: 600; }
+    .sl-table td { padding: 12px 14px; font-size: 0.9rem; border-bottom: 1px solid var(--sand); vertical-align: middle; }
+    .sl-table tr:last-child td { border-bottom: none; }
+    .sl-table tr:hover td { background: #fafaf8; }
+    .sl-table tfoot td { background: var(--green-pale); font-weight: 700; color: var(--green-dark); font-size: 0.95rem; }
+    .sl-color-dot { width: 14px; height: 14px; border-radius: 50%; display: inline-block; margin-right: 6px; vertical-align: middle; border: 1.5px solid rgba(0,0,0,.15); }
+    .sl-number { background: var(--green-mid); color: #fff; border-radius: 50%; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 700; }
+    .sl-total-row { background: var(--green-pale); }
+
+    /* ── BEPFLANZUNGSPLAN ───────────────────────────────── */
+    .viz-wrap { max-width: 960px; margin: 0 auto; padding: 0 20px 60px; }
+    .viz-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+    .viz-toolbar span { font-size: .85rem; color: var(--text-light); font-weight: 600; }
+    .season-btn {
+      background: #fff;
+      border: 2px solid var(--sand);
+      border-radius: 50px;
+      padding: 7px 16px;
+      font-size: 0.82rem;
+      cursor: pointer;
+      font-family: inherit;
+      font-weight: 600;
+      transition: all .15s;
+      color: var(--text-light);
+    }
+    .season-btn:hover { border-color: var(--green-light); }
+    .season-btn.active { border-color: var(--green-mid); background: var(--green-pale); color: var(--green-dark); }
+    .viz-card {
+      background: #fff;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      margin-bottom: 20px;
+    }
+    .viz-card-title {
+      background: var(--green-dark);
+      color: #fff;
+      padding: 12px 20px;
+      font-size: .9rem;
+      font-weight: 700;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .viz-card-body { padding: 20px; }
+    .viz-svg-wrap { overflow-x: auto; }
+    .viz-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--sand);
+    }
+    .vl-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: .8rem;
+      color: var(--text);
+      background: var(--cream);
+      border-radius: 6px;
+      padding: 4px 10px;
+    }
+    .vl-num { background: var(--green-mid); color: #fff; border-radius: 50%; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; font-size: .68rem; font-weight: 700; flex-shrink: 0; }
+    .vl-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid rgba(0,0,0,.15); }
+    .schematisch-wrap { background: #fafaf8; border-radius: 10px; padding: 16px; overflow-x: auto; }
+
+    /* ── STANDORT-KARTEN ────────────────────────────────── */
+    .standort-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 10px;
+      margin-bottom: 24px;
+    }
+    .standort-card {
+      background: #fff;
+      border: 2px solid var(--sand);
+      border-radius: 12px;
+      padding: 14px 12px;
+      cursor: pointer;
+      transition: all .15s;
+      user-select: none;
+      position: relative;
+    }
+    .standort-card:hover { border-color: var(--green-light); background: var(--green-pale); transform: translateY(-1px); }
+    .standort-card.selected { border-color: var(--green-mid); background: var(--green-pale); box-shadow: 0 0 0 3px rgba(82,183,136,.2); }
+    .sc-icon { font-size: 1.8rem; margin-bottom: 6px; }
+    .sc-label { font-weight: 700; font-size: .88rem; color: var(--green-dark); margin-bottom: 3px; line-height: 1.3; }
+    .sc-sub { font-size: .72rem; color: var(--text-light); margin-bottom: 8px; line-height: 1.4; }
+    .sc-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+    .sc-tags span { background: #e8f5e9; color: #2d6a4f; border-radius: 4px; padding: 1px 7px; font-size: .68rem; font-weight: 600; }
+    .sc-tags .tag-warn { background: #fff3e0; color: #e65100; }
+    .sc-hidden { display: none; }
+    .standort-card.selected::after {
+      content: '✓';
+      position: absolute;
+      top: 8px; right: 10px;
+      font-size: .85rem;
+      font-weight: 800;
+      color: var(--green-mid);
+    }
+    @media (max-width: 480px) {
+      .standort-grid { grid-template-columns: 1fr 1fr; }
+    }
+
+    /* ── MODUS-AUSWAHL ──────────────────────────────────── */
+    #view-modewahl {
+      display: none;
+      min-height: calc(100vh - 64px);
+      background: var(--cream);
+      padding: 48px 20px 60px;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      text-align: center;
+    }
+    #view-modewahl h2 { font-size: 1.7rem; color: var(--green-dark); margin-bottom: 8px; }
+    #view-modewahl p { color: var(--text-light); margin-bottom: 36px; font-size: 1rem; }
+    .modus-cards { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; max-width: 700px; }
+    .modus-card {
+      background: #fff;
+      border: 2.5px solid var(--sand);
+      border-radius: 18px;
+      padding: 28px 28px 24px;
+      width: 290px;
+      cursor: pointer;
+      text-align: left;
+      transition: transform .15s, border-color .15s, box-shadow .15s;
+      box-shadow: 0 2px 12px rgba(0,0,0,.06);
+    }
+    .modus-card:hover { transform: translateY(-4px); border-color: var(--green-light); box-shadow: 0 8px 28px rgba(0,0,0,.12); }
+    .modus-card.pro { border-color: var(--green-mid); background: linear-gradient(135deg,#f0fdf4,#fff); }
+    .modus-card .mc-icon { font-size: 2.5rem; margin-bottom: 12px; }
+    .modus-card h3 { font-size: 1.2rem; color: var(--green-dark); margin-bottom: 6px; }
+    .modus-card .mc-sub { font-size: .83rem; color: var(--text-light); margin-bottom: 16px; }
+    .modus-card ul { list-style: none; padding: 0; }
+    .modus-card ul li { font-size: .82rem; color: var(--text); padding: 3px 0; display: flex; gap: 7px; }
+    .modus-card ul li::before { content: '✓'; color: var(--green-light); font-weight: 700; }
+    .mc-btn {
+      display: block;
+      width: 100%;
+      margin-top: 20px;
+      padding: 12px;
+      border: none;
+      border-radius: 10px;
+      font-size: .95rem;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .mc-btn.simple { background: var(--sand); color: var(--green-dark); }
+    .mc-btn.pro { background: var(--green-mid); color: #fff; }
+    .mc-btn:hover { filter: brightness(1.07); }
+
+    /* ── PROFESSIONELL FORM ──────────────────────────────── */
+    #view-professionell { display: none; max-width: 680px; margin: 0 auto; padding: 32px 20px 60px; }
+
+    /* Zeichentool Toggle */
+    .flaeche-toggle { display: flex; gap: 8px; margin-bottom: 20px; }
+    .ftog-btn {
+      flex: 1;
+      padding: 10px;
+      border: 2px solid var(--sand);
+      border-radius: 10px;
+      background: #fff;
+      font-size: .88rem;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      color: var(--text-light);
+      transition: all .15s;
+    }
+    .ftog-btn.active { border-color: var(--green-mid); background: var(--green-pale); color: var(--green-dark); }
+
+    /* Canvas Zeichentool */
+    .canvas-wrap {
+      background: #fff;
+      border-radius: 12px;
+      border: 2px solid var(--sand);
+      padding: 14px;
+      display: none;
+    }
+    .canvas-wrap.active { display: block; }
+    .canvas-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+    .canvas-toolbar label { font-size: .8rem; color: var(--text-light); }
+    .canvas-toolbar select {
+      padding: 4px 10px;
+      border: 1.5px solid var(--sand);
+      border-radius: 7px;
+      font-size: .82rem;
+      font-family: inherit;
+    }
+    .btn-undo, .btn-reset-canvas {
+      padding: 5px 12px;
+      border-radius: 7px;
+      border: 1.5px solid var(--sand);
+      background: #fff;
+      font-size: .8rem;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .btn-undo:hover { border-color: var(--green-light); }
+    .btn-reset-canvas:hover { border-color: #f87171; color: #b91c1c; }
+    #draw-canvas {
+      display: block;
+      border-radius: 8px;
+      cursor: crosshair;
+      max-width: 100%;
+      touch-action: none;
+    }
+    .canvas-hint { font-size: .75rem; color: #aaa; margin-top: 6px; }
+    .canvas-area-result {
+      margin-top: 10px;
+      font-weight: 700;
+      font-size: 1rem;
+      color: var(--green-dark);
+      min-height: 24px;
+    }
+    .poly-list { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+    .poly-chip {
+      background: var(--green-pale);
+      color: var(--green-dark);
+      border-radius: 20px;
+      padding: 3px 10px 3px 8px;
+      font-size: .78rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .poly-chip button {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: .85rem;
+      color: var(--green-mid);
+      padding: 0;
+      line-height: 1;
+    }
+
+    /* Nutzung multi-select */
+    .nutzung-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+      gap: 10px;
+      margin-bottom: 24px;
+    }
+    .nutzung-card {
+      background: #fff;
+      border: 2px solid var(--sand);
+      border-radius: 10px;
+      padding: 12px 8px;
+      cursor: pointer;
+      text-align: center;
+      transition: all .15s;
+      user-select: none;
+    }
+    .nutzung-card:hover { border-color: var(--green-light); background: var(--green-pale); }
+    .nutzung-card.selected { border-color: var(--green-mid); background: var(--green-pale); }
+    .nutzung-card .nc-icon { font-size: 1.8rem; margin-bottom: 5px; }
+    .nutzung-card .nc-label { font-size: .78rem; font-weight: 600; color: var(--green-dark); }
+
+    /* Budget Slider */
+    .budget-slider-wrap { margin-bottom: 24px; }
+    .budget-display {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .budget-value {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--earth);
+    }
+    input[type="range"] {
+      width: 100%;
+      height: 6px;
+      -webkit-appearance: none;
+      background: var(--sand);
+      border-radius: 3px;
+      outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 22px;
+      height: 22px;
+      background: var(--green-mid);
+      border-radius: 50%;
+      cursor: pointer;
+      border: 3px solid #fff;
+      box-shadow: 0 2px 6px rgba(0,0,0,.2);
+    }
+    .budget-labels { display: flex; justify-content: space-between; font-size: .72rem; color: #aaa; margin-top: 4px; }
+
+    /* Pflegezeit */
+    .pflegezeit-grid { display: flex; gap: 10px; margin-bottom: 24px; }
+    .pz-card {
+      flex: 1;
+      background: #fff;
+      border: 2px solid var(--sand);
+      border-radius: 10px;
+      padding: 12px 8px;
+      cursor: pointer;
+      text-align: center;
+      transition: all .15s;
+    }
+    .pz-card:hover { border-color: var(--green-light); }
+    .pz-card.selected { border-color: var(--green-mid); background: var(--green-pale); }
+    .pz-card .pz-icon { font-size: 1.6rem; margin-bottom: 4px; }
+    .pz-card .pz-label { font-size: .78rem; font-weight: 700; color: var(--green-dark); }
+    .pz-card .pz-sub { font-size: .7rem; color: var(--text-light); margin-top: 2px; }
+
+    /* Lieblingstauden Suche */
+    .pflanzsuche-wrap { margin-bottom: 24px; }
+    .pflanzsuche-input-wrap { position: relative; margin-bottom: 10px; }
+    .pflanzsuche-input-wrap input { padding-right: 40px; }
+    .pflanzsuche-clear {
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      font-size: 1.1rem;
+      cursor: pointer;
+      color: #aaa;
+    }
+    .pflanzsuche-results {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 8px;
+      max-height: 260px;
+      overflow-y: auto;
+    }
+    .psr-card {
+      background: #fff;
+      border: 1.5px solid var(--sand);
+      border-radius: 9px;
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: all .12s;
+    }
+    .psr-card:hover { border-color: var(--green-light); background: var(--green-pale); }
+    .psr-card.added { border-color: var(--green-mid); background: var(--green-pale); opacity: .5; pointer-events: none; }
+    .psr-name { font-weight: 600; font-size: .85rem; color: var(--green-dark); }
+    .psr-bot { font-size: .72rem; color: #aaa; font-style: italic; }
+    .psr-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+    .psr-tag { background: #f0f0f0; border-radius: 4px; padding: 1px 6px; font-size: .68rem; color: #666; }
+    .wishlist-wrap { margin-top: 12px; }
+    .wishlist-label { font-size: .8rem; color: var(--text-light); margin-bottom: 6px; font-weight: 600; }
+    .wishlist-chips { display: flex; flex-wrap: wrap; gap: 6px; min-height: 28px; }
+    .wl-chip {
+      background: var(--green-mid);
+      color: #fff;
+      border-radius: 20px;
+      padding: 4px 12px 4px 10px;
+      font-size: .8rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .wl-chip button { background: none; border: none; cursor: pointer; color: rgba(255,255,255,.8); font-size: .95rem; padding: 0; line-height: 1; }
+    .wl-chip button:hover { color: #fff; }
+
+    @media print {
+      header, .result-tabs, .rtab, .viz-toolbar, .btn-print, .btn-neustart, .anfrage-cta, .modal-overlay { display: none !important; }
+      .tab-panel { display: block !important; }
+      .sl-table { box-shadow: none; }
+    }
+
+    @media (max-width: 600px) {
+      .option-grid { grid-template-columns: 1fr 1fr; }
+      #view-ergebnis .ergebnis-header { padding: 20px; }
+      .modal { padding: 24px; }
+      #view-hero h2 { font-size: 1.7rem; }
+      .result-tabs { gap: 4px; }
+      .rtab { padding: 8px 14px; font-size: .8rem; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <span class="logo">🌿</span>
+  <div>
+    <h1>Staudenplan.de</h1>
+    <p>KI-gestützte Bepflanzungsplanung</p>
+  </div>
+</header>
+
+<!-- HERO -->
+<div id="view-hero">
+  <div class="hero-icon">🌸</div>
+  <h2>Dein persönlicher<br>Bepflanzungsplan</h2>
+  <p>KI-gestützte Gartenplanung mit über 220 geprüften Stauden — in 2 Minuten zum fertigen Plan mit Visualisierung.</p>
+  <div class="steps-preview">
+    <div class="sp-item">📐 Fläche</div>
+    <div class="sp-item">☀️ Standort</div>
+    <div class="sp-item">🎨 Stil</div>
+    <div class="sp-item">🌿 KI-Plan</div>
+    <div class="sp-item">🗺️ Visualisierung</div>
+  </div>
+  <button class="btn-primary" onclick="showModewahl()">Plan erstellen — kostenlos</button>
+</div>
+
+<!-- MODUS-AUSWAHL -->
+<div id="view-modewahl" style="display:none;flex-direction:column;align-items:center;justify-content:center;min-height:calc(100vh - 64px);padding:48px 20px 60px;background:var(--cream)">
+  <h2 style="font-size:1.7rem;color:var(--green-dark);margin-bottom:8px">Wie möchtest du planen?</h2>
+  <p style="color:var(--text-light);margin-bottom:36px;font-size:1rem">Wähle deinen Einstieg — du kannst jederzeit wechseln.</p>
+  <div class="modus-cards">
+    <div class="modus-card" onclick="startModus('einfach')">
+      <div class="mc-icon">🌱</div>
+      <h3>Einfach</h3>
+      <p class="mc-sub">5 Fragen, 2 Minuten</p>
+      <ul>
+        <li>Fläche, Licht & Boden</li>
+        <li>Gartenstil & Farbe</li>
+        <li>Sofort Ergebnis</li>
+        <li>Perfekt für Einsteiger</li>
+      </ul>
+      <button class="mc-btn simple">Einfach starten →</button>
+    </div>
+    <div class="modus-card pro" onclick="startModus('professionell')">
+      <div class="mc-icon">🔧</div>
+      <h3>Professionell</h3>
+      <p class="mc-sub">Vollkonfigurator</p>
+      <ul>
+        <li>Fläche frei zeichnen</li>
+        <li>Lieblingspflanzen wählen</li>
+        <li>Budget & Gartennutzung</li>
+        <li>Pflegezeit einstellen</li>
+      </ul>
+      <button class="mc-btn pro">Professionell starten →</button>
+    </div>
+  </div>
+</div>
+
+<!-- PROFESSIONELL FRAGEBOGEN -->
+<div id="view-professionell">
+  <div class="progress-bar"><div class="progress-bar-inner" id="pro-progress-inner" style="width:16.6%"></div></div>
+  <p class="step-counter" id="pro-step-counter">Schritt 1 von 6</p>
+
+  <!-- PRO Step 1: Fläche -->
+  <div class="step active" id="pro-step-1">
+    <h2>📐 Gartenfläche</h2>
+    <p class="hint">Gib die Fläche ein oder zeichne sie direkt auf dem Plan.</p>
+    <div class="flaeche-toggle">
+      <button class="ftog-btn active" id="ftog-manuell" onclick="setFlaecheMode('manuell')">✏️ Manuell eingeben</button>
+      <button class="ftog-btn" id="ftog-zeichnen" onclick="setFlaecheMode('zeichnen')">✏ Fläche zeichnen</button>
+    </div>
+    <!-- Manuell -->
+    <div id="flaeche-manuell">
+      <div class="form-group">
+        <label class="field-label">Fläche in m²</label>
+        <div class="input-unit">
+          <input type="number" id="pro-gartenflaeche" min="1" max="5000" placeholder="z.B. 12" oninput="validateProStep1()">
+          <span>m²</span>
+        </div>
+      </div>
+    </div>
+    <!-- Zeichnen -->
+    <div class="canvas-wrap" id="flaeche-zeichnen">
+      <div class="canvas-toolbar">
+        <label>Maßstab:</label>
+        <select id="canvas-scale" onchange="updateScale()">
+          <option value="0.5">0,5 m / Kästchen</option>
+          <option value="1" selected>1 m / Kästchen</option>
+          <option value="2">2 m / Kästchen</option>
+        </select>
+        <button class="btn-undo" onclick="undoPoint()">↩ Rückgängig</button>
+        <button class="btn-reset-canvas" onclick="resetDraw()">✕ Neu</button>
+      </div>
+      <canvas id="draw-canvas" width="560" height="320"></canvas>
+      <p class="canvas-hint">Klicken = Punkt setzen · Doppelklick = Fläche schließen · Mehrere Flächen möglich</p>
+      <div class="poly-list" id="poly-list"></div>
+      <div class="canvas-area-result" id="canvas-area-result"></div>
+    </div>
+    <div id="pro-err-1" class="error-msg" style="display:none">Bitte Fläche eingeben oder zeichnen.</div>
+    <div class="btn-row" style="margin-top:20px">
+      <button class="btn-back" onclick="showModewahl()">← Modus ändern</button>
+      <button class="btn-next" id="pro-btn-next-1" onclick="proGoStep(2)" disabled>Weiter →</button>
+    </div>
+  </div>
+
+  <!-- PRO Step 2: Standort -->
+  <div class="step" id="pro-step-2">
+    <h2>🗺️ Standort</h2>
+    <p class="hint">Wähle die Situation die am besten passt — Licht und Bodenfeuchtigkeit zusammen.</p>
+    <div class="standort-grid" id="standort-grid-pro">
+      <div class="standort-card" onclick="selectStandort(this, 'pro')">
+        <div class="sc-icon">☀️</div><div class="sc-label">Sonniges Staudenbeet</div>
+        <div class="sc-sub">6+ Std. · normaler Boden</div><div class="sc-tags"><span>Vollsonne</span><span>frisch</span></div>
+        <div class="sc-hidden" data-licht="Vollsonne (6+ h)" data-boden="Normal / humos" data-standortbeschr="Sonniges Staudenbeet, Vollsonne über 6 Stunden, frischer normaler Kulturboden, klassisches Staudenbeet"></div>
+      </div>
+      <div class="standort-card" onclick="selectStandort(this, 'pro')">
+        <div class="sc-icon">🌤️</div><div class="sc-label">Halbschatten / Gehölzrand</div>
+        <div class="sc-sub">Morgen-/Abendsonne · Waldrand</div><div class="sc-tags"><span>Halbschatten</span><span>frisch</span></div>
+        <div class="sc-hidden" data-licht="Halbschatten (3–6 h)" data-boden="Normal / humos" data-standortbeschr="Halbschattiger Gehölzrand (GR2), 3-6 Stunden Sonne, wechselnde Lichtverhältnisse, frischer humoser Boden"></div>
+      </div>
+      <div class="standort-card" onclick="selectStandort(this, 'pro')">
+        <div class="sc-icon">🌳</div><div class="sc-label">Unter Bäumen</div>
+        <div class="sc-sub">Trocken-schattig · Kronenschatten</div><div class="sc-tags"><span>Schatten</span><span>trocken</span><span class="tag-warn">anspruchsvoll</span></div>
+        <div class="sc-hidden" data-licht="Schatten (unter 3 h)" data-boden="Sandig / durchlässig" data-standortbeschr="Trockener Schatten unter Bäumen (Lebensbereich G1 nach Hansen/Stahl), schwieriger Standort: dunkle Baumkronen + trockener Boden durch Kronendacheffekt und Wurzelkonkurrenz"></div>
+      </div>
+      <div class="standort-card" onclick="selectStandort(this, 'pro')">
+        <div class="sc-icon">🏠</div><div class="sc-label">Nordseite / Gebäudeschatten</div>
+        <div class="sc-sub">Dauerschatten · kühl-frisch</div><div class="sc-tags"><span>Schatten</span><span>frisch-feucht</span></div>
+        <div class="sc-hidden" data-licht="Schatten (unter 3 h)" data-boden="Normal / humos" data-standortbeschr="Nordseite oder Gebäudeschatten, dauerhafter Schatten ohne direkte Sonne, kühl und frisch, kein Kronendacheffekt aber wenig Licht"></div>
+      </div>
+      <div class="standort-card" onclick="selectStandort(this, 'pro')">
+        <div class="sc-icon">🪨</div><div class="sc-label">Kiesgarten / Trockenbeet</div>
+        <div class="sc-sub">Vollsonne · sehr trocken · Steppe</div><div class="sc-tags"><span>Vollsonne</span><span>sehr trocken</span></div>
+        <div class="sc-hidden" data-licht="Vollsonne (6+ h)" data-boden="Sandig / durchlässig" data-standortbeschr="Kiesgarten oder Trockenstaudenbeet (Fr1/Steinanlage nach Hansen/Stahl), Vollsonne, sehr trockener sandiger oder kiesiger Boden, Steppencharakter, mediterran"></div>
+      </div>
+      <div class="standort-card" onclick="selectStandort(this, 'pro')">
+        <div class="sc-icon">💧</div><div class="sc-label">Teichrand / Sumpfbeet</div>
+        <div class="sc-sub">Dauerfeucht bis nass</div><div class="sc-tags"><span>Sonne/Hs</span><span>nass</span></div>
+        <div class="sc-hidden" data-licht="Halbschatten (3–6 h)" data-boden="Lehmig / schwer" data-standortbeschr="Teichrand oder Sumpfbeet (Wasserrand WR), dauerhaft feuchter bis nasser schwerer Boden, Uferpflanzen und Feuchtwiesencharakter"></div>
+      </div>
+      <div class="standort-card" onclick="selectStandort(this, 'pro')">
+        <div class="sc-icon">🌾</div><div class="sc-label">Präriecharakter / Naturgarten</div>
+        <div class="sc-sub">Vollsonne · wechselfeucht</div><div class="sc-tags"><span>Vollsonne</span><span>wechselfeucht</span></div>
+        <div class="sc-hidden" data-licht="Vollsonne (6+ h)" data-boden="Normal / humos" data-standortbeschr="Präriecharakter (Freifläche Fr2-Fr3), Vollsonne, wechselfeuchter normaler Boden, naturnahe Wiesenstimmung mit hoher Biodiversität"></div>
+      </div>
+      <div class="standort-card" onclick="selectStandort(this, 'pro')">
+        <div class="sc-icon">🧱</div><div class="sc-label">Böschung / Hanglage / Mauer</div>
+        <div class="sc-sub">Sonnig · schnell drainierend</div><div class="sc-tags"><span>Vollsonne</span><span>trocken</span></div>
+        <div class="sc-hidden" data-licht="Vollsonne (6+ h)" data-boden="Sandig / durchlässig" data-standortbeschr="Böschung, Hanglage oder Trockenmauer, sonnig, schnell drainierender Boden, Erosionsschutz, Trockenheit durch Wasserabfluss am Hang"></div>
+      </div>
+      <div class="standort-card" onclick="selectStandort(this, 'pro')">
+        <div class="sc-icon">🏙️</div><div class="sc-label">Stadtgarten / Innenhof</div>
+        <div class="sc-sub">Wärmeinsel · windgeschützt</div><div class="sc-tags"><span>Vollsonne</span><span>warm-trocken</span></div>
+        <div class="sc-hidden" data-licht="Vollsonne (6+ h)" data-boden="Normal / humos" data-standortbeschr="Stadtgarten oder Innenhof, urbane Wärmeinsel, Hitzestau, windgeschützt, hitzetolerante Pflanzen bevorzugt"></div>
+      </div>
+      <div class="standort-card" onclick="selectStandort(this, 'pro')">
+        <div class="sc-icon">🌿</div><div class="sc-label">Waldgarten / Schattenrabatte</div>
+        <div class="sc-sub">Tiefer Schatten · feucht-kühl</div><div class="sc-tags"><span>Tiefschatten</span><span>feucht</span></div>
+        <div class="sc-hidden" data-licht="Schatten (unter 3 h)" data-boden="Normal / humos" data-standortbeschr="Waldgarten oder schattige Rabatte (G2-G3 nach Hansen/Stahl), tiefer feuchter Schatten, humusreicher Waldboden mit Laubeintrag"></div>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn-back" onclick="proGoStep(1)">← Zurück</button>
+      <button class="btn-next" id="pro-btn-next-2" onclick="proGoStep(3)" disabled>Weiter →</button>
+    </div>
+  </div>
+
+  <!-- PRO Step 3: Boden (Verfeinerung) -->
+  <div class="step" id="pro-step-3">
+    <h2>🪨 Bodenart verfeinern <span class="optional-tag">(optional)</span></h2>
+    <p class="hint">Auf Basis deines Standorts vorausgewählt — kannst du hier anpassen.</p>
+    <div class="option-grid">
+      <div class="option-card" onclick="selectProOption('boden','Sandig / durchlässig',this)"><div class="oc-icon">🏜️</div><div class="oc-label">Sandig / trocken</div><div class="oc-sub">trocknet schnell</div></div>
+      <div class="option-card" onclick="selectProOption('boden','Normal / humos',this)"><div class="oc-icon">🌱</div><div class="oc-label">Normal / humos</div><div class="oc-sub">guter Gartenboden</div></div>
+      <div class="option-card" onclick="selectProOption('boden','Lehmig / schwer',this)"><div class="oc-icon">🟤</div><div class="oc-label">Lehmig / nass</div><div class="oc-sub">hält viel Wasser</div></div>
+      <div class="option-card" onclick="selectProOption('boden','Normal / unbekannt',this)"><div class="oc-icon">✓</div><div class="oc-label">Vorauswahl OK</div><div class="oc-sub">passt zum Standort</div></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn-back" onclick="proGoStep(2)">← Zurück</button>
+      <button class="btn-next" id="pro-btn-next-3" onclick="proGoStep(4)" disabled>Weiter →</button>
+    </div>
+  </div>
+
+  <!-- PRO Step 4: Stil -->
+  <div class="step" id="pro-step-4">
+    <h2>🎨 Gartenstil</h2>
+    <p class="hint">Der Stil bestimmt die Pflanzenauswahl und Kombinationen.</p>
+    <div class="option-grid">
+      <div class="option-card" onclick="selectProOption('stil','Naturgarten / Wildgarten',this)"><div class="oc-icon">🦋</div><div class="oc-label">Naturgarten</div><div class="oc-sub">ökologisch, naturnah</div></div>
+      <div class="option-card" onclick="selectProOption('stil','Bauerngarten / Romantisch',this)"><div class="oc-icon">🌹</div><div class="oc-label">Bauerngarten</div><div class="oc-sub">üppig, bunt</div></div>
+      <div class="option-card" onclick="selectProOption('stil','Modern / Minimalistisch',this)"><div class="oc-icon">🏛️</div><div class="oc-label">Modern</div><div class="oc-sub">klar, strukturiert</div></div>
+      <div class="option-card" onclick="selectProOption('stil','Cottage-Garten / Englisch',this)"><div class="oc-icon">🏡</div><div class="oc-label">Cottage</div><div class="oc-sub">englisch, verspielt</div></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn-back" onclick="proGoStep(3)">← Zurück</button>
+      <button class="btn-next" id="pro-btn-next-4" onclick="proGoStep(5)" disabled>Weiter →</button>
+    </div>
+  </div>
+
+  <!-- PRO Step 5: Wünsche (Lieblingspflanzen + Nutzung + Pflegezeit) -->
+  <div class="step" id="pro-step-5">
+    <h2>🌺 Meine Wünsche</h2>
+    <p class="hint">Optional — aber je mehr du angibst, desto besser wird dein Plan.</p>
+
+    <!-- Lieblingstauden -->
+    <label class="field-label">Lieblingspflanzen <span class="optional-tag">(optional)</span></label>
+    <div class="pflanzsuche-wrap">
+      <div class="pflanzsuche-input-wrap">
+        <input type="text" id="pflanz-search" placeholder="z.B. Storchschnabel, Hosta, Salvia…" oninput="searchPflanzen(this.value)" autocomplete="off">
+        <button class="pflanzsuche-clear" onclick="clearPflanzSearch()">✕</button>
+      </div>
+      <div class="pflanzsuche-results" id="pflanzsuche-results"></div>
+      <div class="wishlist-wrap">
+        <div class="wishlist-label" id="wishlist-label" style="display:none">Ausgewählt:</div>
+        <div class="wishlist-chips" id="wishlist-chips"></div>
+      </div>
+    </div>
+
+    <!-- Gartennutzung -->
+    <label class="field-label" style="margin-bottom:12px">Gartennutzung / Schwerpunkt <span class="optional-tag">(mehrere möglich)</span></label>
+    <div class="nutzung-grid">
+      <div class="nutzung-card" onclick="toggleNutzung('Bienengarten',this)"><div class="nc-icon">🐝</div><div class="nc-label">Bienengarten</div></div>
+      <div class="nutzung-card" onclick="toggleNutzung('Schnittblumen',this)"><div class="nc-icon">✂️</div><div class="nc-label">Schnittblumen</div></div>
+      <div class="nutzung-card" onclick="toggleNutzung('Sichtschutz',this)"><div class="nc-icon">🌿</div><div class="nc-label">Sichtschutz</div></div>
+      <div class="nutzung-card" onclick="toggleNutzung('Kindersicher',this)"><div class="nc-icon">👶</div><div class="nc-label">Kindersicher</div></div>
+      <div class="nutzung-card" onclick="toggleNutzung('Duftgarten',this)"><div class="nc-icon">👃</div><div class="nc-label">Duftgarten</div></div>
+      <div class="nutzung-card" onclick="toggleNutzung('Winteraspekt',this)"><div class="nc-icon">❄️</div><div class="nc-label">Winteraspekt</div></div>
+      <div class="nutzung-card" onclick="toggleNutzung('Bodendecker',this)"><div class="nc-icon">🌾</div><div class="nc-label">Bodendecker</div></div>
+      <div class="nutzung-card" onclick="toggleNutzung('Schmetterlinge',this)"><div class="nc-icon">🦋</div><div class="nc-label">Schmetterlinge</div></div>
+    </div>
+
+    <!-- Pflegezeit -->
+    <label class="field-label" style="margin-bottom:12px">Pflegeaufwand <span class="optional-tag">(optional)</span></label>
+    <div class="pflegezeit-grid">
+      <div class="pz-card" onclick="selectPflegezeit('Minimal (pflegeleicht, einmal pflanzen)',this)"><div class="pz-icon">😌</div><div class="pz-label">Minimal</div><div class="pz-sub">~10 Min/Woche</div></div>
+      <div class="pz-card" onclick="selectPflegezeit('Mittel (normale Beetpflege)',this)"><div class="pz-icon">🌿</div><div class="pz-label">Mittel</div><div class="pz-sub">~30 Min/Woche</div></div>
+      <div class="pz-card" onclick="selectPflegezeit('Intensiv (aufwändiger Ziergarten)',this)"><div class="pz-icon">🔨</div><div class="pz-label">Intensiv</div><div class="pz-sub">1h+/Woche</div></div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn-back" onclick="proGoStep(4)">← Zurück</button>
+      <button class="btn-next" onclick="proGoStep(6)">Weiter →</button>
+    </div>
+  </div>
+
+  <!-- PRO Step 6: Budget + Farbe + Saison -->
+  <div class="step" id="pro-step-6">
+    <h2>💰 Budget & Details</h2>
+    <p class="hint">Fast fertig — noch ein paar letzte Einstellungen.</p>
+
+    <label class="field-label">Budget <span class="optional-tag">(optional)</span></label>
+    <div class="budget-slider-wrap">
+      <div class="budget-display">
+        <span style="font-size:.9rem;color:var(--text-light)">Maximale Gesamtkosten</span>
+        <span class="budget-value" id="budget-display">Kein Limit</span>
+      </div>
+      <input type="range" id="budget-slider" min="0" max="600" step="25" value="0" oninput="updateBudget(this.value)">
+      <div class="budget-labels"><span>Kein Limit</span><span>150 €</span><span>300 €</span><span>450 €</span><span>600 €</span></div>
+    </div>
+
+    <div class="form-group">
+      <label class="field-label">Farbwunsch <span class="optional-tag">(optional)</span></label>
+      <select id="pro-farbe">
+        <option value="">Keine Präferenz</option>
+        <option value="Weiß / Creme">Weiß / Creme</option>
+        <option value="Rosa / Pink">Rosa / Pink</option>
+        <option value="Blau / Violett">Blau / Violett</option>
+        <option value="Gelb / Orange">Gelb / Orange</option>
+        <option value="Rot / Weinrot">Rot / Weinrot</option>
+        <option value="Bunt gemischt">Bunt gemischt</option>
+        <option value="Pastell">Pastell</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="field-label">Blühsaison-Priorität <span class="optional-tag">(optional)</span></label>
+      <select id="pro-saison">
+        <option value="">Ganzjährig / keine Präferenz</option>
+        <option value="Frühling (März–Mai)">Frühling (März–Mai)</option>
+        <option value="Frühsommer (Juni–Juli)">Frühsommer (Juni–Juli)</option>
+        <option value="Hochsommer (Juli–August)">Hochsommer (Juli–August)</option>
+        <option value="Spätsommer / Herbst">Spätsommer / Herbst</option>
+        <option value="Langer Blühzeitraum">Langer Blühzeitraum</option>
+      </select>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn-back" onclick="proGoStep(5)">← Zurück</button>
+      <button class="btn-next" onclick="proPlanErstellen()">🌿 Plan erstellen</button>
+    </div>
+  </div>
+</div>
+
+<!-- FRAGEBOGEN -->
+<div id="view-fragebogen">
+  <div class="progress-bar">
+    <div class="progress-bar-inner" id="progress-inner" style="width: 20%"></div>
+  </div>
+  <p class="step-counter" id="step-counter">Schritt 1 von 5</p>
+
+  <!-- Step 1: Fläche -->
+  <div class="step active" id="step-1">
+    <h2>📐 Wie groß ist die Fläche?</h2>
+    <p class="hint">Schätze die Fläche, die du bepflanzen möchtest — nicht den ganzen Garten.</p>
+    <div class="form-group">
+      <label class="field-label">Fläche in m²</label>
+      <div class="input-unit">
+        <input type="number" id="gartenflaeche" min="1" max="5000" placeholder="z.B. 12" oninput="validateStep1()">
+        <span>m²</span>
+      </div>
+    </div>
+    <div id="err-1" class="error-msg" style="display:none">Bitte eine Fläche eingeben (min. 1 m²).</div>
+    <div class="btn-row">
+      <button class="btn-next" id="btn-next-1" onclick="goStep(2)" disabled>Weiter →</button>
+    </div>
+  </div>
+
+  <!-- Step 2: Standort -->
+  <div class="step" id="step-2">
+    <h2>🗺️ Wie sieht der Standort aus?</h2>
+    <p class="hint">Wähle die Situation die am besten zu deinem Beet passt — das ist die wichtigste Entscheidung für die Pflanzenauswahl.</p>
+    <div class="standort-grid" id="standort-grid-einfach">
+      <div class="standort-card" onclick="selectStandort(this, 'einfach')">
+        <div class="sc-icon">☀️</div>
+        <div class="sc-label">Sonniges Staudenbeet</div>
+        <div class="sc-sub">6+ Std. Sonne · normaler Boden</div>
+        <div class="sc-tags"><span>Vollsonne</span><span>frisch</span></div>
+        <div class="sc-hidden" data-licht="Vollsonne (6+ h)" data-boden="Normal / humos" data-standortbeschr="Sonniges Staudenbeet, Vollsonne über 6 Stunden täglich, frischer normaler Kulturboden, klassisches Staudenbeet"></div>
+      </div>
+      <div class="standort-card" onclick="selectStandort(this, 'einfach')">
+        <div class="sc-icon">🌤️</div>
+        <div class="sc-label">Halbschatten / Gehölzrand</div>
+        <div class="sc-sub">Morgen- oder Abendsonne · Waldrandcharakter</div>
+        <div class="sc-tags"><span>Halbschatten</span><span>frisch</span></div>
+        <div class="sc-hidden" data-licht="Halbschatten (3–6 h)" data-boden="Normal / humos" data-standortbeschr="Halbschattiger Gehölzrand, 3-6 Stunden Sonne, wechselnde Lichtverhältnisse, frischer humoser Boden, typischer Waldrandsaum"></div>
+      </div>
+      <div class="standort-card" onclick="selectStandort(this, 'einfach')">
+        <div class="sc-icon">🌳</div>
+        <div class="sc-label">Unter Bäumen</div>
+        <div class="sc-sub">Trocken-schattig · Baumkronenschatten</div>
+        <div class="sc-tags"><span>Schatten</span><span>trocken</span><span>anspruchsvoll</span></div>
+        <div class="sc-hidden" data-licht="Schatten (unter 3 h)" data-boden="Sandig / durchlässig" data-standortbeschr="Trockener Schatten unter Bäumen (Gehölz G1), schwieriger Standort: dunkle Baumkronen + trockener Boden durch Kronendacheffekt + Wurzelkonkurrenz, humusreicher aber trockener Boden"></div>
+      </div>
+      <div class="standort-card" onclick="selectStandort(this, 'einfach')">
+        <div class="sc-icon">🏠</div>
+        <div class="sc-label">Nordseite / Schattenbeet</div>
+        <div class="sc-sub">Gebäudeschatten · kühl und frisch</div>
+        <div class="sc-tags"><span>Schatten</span><span>frisch-feucht</span></div>
+        <div class="sc-hidden" data-licht="Schatten (unter 3 h)" data-boden="Normal / humos" data-standortbeschr="Nordseite oder Schattenbeet neben Gebäude, dauerhafter Schatten, kühler und feuchter als andere Bereiche, kein direktes Sonnenlicht, frisch-feuchter Boden"></div>
+      </div>
+      <div class="standort-card" onclick="selectStandort(this, 'einfach')">
+        <div class="sc-icon">🪨</div>
+        <div class="sc-label">Kiesgarten / Trockenbeet</div>
+        <div class="sc-sub">Vollsonne · sehr trocken · durchlässig</div>
+        <div class="sc-tags"><span>Vollsonne</span><span>sehr trocken</span><span>Steppe</span></div>
+        <div class="sc-hidden" data-licht="Vollsonne (6+ h)" data-boden="Sandig / durchlässig" data-standortbeschr="Kiesgarten oder Trockenstaudenbeet (Freifläche Fr1/Steinanlage), Vollsonne, sehr trockener sandiger oder kiesiger Boden, Steppencharakter, Wärme-Strahler, mediterranes Flair"></div>
+      </div>
+      <div class="standort-card" onclick="selectStandort(this, 'einfach')">
+        <div class="sc-icon">💧</div>
+        <div class="sc-label">Teichrand / Sumpfbeet</div>
+        <div class="sc-sub">Dauerfeucht bis nass · Wasserrand</div>
+        <div class="sc-tags"><span>Sonne/Halbschatten</span><span>nass</span></div>
+        <div class="sc-hidden" data-licht="Halbschatten (3–6 h)" data-boden="Lehmig / schwer" data-standortbeschr="Teichrand oder Sumpfbeet (Wasserrand WR), dauerhaft feuchter bis nasser Boden, schwere lehmige Böden die Wasser halten, Uferpflanzen und Feuchtwiesencharakter"></div>
+      </div>
+      <div class="standort-card" onclick="selectStandort(this, 'einfach')">
+        <div class="sc-icon">🌾</div>
+        <div class="sc-label">Präriecharakter / Naturgarten</div>
+        <div class="sc-sub">Vollsonne · wechselfeucht · naturnahe Wiese</div>
+        <div class="sc-tags"><span>Vollsonne</span><span>wechselfeucht</span></div>
+        <div class="sc-hidden" data-licht="Vollsonne (6+ h)" data-boden="Normal / humos" data-standortbeschr="Präriecharakter oder Naturgarten (Freifläche Fr2-Fr3), Vollsonne, wechselfeuchter normaler Boden, naturnahe Wiesenstimmung, hohe Biodiversität erwünscht"></div>
+      </div>
+      <div class="standort-card" onclick="selectStandort(this, 'einfach')">
+        <div class="sc-icon">🧱</div>
+        <div class="sc-label">Böschung / Mauer / Hanglage</div>
+        <div class="sc-sub">Sonnig · schnell drainierend · Erosionsschutz</div>
+        <div class="sc-tags"><span>Vollsonne</span><span>trocken</span><span>Hanglage</span></div>
+        <div class="sc-hidden" data-licht="Vollsonne (6+ h)" data-boden="Sandig / durchlässig" data-standortbeschr="Böschung, Hanglage oder Trockenmauer, sonnig, schnell drainierender Boden, Erosionsschutz wichtig, Trockenheit durch schnellen Wasserabfluss, Wärme durch Stein/Hangsüdlage"></div>
+      </div>
+      <div class="standort-card" onclick="selectStandort(this, 'einfach')">
+        <div class="sc-icon">🏙️</div>
+        <div class="sc-label">Stadtgarten / Innenhof</div>
+        <div class="sc-sub">Wärmeinsel · oft windgeschützt · Hitzestau</div>
+        <div class="sc-tags"><span>Vollsonne</span><span>trocken-warm</span></div>
+        <div class="sc-hidden" data-licht="Vollsonne (6+ h)" data-boden="Normal / humos" data-standortbeschr="Stadtgarten oder Innenhof, urbane Wärmeinsel, Hitzestau durch Mauern und Pflaster, windgeschützt, trockener als Landgarten, hitzetolerante Pflanzen bevorzugt"></div>
+      </div>
+      <div class="standort-card" onclick="selectStandort(this, 'einfach')">
+        <div class="sc-icon">🌿</div>
+        <div class="sc-label">Schattige Rabatte / Waldgarten</div>
+        <div class="sc-sub">Tiefer Schatten · feucht-kühl</div>
+        <div class="sc-tags"><span>Tiefschatten</span><span>feucht</span></div>
+        <div class="sc-hidden" data-licht="Schatten (unter 3 h)" data-boden="Normal / humos" data-standortbeschr="Schattige Rabatte oder Waldgartencharakter (Gehölz G2-G3), tiefer Schatten, feucht-kühler Boden, humusreich, Waldbodencharakter mit Laubeintrag"></div>
+      </div>
+    </div>
+    <div id="err-2" class="error-msg" style="display:none">Bitte einen Standort auswählen.</div>
+    <div class="btn-row">
+      <button class="btn-back" onclick="goStep(1)">← Zurück</button>
+      <button class="btn-next" id="btn-next-2" onclick="goStep(3)" disabled>Weiter →</button>
+    </div>
+  </div>
+
+  <!-- Step 3: Boden (optional, Verfeinerung) -->
+  <div class="step" id="step-3">
+    <h2>🪨 Bodenart verfeinern <span class="optional-tag">(optional)</span></h2>
+    <p class="hint">Auf Basis deines Standorts haben wir einen Boden vorausgewählt — du kannst ihn hier anpassen.</p>
+    <div class="option-grid">
+      <div class="option-card" onclick="selectOption('boden', 'Sandig / durchlässig', this)">
+        <div class="oc-icon">🏜️</div>
+        <div class="oc-label">Sandig / trocken</div>
+        <div class="oc-sub">trocknet schnell, durchlässig</div>
+      </div>
+      <div class="option-card" onclick="selectOption('boden', 'Normal / humos', this)">
+        <div class="oc-icon">🌱</div>
+        <div class="oc-label">Normal / humos</div>
+        <div class="oc-sub">guter Gartenboden</div>
+      </div>
+      <div class="option-card" onclick="selectOption('boden', 'Lehmig / schwer', this)">
+        <div class="oc-icon">🟤</div>
+        <div class="oc-label">Lehmig / nass</div>
+        <div class="oc-sub">hält viel Wasser</div>
+      </div>
+      <div class="option-card" onclick="selectOption('boden', 'Normal / unbekannt', this)">
+        <div class="oc-icon">✓</div>
+        <div class="oc-label">Vorauswahl OK</div>
+        <div class="oc-sub">passt zum Standort</div>
+      </div>
+    </div>
+    <div id="err-3" class="error-msg" style="display:none">Bitte eine Option auswählen.</div>
+    <div class="btn-row">
+      <button class="btn-back" onclick="goStep(2)">← Zurück</button>
+      <button class="btn-next" id="btn-next-3" onclick="goStep(4)" disabled>Weiter →</button>
+    </div>
+  </div>
+
+  <!-- Step 4: Stil -->
+  <div class="step" id="step-4">
+    <h2>🎨 Welcher Gartenstil?</h2>
+    <p class="hint">Der Stil bestimmt die Auswahl und Kombination der Pflanzen.</p>
+    <div class="option-grid">
+      <div class="option-card" onclick="selectOption('stil', 'Naturgarten / Wildgarten', this)">
+        <div class="oc-icon">🦋</div>
+        <div class="oc-label">Naturgarten</div>
+        <div class="oc-sub">ökologisch, naturnah</div>
+      </div>
+      <div class="option-card" onclick="selectOption('stil', 'Bauerngarten / Romantisch', this)">
+        <div class="oc-icon">🌹</div>
+        <div class="oc-label">Bauerngarten</div>
+        <div class="oc-sub">üppig, bunt, romantisch</div>
+      </div>
+      <div class="option-card" onclick="selectOption('stil', 'Modern / Minimalistisch', this)">
+        <div class="oc-icon">🏛️</div>
+        <div class="oc-label">Modern</div>
+        <div class="oc-sub">klar, strukturiert</div>
+      </div>
+      <div class="option-card" onclick="selectOption('stil', 'Cottage-Garten / Englisch', this)">
+        <div class="oc-icon">🏡</div>
+        <div class="oc-label">Cottage</div>
+        <div class="oc-sub">englisch, verspielt</div>
+      </div>
+    </div>
+    <div id="err-4" class="error-msg" style="display:none">Bitte eine Option auswählen.</div>
+    <div class="btn-row">
+      <button class="btn-back" onclick="goStep(3)">← Zurück</button>
+      <button class="btn-next" id="btn-next-4" onclick="goStep(5)" disabled>Weiter →</button>
+    </div>
+  </div>
+
+  <!-- Step 5: Farbe + Saison -->
+  <div class="step" id="step-5">
+    <h2>🌺 Farbe & Blühsaison</h2>
+    <p class="hint">Diese Angaben sind optional — aber helfen der KI bei der Auswahl.</p>
+    <div class="form-group">
+      <label class="field-label">Farbwunsch <span class="optional-tag">(optional)</span></label>
+      <select id="farbe">
+        <option value="">Keine Präferenz</option>
+        <option value="Weiß / Creme">Weiß / Creme</option>
+        <option value="Rosa / Pink">Rosa / Pink</option>
+        <option value="Blau / Violett">Blau / Violett</option>
+        <option value="Gelb / Orange">Gelb / Orange</option>
+        <option value="Rot / Weinrot">Rot / Weinrot</option>
+        <option value="Bunt gemischt">Bunt gemischt</option>
+        <option value="Pastell">Pastell</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="field-label">Wann soll es hauptsächlich blühen? <span class="optional-tag">(optional)</span></label>
+      <select id="saison">
+        <option value="">Ganzjährig / keine Präferenz</option>
+        <option value="Frühling (März–Mai)">Frühling (März–Mai)</option>
+        <option value="Frühsommer (Juni–Juli)">Frühsommer (Juni–Juli)</option>
+        <option value="Hochsommer (Juli–August)">Hochsommer (Juli–August)</option>
+        <option value="Spätsommer / Herbst">Spätsommer / Herbst</option>
+        <option value="Langer Blühzeitraum">Langer Blühzeitraum</option>
+      </select>
+    </div>
+    <div class="btn-row">
+      <button class="btn-back" onclick="goStep(4)">← Zurück</button>
+      <button class="btn-next" onclick="planErstellen()">🌿 Plan erstellen</button>
+    </div>
+  </div>
+</div>
+
+<!-- LOADING -->
+<div id="view-loading">
+  <div class="spinner"></div>
+  <h2>Dein Plan wird erstellt …</h2>
+  <p>Die KI analysiert deinen Garten und wählt die besten Stauden aus.</p>
+  <div class="loading-steps" id="loading-steps">
+    <div class="loading-step" id="ls-1"><span class="ls-icon">🔍</span> Standort analysieren</div>
+    <div class="loading-step" id="ls-2"><span class="ls-icon">🌿</span> Passende Stauden ermitteln</div>
+    <div class="loading-step" id="ls-3"><span class="ls-icon">📊</span> Mengen berechnen</div>
+    <div class="loading-step" id="ls-4"><span class="ls-icon">📅</span> Pflanzkalender erstellen</div>
+  </div>
+</div>
+
+<!-- ERGEBNIS -->
+<div id="view-ergebnis">
+  <div class="ergebnis-header">
+    <h2>🌸 Dein persönlicher Bepflanzungsplan</h2>
+    <p id="ergebnis-subtitle">Maßgeschneidert für deinen Garten</p>
+    <div class="ergebnis-meta" id="ergebnis-meta"></div>
+  </div>
+
+  <!-- Tab Navigation -->
+  <div class="result-tabs">
+    <button class="rtab active" onclick="switchTab('pflanzen')">🌺 Pflanzenplan</button>
+    <button class="rtab" onclick="switchTab('stueckliste')">📋 Stückliste</button>
+    <button class="rtab" onclick="switchTab('visualisierung')">🗺️ Bepflanzungsplan</button>
+  </div>
+
+  <!-- TAB 1: Pflanzenplan -->
+  <div class="tab-panel active" id="tab-pflanzen">
+    <div style="max-width:900px;margin:0 auto;padding:0 20px 60px">
+      <div class="section-title">🌺 Empfohlene Pflanzen</div>
+      <div class="pflanzen-grid" id="pflanzen-grid"></div>
+      <div class="section-title">📅 Jahreskalender</div>
+      <div class="kalender-grid" id="kalender-grid"></div>
+      <div class="section-title">💡 Tipps</div>
+      <ul class="tipps-list" id="tipps-list"></ul>
+      <div class="anfrage-cta">
+        <h3>🚚 Alle Pflanzen direkt bestellen</h3>
+        <p>Wir liefern die Pflanzen aus deinem Plan als fertiges Paket — frisch und fachgerecht verpackt direkt zu dir nach Hause.</p>
+        <button class="btn-anfrage" onclick="openModal()">Kostenlose Anfrage stellen</button>
+      </div>
+      <button class="btn-neustart" onclick="neustart()">↩ Neuen Plan erstellen</button>
+    </div>
+  </div>
+
+  <!-- TAB 2: Stückliste -->
+  <div class="tab-panel" id="tab-stueckliste">
+    <div class="sl-wrap">
+      <div class="sl-toolbar">
+        <h3>📋 Stückliste</h3>
+        <button class="btn-print" onclick="window.print()">🖨️ Drucken / PDF</button>
+      </div>
+      <table class="sl-table" id="stueckliste-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Pflanze</th>
+            <th>Botanisch</th>
+            <th>Anzahl</th>
+            <th>Einzelpreis</th>
+            <th>Gesamt</th>
+            <th>Blühzeit</th>
+            <th>Standort</th>
+          </tr>
+        </thead>
+        <tbody id="stueckliste-body"></tbody>
+        <tfoot>
+          <tr class="sl-total-row">
+            <td colspan="3"><strong>Gesamt</strong></td>
+            <td id="sl-total-stueck" style="font-weight:700"></td>
+            <td>—</td>
+            <td id="sl-total-preis" style="font-weight:700;color:var(--earth)"></td>
+            <td colspan="2"></td>
+          </tr>
+        </tfoot>
+      </table>
+      <div style="margin-top:24px">
+        <div class="anfrage-cta">
+          <h3>🚚 Komplettpaket bestellen</h3>
+          <p>Wir liefern alle Pflanzen auf deiner Stückliste als fertiges Paket — sortiert, beschriftet, versandfertig.</p>
+          <button class="btn-anfrage" onclick="openModal()">Jetzt anfragen</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 3: Bepflanzungsplan Visualisierung -->
+  <div class="tab-panel" id="tab-visualisierung">
+    <div class="viz-wrap">
+
+      <!-- Saison-Toggle -->
+      <div class="viz-toolbar">
+        <span>Saison anzeigen:</span>
+        <button class="season-btn active" onclick="setSaison('alle')">🌿 Alle</button>
+        <button class="season-btn" onclick="setSaison('Frühling')">🌱 Frühling</button>
+        <button class="season-btn" onclick="setSaison('Sommer')">☀️ Sommer</button>
+        <button class="season-btn" onclick="setSaison('Herbst')">🍂 Herbst</button>
+        <button class="season-btn" onclick="setSaison('Winter')">❄️ Winter</button>
+      </div>
+
+      <!-- Grafischer Plan -->
+      <div class="viz-card">
+        <div class="viz-card-title">
+          <span>🎨 Grafischer Bepflanzungsplan — Draufsicht</span>
+          <button class="btn-print" style="font-size:.78rem;padding:6px 14px" onclick="downloadPlan()">⬇️ SVG herunterladen</button>
+        </div>
+        <div class="viz-card-body">
+          <div class="viz-svg-wrap" id="grafisch-container"></div>
+          <div class="viz-legend" id="grafisch-legend"></div>
+        </div>
+      </div>
+
+      <!-- Schematischer Plan -->
+      <div class="viz-card">
+        <div class="viz-card-title">
+          <span>📐 Schematischer Plan — Maßstab & Abstände</span>
+        </div>
+        <div class="viz-card-body">
+          <div class="schematisch-wrap" id="schematisch-container"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<!-- MODAL: Anfrage -->
+<div class="modal-overlay" id="modal-overlay" onclick="closeModalOutside(event)">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal()">✕</button>
+    <div id="modal-content">
+      <h3>Anfrage stellen</h3>
+      <p class="modal-sub">Wir senden dir ein Angebot für deine Pflanzen und liefern das komplette Paket.</p>
+      <div class="form-group">
+        <label>Vor- und Nachname *</label>
+        <input type="text" id="anfrage-name" placeholder="Max Mustermann">
+      </div>
+      <div class="form-group">
+        <label>E-Mail-Adresse *</label>
+        <input type="email" id="anfrage-email" placeholder="max@beispiel.de">
+      </div>
+      <div class="form-group">
+        <label>Postleitzahl *</label>
+        <input type="text" id="anfrage-plz" placeholder="80331" maxlength="5">
+      </div>
+      <div class="form-group">
+        <label>Telefon <span class="optional-tag">(optional)</span></label>
+        <input type="text" id="anfrage-telefon" placeholder="0151 12345678">
+      </div>
+      <div class="form-group">
+        <label>Anmerkungen <span class="optional-tag">(optional)</span></label>
+        <textarea id="anfrage-anmerkungen" rows="3" placeholder="z.B. bevorzugter Liefertermin, Besonderheiten …"></textarea>
+      </div>
+      <div id="modal-error" class="error-msg" style="display:none"></div>
+      <button class="btn-primary" onclick="submitAnfrage()">Anfrage senden 📩</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ── State ──────────────────────────────────────────────────────────────────
+  let formData = {
+    gartenflaeche: null, licht: '', boden: '', stil: '', farbe: '', saison: '',
+    modus: 'einfach',
+    lieblingspflanzen: [], budget: null, nutzung: [], pflegezeit: ''
+  };
+  let currentPlan = null;
+  let currentStep = 1;
+
+  // ── Modus-Auswahl ──────────────────────────────────────────────────────────
+  function showModewahl() {
+    hide('view-hero'); hide('view-fragebogen'); hide('view-professionell');
+    document.getElementById('view-modewahl').style.display = 'flex';
+  }
+
+  function startModus(modus) {
+    formData.modus = modus;
+    document.getElementById('view-modewahl').style.display = 'none';
+    if (modus === 'einfach') {
+      show('view-fragebogen');
+      updateProgress(1);
+    } else {
+      show('view-professionell');
+      proUpdateProgress(1);
+      loadPflanzenDB();
+      initCanvas();
+    }
+  }
+
+  function startFragebogen() { showModewahl(); }
+
+  // ── Standort-Auswahl ──────────────────────────────────────────────────────
+  function selectStandort(el, modus) {
+    const grid = el.closest('.standort-grid');
+    grid.querySelectorAll('.standort-card').forEach(c => c.classList.remove('selected'));
+    el.classList.add('selected');
+    const hidden = el.querySelector('.sc-hidden');
+    const licht = hidden.dataset.licht;
+    const boden = hidden.dataset.boden;
+    const beschr = hidden.dataset.standortbeschr;
+    formData.licht = licht;
+    formData.boden = boden;
+    formData.standort_beschreibung = beschr;
+    // Auto-select matching boden option in Step 3
+    document.querySelectorAll('#step-3 .option-card, #pro-step-3 .option-card').forEach(c => {
+      const matches = c.getAttribute('onclick')?.includes(boden);
+      c.classList.toggle('selected', !!matches);
+    });
+    if (modus === 'einfach') {
+      document.getElementById('btn-next-2').disabled = false;
+      document.getElementById('btn-next-3').disabled = false;
+    } else {
+      document.getElementById('pro-btn-next-2').disabled = false;
+      document.getElementById('pro-btn-next-3').disabled = false;
+    }
+  }
+
+  // ── Einfach-Form (unverändert) ─────────────────────────────────────────────
+  function show(id) { document.getElementById(id).style.display = id === 'view-loading' ? 'flex' : 'block'; }
+  function hide(id) { document.getElementById(id).style.display = 'none'; }
+
+  function updateProgress(step) {
+    currentStep = step;
+    document.getElementById('progress-inner').style.width = (step/5*100) + '%';
+    document.getElementById('step-counter').textContent = `Schritt ${step} von 5`;
+  }
+
+  function goStep(n) {
+    document.querySelectorAll('#view-fragebogen .step').forEach(s => s.classList.remove('active'));
+    document.getElementById('step-' + n).classList.add('active');
+    updateProgress(n);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function validateStep1() {
+    const v = parseFloat(document.getElementById('gartenflaeche').value);
+    const valid = v > 0;
+    document.getElementById('btn-next-1').disabled = !valid;
+    document.getElementById('err-1').style.display = valid ? 'none' : 'block';
+    if (valid) formData.gartenflaeche = v;
+  }
+
+  function selectOption(field, value, el) {
+    el.closest('.option-grid').querySelectorAll('.option-card').forEach(c => c.classList.remove('selected'));
+    el.classList.add('selected');
+    formData[field] = value;
+    const stepNum = { licht: 2, boden: 3, stil: 4 }[field];
+    if (stepNum) {
+      document.getElementById('btn-next-' + stepNum).disabled = false;
+      document.getElementById('err-' + stepNum).style.display = 'none';
+    }
+  }
+
+  // ── Professionell-Form ─────────────────────────────────────────────────────
+  function proUpdateProgress(step) {
+    document.getElementById('pro-progress-inner').style.width = (step/6*100) + '%';
+    document.getElementById('pro-step-counter').textContent = `Schritt ${step} von 6`;
+  }
+
+  function proGoStep(n) {
+    document.querySelectorAll('#view-professionell .step').forEach(s => s.classList.remove('active'));
+    document.getElementById('pro-step-' + n).classList.add('active');
+    proUpdateProgress(n);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function validateProStep1() {
+    const v = parseFloat(document.getElementById('pro-gartenflaeche').value);
+    document.getElementById('pro-btn-next-1').disabled = !(v > 0);
+    if (v > 0) formData.gartenflaeche = v;
+  }
+
+  function selectProOption(field, value, el) {
+    el.closest('.option-grid').querySelectorAll('.option-card').forEach(c => c.classList.remove('selected'));
+    el.classList.add('selected');
+    formData[field] = value;
+    const map = { licht: 'pro-btn-next-2', boden: 'pro-btn-next-3', stil: 'pro-btn-next-4' };
+    if (map[field]) document.getElementById(map[field]).disabled = false;
+  }
+
+  function toggleNutzung(val, el) {
+    el.classList.toggle('selected');
+    if (formData.nutzung.includes(val)) formData.nutzung = formData.nutzung.filter(v => v !== val);
+    else formData.nutzung.push(val);
+  }
+
+  function selectPflegezeit(val, el) {
+    document.querySelectorAll('.pz-card').forEach(c => c.classList.remove('selected'));
+    el.classList.add('selected');
+    formData.pflegezeit = val;
+  }
+
+  function updateBudget(val) {
+    const v = parseInt(val);
+    formData.budget = v > 0 ? v : null;
+    document.getElementById('budget-display').textContent = v > 0 ? `bis ${v} €` : 'Kein Limit';
+  }
+
+  async function proPlanErstellen() {
+    formData.farbe = document.getElementById('pro-farbe').value;
+    formData.saison = document.getElementById('pro-saison').value;
+    if (!formData.gartenflaeche) { alert('Bitte Fläche eingeben.'); return; }
+    if (!formData.licht) { proGoStep(2); return; }
+    if (!formData.boden) { proGoStep(3); return; }
+    if (!formData.stil) { proGoStep(4); return; }
+    await planErstellen();
+  }
+
+  // ── Canvas Zeichentool ─────────────────────────────────────────────────────
+  const CELL = 28;
+  let canvasScale = 1;
+  let polygons = [];
+  let currentPoints = [];
+  let lastTap = 0;
+  let drawNetto = 0;
+
+  function initCanvas() {
+    const canvas = document.getElementById('draw-canvas');
+    if (!canvas) return;
+    canvas.addEventListener('click', onCanvasClick);
+    canvas.addEventListener('dblclick', onCanvasDblClick);
+    canvas.addEventListener('touchstart', onCanvasTouch, { passive: false });
+    renderCanvas();
+  }
+
+  function setFlaecheMode(mode) {
+    document.getElementById('ftog-manuell').classList.toggle('active', mode === 'manuell');
+    document.getElementById('ftog-zeichnen').classList.toggle('active', mode === 'zeichnen');
+    document.getElementById('flaeche-manuell').style.display = mode === 'manuell' ? 'block' : 'none';
+    document.getElementById('flaeche-zeichnen').classList.toggle('active', mode === 'zeichnen');
+    formData.flaeche_form = mode;
+    if (mode === 'zeichnen') { initCanvas(); updateCanvasArea(); }
+  }
+
+  function onCanvasClick(e) {
+    if (e.detail >= 2) return;
+    const rect = e.target.getBoundingClientRect();
+    const x = e.clientX - rect.left, y = e.clientY - rect.top;
+    if (currentPoints.length >= 2) {
+      const first = currentPoints[0];
+      if (Math.hypot(x - first.x, y - first.y) < 14) { closePolygon(); return; }
+    }
+    currentPoints.push({ x, y });
+    renderCanvas();
+  }
+
+  function onCanvasDblClick(e) {
+    if (currentPoints.length >= 3) closePolygon();
+    else { currentPoints = []; renderCanvas(); }
+  }
+
+  function onCanvasTouch(e) {
+    e.preventDefault();
+    const now = Date.now();
+    const rect = e.target.getBoundingClientRect();
+    const t = e.touches[0];
+    const x = t.clientX - rect.left, y = t.clientY - rect.top;
+    if (now - lastTap < 350 && currentPoints.length >= 3) { closePolygon(); lastTap = 0; return; }
+    lastTap = now;
+    currentPoints.push({ x, y });
+    renderCanvas();
+  }
+
+  function closePolygon() {
+    if (currentPoints.length < 3) { currentPoints = []; renderCanvas(); return; }
+    const area = shoelaceM2(currentPoints);
+    polygons.push({ points: [...currentPoints], area });
+    currentPoints = [];
+    updateCanvasArea();
+    renderCanvas();
+  }
+
+  function shoelaceM2(pts) {
+    let sum = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const j = (i + 1) % pts.length;
+      sum += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
+    }
+    return Math.abs(sum) / 2 / (CELL * CELL) * (canvasScale * canvasScale);
+  }
+
+  function updateCanvasArea() {
+    drawNetto = polygons.reduce((s, p) => s + p.area, 0);
+    formData.gartenflaeche = drawNetto > 0 ? Math.round(drawNetto * 10) / 10 : null;
+    document.getElementById('pro-btn-next-1').disabled = !(drawNetto > 0);
+    document.getElementById('canvas-area-result').textContent =
+      drawNetto > 0 ? `Gesamtfläche: ${drawNetto.toFixed(1)} m²` : '';
+    const list = document.getElementById('poly-list');
+    list.innerHTML = polygons.map((p, i) =>
+      `<div class="poly-chip">Fläche ${i+1}: ${p.area.toFixed(1)} m²
+       <button onclick="removePoly(${i})">✕</button></div>`
+    ).join('');
+  }
+
+  function removePoly(idx) {
+    polygons.splice(idx, 1);
+    updateCanvasArea();
+    renderCanvas();
+  }
+
+  function undoPoint() {
+    if (currentPoints.length > 0) { currentPoints.pop(); renderCanvas(); }
+    else if (polygons.length > 0) { polygons.pop(); updateCanvasArea(); renderCanvas(); }
+  }
+
+  function resetDraw() {
+    polygons = []; currentPoints = [];
+    updateCanvasArea();
+    renderCanvas();
+  }
+
+  function updateScale() {
+    canvasScale = parseFloat(document.getElementById('canvas-scale').value);
+    polygons = [];  currentPoints = [];
+    updateCanvasArea();
+    renderCanvas();
+  }
+
+  const POLY_COLORS = ['rgba(82,183,136,.25)', 'rgba(59,130,246,.2)', 'rgba(234,179,8,.2)', 'rgba(239,68,68,.2)'];
+
+  function renderCanvas() {
+    const canvas = document.getElementById('draw-canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    ctx.clearRect(0, 0, W, H);
+
+    // Grid
+    ctx.strokeStyle = '#e5e7eb'; ctx.lineWidth = 0.7;
+    for (let x = 0; x <= W; x += CELL) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+    for (let y = 0; y <= H; y += CELL) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+    // Scale labels
+    ctx.fillStyle = '#bbb'; ctx.font = '9px system-ui'; ctx.textAlign = 'center';
+    for (let i = 1; i * CELL < W; i++) {
+      ctx.fillText((i * canvasScale) + 'm', i * CELL, H - 3);
+    }
+
+    // Closed polygons
+    polygons.forEach((p, i) => {
+      if (p.points.length < 2) return;
+      ctx.beginPath(); ctx.moveTo(p.points[0].x, p.points[0].y);
+      p.points.forEach(pt => ctx.lineTo(pt.x, pt.y));
+      ctx.closePath();
+      ctx.fillStyle = POLY_COLORS[i % POLY_COLORS.length]; ctx.fill();
+      ctx.strokeStyle = '#2d6a4f'; ctx.lineWidth = 2; ctx.stroke();
+      // Area label center
+      const cx = p.points.reduce((s, pt) => s + pt.x, 0) / p.points.length;
+      const cy = p.points.reduce((s, pt) => s + pt.y, 0) / p.points.length;
+      ctx.fillStyle = '#1b4332'; ctx.font = 'bold 12px system-ui'; ctx.textAlign = 'center';
+      ctx.fillText(p.area.toFixed(1) + ' m²', cx, cy);
+    });
+
+    // Current drawing
+    if (currentPoints.length > 0) {
+      ctx.beginPath(); ctx.moveTo(currentPoints[0].x, currentPoints[0].y);
+      currentPoints.forEach(pt => ctx.lineTo(pt.x, pt.y));
+      ctx.strokeStyle = '#52b788'; ctx.lineWidth = 2; ctx.setLineDash([5, 3]); ctx.stroke();
+      ctx.setLineDash([]);
+      // Points
+      currentPoints.forEach((pt, i) => {
+        ctx.beginPath(); ctx.arc(pt.x, pt.y, i === 0 ? 7 : 4, 0, Math.PI * 2);
+        ctx.fillStyle = i === 0 ? '#2d6a4f' : '#52b788'; ctx.fill();
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+      });
+    }
+  }
+
+  // ── Pflanzensuche ─────────────────────────────────────────────────────────
+  let pflanzenDB = [];
+  let wishlist = [];
+
+  async function loadPflanzenDB() {
+    if (pflanzenDB.length > 0) return;
+    try {
+      const res = await fetch('/api/pflanzen');
+      pflanzenDB = await res.json();
+    } catch {}
+  }
+
+  function searchPflanzen(q) {
+    const container = document.getElementById('pflanzsuche-results');
+    if (!q.trim()) { container.innerHTML = ''; return; }
+    const matches = pflanzenDB
+      .filter(p =>
+        p.name_deutsch.toLowerCase().includes(q.toLowerCase()) ||
+        p.name_botanisch.toLowerCase().includes(q.toLowerCase()) ||
+        (p.farbe || '').toLowerCase().includes(q.toLowerCase())
+      )
+      .slice(0, 8);
+    if (matches.length === 0) { container.innerHTML = '<p style="color:#aaa;font-size:.85rem;padding:8px">Keine Treffer</p>'; return; }
+    const alreadyAdded = new Set(wishlist.map(w => w.name_botanisch));
+    container.innerHTML = matches.map(p => {
+      const added = alreadyAdded.has(p.name_botanisch);
+      return `<div class="psr-card ${added ? 'added' : ''}" onclick="${added ? '' : `addToWishlist('${p.name_deutsch.replace(/'/g,"\\'")}','${p.name_botanisch.replace(/'/g,"\\'")}',this)`}">
+        <div class="psr-name">${p.name_deutsch}</div>
+        <div class="psr-bot">${p.name_botanisch}</div>
+        <div class="psr-tags">
+          ${p.licht ? `<span class="psr-tag">${p.licht.split('|')[0]}</span>` : ''}
+          ${p.farbe ? `<span class="psr-tag">${p.farbe.split('|')[0]}</span>` : ''}
+          ${p.bluehzeit ? `<span class="psr-tag">${p.bluehzeit}</span>` : ''}
+        </div>
+        ${added ? '<div style="color:var(--green-mid);font-size:.75rem;margin-top:4px;font-weight:600">✓ Bereits gewählt</div>' : ''}
+      </div>`;
+    }).join('');
+  }
+
+  function addToWishlist(name_deutsch, name_botanisch, el) {
+    if (wishlist.find(w => w.name_botanisch === name_botanisch)) return;
+    wishlist.push({ name_deutsch, name_botanisch });
+    formData.lieblingspflanzen = wishlist;
+    el.classList.add('added');
+    renderWishlist();
+  }
+
+  function removeFromWishlist(name_botanisch) {
+    wishlist = wishlist.filter(w => w.name_botanisch !== name_botanisch);
+    formData.lieblingspflanzen = wishlist;
+    renderWishlist();
+    // refresh search results
+    const q = document.getElementById('pflanz-search').value;
+    if (q) searchPflanzen(q);
+  }
+
+  function renderWishlist() {
+    const chips = document.getElementById('wishlist-chips');
+    const label = document.getElementById('wishlist-label');
+    label.style.display = wishlist.length > 0 ? 'block' : 'none';
+    chips.innerHTML = wishlist.map(w =>
+      `<div class="wl-chip">${w.name_deutsch}
+       <button onclick="removeFromWishlist('${w.name_botanisch.replace(/'/g,"\\'")}')">✕</button>
+       </div>`
+    ).join('');
+  }
+
+  function clearPflanzSearch() {
+    document.getElementById('pflanz-search').value = '';
+    document.getElementById('pflanzsuche-results').innerHTML = '';
+  }
+
+  function show(id) { document.getElementById(id).style.display = id === 'view-loading' ? 'flex' : 'block'; }
+  function hide(id) { document.getElementById(id).style.display = 'none'; }
+
+  function updateProgress(step) {
+    currentStep = step;
+    const pct = (step / 5) * 100;
+    document.getElementById('progress-inner').style.width = pct + '%';
+    document.getElementById('step-counter').textContent = `Schritt ${step} von 5`;
+  }
+
+  function goStep(n) {
+    document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+    document.getElementById('step-' + n).classList.add('active');
+    updateProgress(n);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function validateStep1() {
+    const v = parseFloat(document.getElementById('gartenflaeche').value);
+    const valid = v > 0;
+    document.getElementById('btn-next-1').disabled = !valid;
+    document.getElementById('err-1').style.display = valid ? 'none' : 'block';
+    if (valid) formData.gartenflaeche = v;
+  }
+
+  function selectOption(field, value, el) {
+    const parent = el.closest('.option-grid');
+    parent.querySelectorAll('.option-card').forEach(c => c.classList.remove('selected'));
+    el.classList.add('selected');
+    formData[field] = value;
+    const stepNum = { licht: 2, boden: 3, stil: 4 }[field];
+    if (stepNum) {
+      document.getElementById('btn-next-' + stepNum).disabled = false;
+      document.getElementById('err-' + stepNum).style.display = 'none';
+    }
+  }
+
+  async function planErstellen() {
+    if (formData.modus === 'einfach') {
+      formData.gartenflaeche = parseFloat(document.getElementById('gartenflaeche').value);
+      formData.farbe = document.getElementById('farbe').value;
+      formData.saison = document.getElementById('saison').value;
+    }
+
+    hide('view-fragebogen');
+    hide('view-professionell');
+    show('view-loading');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    animateLoadingSteps();
+
+    try {
+      const payload = {
+        gartenflaeche: formData.gartenflaeche,
+        licht: formData.licht, boden: formData.boden,
+        standort_beschreibung: formData.standort_beschreibung || null,
+        stil: formData.stil, farbe: formData.farbe, saison: formData.saison,
+        lieblingspflanzen: formData.lieblingspflanzen,
+        budget: formData.budget,
+        nutzung: formData.nutzung,
+        pflegezeit: formData.pflegezeit
+      };
+      const res = await fetch('/api/plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Unbekannter Fehler');
+      currentPlan = data.plan;
+      renderErgebnis(data.plan);
+    } catch (err) {
+      hide('view-loading');
+      if (formData.modus === 'professionell') { show('view-professionell'); proGoStep(6); }
+      else { show('view-fragebogen'); goStep(5); }
+      alert('Fehler: ' + err.message);
+    }
+  }
+
+  function animateLoadingSteps() {
+    const steps = ['ls-1', 'ls-2', 'ls-3', 'ls-4'];
+    steps.forEach((id, i) => {
+      setTimeout(() => {
+        document.getElementById(id).classList.add('done');
+      }, 600 + i * 800);
+    });
+  }
+
+  // ── Farb-Mapping ──────────────────────────────────────────────────────────────
+  const BLOOM_COLORS = {
+    'Rosa': '#f472b6', 'Pink': '#f472b6',
+    'Purpur': '#a855f7', 'Lila': '#a855f7', 'Violett': '#818cf8',
+    'Blau': '#3b82f6',
+    'Weiß': '#e2e8f0', 'Weiss': '#e2e8f0', 'Creme': '#fef3c7', 'Weiß / Creme': '#fef3c7',
+    'Gelb': '#facc15', 'Orange': '#fb923c', 'Gelb / Orange': '#fbbf24',
+    'Rot': '#ef4444', 'Weinrot': '#b91c1c', 'Rot / Weinrot': '#dc2626',
+    'Grün': '#4ade80', 'Gruen': '#4ade80',
+  };
+  function bloomColor(farbe) {
+    if (!farbe) return '#86efac';
+    const k = (farbe.split(/[|,]/)[0] || '').trim();
+    return BLOOM_COLORS[k] || '#86efac';
+  }
+  function hexLighten(hex, amt) {
+    const n = parseInt(hex.replace('#',''), 16);
+    return '#' + [n>>16, (n>>8)&0xff, n&0xff]
+      .map(v => Math.min(255, v + amt).toString(16).padStart(2,'0')).join('');
+  }
+  function hexDarken(hex, amt) { return hexLighten(hex, -amt); }
+
+  // ── Saison-Matching ────────────────────────────────────────────────────────
+  let currentSaison = 'alle';
+  function plantInSaison(bluehzeit, saison) {
+    if (saison === 'alle' || !bluehzeit) return true;
+    const s = bluehzeit.toLowerCase();
+    if (saison === 'Frühling') return /jan|feb|mär|apr|mai|mar|apr|may|jan|frü/.test(s);
+    if (saison === 'Sommer')   return /jun|jul|aug|som/.test(s);
+    if (saison === 'Herbst')   return /sep|okt|nov|aug|her/.test(s);
+    if (saison === 'Winter')   return /dez|jan|feb|win/.test(s);
+    return true;
+  }
+
+  // ── Placement-Algorithmus ─────────────────────────────────────────────────
+  function calcPlacements(pflanzen, bedW, bedH) {
+    const all = [];
+    pflanzen.forEach((p, pi) => {
+      const n = p.stueckzahl || 1;
+      const h = p.hoehe_cm || 50;
+      // Tall plants to back (small y = top of SVG = back of bed)
+      const yZone = 1 - Math.min(0.85, (h / 160) * 0.7 + 0.15);
+      for (let i = 0; i < n; i++) {
+        const seed = pi * 37 + i * 19;
+        const xRand = (Math.sin(seed * 127.1 + 0.3) * 0.5 + 0.5);
+        const yRand = (Math.sin(seed * 311.7 + 1.1) * 0.5 + 0.5) * 0.28 - 0.14;
+        const xBase = (pi / pflanzen.length) + (i + 0.5) / (pflanzen.length * n);
+        const x = (xBase + (xRand - 0.5) * 0.12) * bedW;
+        const y = (yZone + yRand) * bedH;
+        all.push({
+          x: Math.max(0.06 * bedW, Math.min(0.94 * bedW, x)),
+          y: Math.max(0.06 * bedH, Math.min(0.94 * bedH, y)),
+          pflanze: p, pi
+        });
+      }
+    });
+    return all;
+  }
+
+  // ── Canvas-Polygone → SVG skalieren ──────────────────────────────────────
+  function scaledPolygonsForSVG(bedW, bedH, offsetX, offsetY) {
+    if (!polygons.length || formData.flaeche_form !== 'zeichnen') return null;
+    const allPts = polygons.flatMap(p => p.points);
+    const minX = Math.min(...allPts.map(p => p.x));
+    const maxX = Math.max(...allPts.map(p => p.x));
+    const minY = Math.min(...allPts.map(p => p.y));
+    const maxY = Math.max(...allPts.map(p => p.y));
+    const rangeX = maxX - minX || 1, rangeY = maxY - minY || 1;
+    const pad = 0.06;
+    const sx = bedW * (1 - 2*pad) / rangeX;
+    const sy = bedH * (1 - 2*pad) / rangeY;
+    return polygons.map(poly => ({
+      svgPoints: poly.points.map(pt => [
+        offsetX + (pt.x - minX) * sx + bedW * pad,
+        offsetY + (pt.y - minY) * sy + bedH * pad
+      ]),
+      area: poly.area
+    }));
+  }
+
+  function polyPointsAttr(pts) {
+    return pts.map(([x,y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+  }
+
+  // ── Grafischer Plan (SVG) ──────────────────────────────────────────────────
+  function renderGrafisch(plan, saison) {
+    const container = document.getElementById('grafisch-container');
+    const containerW = container.clientWidth || 720;
+    const W = Math.min(containerW, 800);
+    const H = Math.round(W * 0.48);
+    const PAD = 16;
+    const bedW = W - PAD * 2;
+    const bedH = H - PAD * 2;
+    const gartW = Math.sqrt((formData.gartenflaeche || 15) * 3).toFixed(1);
+    const gartH = ((formData.gartenflaeche || 15) / gartW).toFixed(1);
+
+    const placements = calcPlacements(plan.pflanzen, bedW, bedH);
+
+    // Defs (gradients + filters)
+    const gradDefs = plan.pflanzen.map((p, pi) => {
+      const c = bloomColor(p.farbe);
+      return `<radialGradient id="pg${pi}" cx="35%" cy="35%" r="65%">
+        <stop offset="0%" stop-color="${hexLighten(c, 50)}"/>
+        <stop offset="60%" stop-color="${c}"/>
+        <stop offset="100%" stop-color="${hexDarken(c, 30)}"/>
+      </radialGradient>`;
+    }).join('');
+
+    // Soil background with texture
+    const soilDots = Array.from({length:120}, (_,i) => {
+      const sx = 20 + (i * 73.1) % (bedW - 30);
+      const sy = 10 + (i * 47.3) % (bedH - 20);
+      return `<circle cx="${PAD+sx}" cy="${PAD+sy}" r="1.2" fill="rgba(0,0,0,.12)"/>`;
+    }).join('');
+
+    // Grid lines (1m)
+    const meterPxX = bedW / parseFloat(gartW);
+    const meterPxY = bedH / parseFloat(gartH);
+    const gridLines = [];
+    for (let x = meterPxX; x < bedW; x += meterPxX)
+      gridLines.push(`<line x1="${PAD+x}" y1="${PAD}" x2="${PAD+x}" y2="${PAD+bedH}" stroke="rgba(255,255,255,.12)" stroke-width="1" stroke-dasharray="4,4"/>`);
+    for (let y = meterPxY; y < bedH; y += meterPxY)
+      gridLines.push(`<line x1="${PAD}" y1="${PAD+y}" x2="${PAD+bedW}" y2="${PAD+y}" stroke="rgba(255,255,255,.12)" stroke-width="1" stroke-dasharray="4,4"/>`);
+
+    // Plant circles (back-to-front: sort by y asc = draw back ones first)
+    const sorted = [...placements].sort((a, b) => a.y - b.y);
+    const circles = sorted.map(({ x, y, pflanze, pi }) => {
+      const r = Math.max(11, Math.min(26, (pflanze.hoehe_cm || 50) / 5.5));
+      const inSaison = plantInSaison(pflanze.bluehzeit, saison);
+      const opacity = inSaison ? '1' : '0.25';
+      const glowFilter = inSaison && saison !== 'alle'
+        ? `filter="url(#glow)"` : '';
+      const num = plan.pflanzen.findIndex(pp => pp.name_botanisch === pflanze.name_botanisch) + 1;
+      return `
+        <g opacity="${opacity}">
+          <circle cx="${PAD+x}" cy="${PAD+y}" r="${r+2}" fill="rgba(0,0,0,.2)"/>
+          <circle cx="${PAD+x}" cy="${PAD+y}" r="${r}" fill="url(#pg${pi})" stroke="rgba(255,255,255,.6)" stroke-width="1.5" ${glowFilter}/>
+          <text x="${PAD+x}" y="${PAD+y+4}" text-anchor="middle" font-size="${Math.max(8, r*0.55)}px" font-weight="800" fill="rgba(0,0,0,.6)" font-family="system-ui">${num}</text>
+        </g>`;
+    }).join('');
+
+    // Scale bar
+    const scaleBarW = Math.round(meterPxX);
+    const scaleY = PAD + bedH + 8;
+
+    // Use drawn polygon as bed shape if available
+    const drawnPolys = scaledPolygonsForSVG(bedW, bedH, PAD, PAD);
+    const hasDrawn = !!drawnPolys;
+
+    let bedShape, bedClipContent, bedOutline, bedLabel;
+    if (hasDrawn) {
+      bedShape = drawnPolys.map((p, i) =>
+        `<polygon points="${polyPointsAttr(p.svgPoints)}" fill="url(#soilGrad)"/>`
+      ).join('');
+      bedClipContent = drawnPolys.map(p =>
+        `<polygon points="${polyPointsAttr(p.svgPoints)}"/>`
+      ).join('');
+      bedOutline = drawnPolys.map(p =>
+        `<polygon points="${polyPointsAttr(p.svgPoints)}" fill="none" stroke="#a0714f" stroke-width="2.5" stroke-linejoin="round"/>`
+      ).join('');
+      bedLabel = `<text x="${W/2}" y="${scaleY+14}" text-anchor="middle" font-size="10" fill="#aaa" font-family="system-ui">Freihandfläche · ${(formData.gartenflaeche||0).toFixed(1)} m²</text>`;
+    } else {
+      bedShape = `<rect x="${PAD}" y="${PAD}" width="${bedW}" height="${bedH}" rx="8" fill="url(#soilGrad)"/>`;
+      bedClipContent = `<rect x="${PAD}" y="${PAD}" width="${bedW}" height="${bedH}" rx="8"/>`;
+      bedOutline = `<rect x="${PAD}" y="${PAD}" width="${bedW}" height="${bedH}" rx="8" fill="none" stroke="#a0714f" stroke-width="2.5"/>`;
+      bedLabel = `<text x="${W/2}" y="${scaleY+14}" text-anchor="middle" font-size="10" fill="#aaa" font-family="system-ui">Vorne (${gartW} m)</text>`;
+    }
+
+    const svg = `<svg width="${W}" height="${H + 24}" xmlns="http://www.w3.org/2000/svg" id="grafisch-svg" style="max-width:100%;border-radius:12px;display:block">
+      <defs>
+        ${gradDefs}
+        <filter id="glow"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        <linearGradient id="soilGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#7a5230"/>
+          <stop offset="100%" stop-color="#4e3019"/>
+        </linearGradient>
+        <clipPath id="bedClip">${bedClipContent}</clipPath>
+      </defs>
+      <!-- Beet Hintergrund -->
+      ${bedShape}
+      <g clip-path="url(#bedClip)">${soilDots}${gridLines.join('')}</g>
+      <!-- Beetrahmen -->
+      ${bedOutline}
+      <!-- Pflanzen (geclippt) -->
+      <g clip-path="url(#bedClip)">${circles}</g>
+      <!-- Beschriftung -->
+      ${!hasDrawn ? `<text x="${W/2}" y="${PAD - 4}" text-anchor="middle" font-size="10" fill="#888" font-family="system-ui">↑ Hinten (${gartW} m)</text>
+      <text x="8" y="${PAD + bedH/2}" text-anchor="middle" font-size="10" fill="#888" font-family="system-ui" transform="rotate(-90,8,${PAD+bedH/2})">${gartH} m</text>` : ''}
+      <!-- Maßstab -->
+      <rect x="${PAD+10}" y="${scaleY}" width="${scaleBarW}" height="5" rx="2" fill="#666"/>
+      <text x="${PAD+10}" y="${scaleY+14}" font-size="10" fill="#888" font-family="system-ui">1 m</text>
+      ${bedLabel}
+    </svg>`;
+
+    container.innerHTML = svg;
+
+    // Legende
+    const legend = document.getElementById('grafisch-legend');
+    legend.innerHTML = plan.pflanzen.map((p, i) => {
+      const active = plantInSaison(p.bluehzeit, saison);
+      return `<div class="vl-item" style="opacity:${active?1:.4}">
+        <span class="vl-num">${i+1}</span>
+        <span class="vl-dot" style="background:${bloomColor(p.farbe)}"></span>
+        <span>${p.name_deutsch}</span>
+        ${p.bluehzeit ? `<span style="color:#999;font-size:.72rem">${p.bluehzeit}</span>` : ''}
+      </div>`;
+    }).join('');
+  }
+
+  // ── Schematischer Plan (SVG) ───────────────────────────────────────────────
+  function renderSchematisch(plan) {
+    const container = document.getElementById('schematisch-container');
+    const W = Math.min(container.clientWidth || 700, 760);
+    const LEGEND_W = 180;
+    const SVG_W = W;
+    const H = 320;
+    const PAD_L = 44, PAD_T = 32, PAD_B = 40, PAD_R = LEGEND_W + 16;
+    const plotW = SVG_W - PAD_L - PAD_R;
+    const plotH = H - PAD_T - PAD_B;
+
+    const gartW = Math.sqrt((formData.gartenflaeche || 15) * 3);
+    const gartH = (formData.gartenflaeche || 15) / gartW;
+    const scaleX = plotW / gartW;
+    const scaleY = plotH / gartH;
+
+    // Grid
+    const grid = [];
+    for (let x = 0; x <= Math.ceil(gartW); x++) {
+      const px = PAD_L + x * scaleX;
+      grid.push(`<line x1="${px}" y1="${PAD_T}" x2="${px}" y2="${PAD_T+plotH}" stroke="#ddd" stroke-width="${x===0||x===Math.ceil(gartW)?'1.5':'0.7'}"/>`);
+      if (x < Math.ceil(gartW)) grid.push(`<text x="${PAD_L + (x+0.5)*scaleX}" y="${PAD_T+plotH+14}" text-anchor="middle" font-size="9" fill="#999">${x+0.5}m</text>`);
+    }
+    for (let y = 0; y <= Math.ceil(gartH); y++) {
+      const py = PAD_T + y * scaleY;
+      grid.push(`<line x1="${PAD_L}" y1="${py}" x2="${PAD_L+plotW}" y2="${py}" stroke="#ddd" stroke-width="${y===0||y===Math.ceil(gartH)?'1.5':'0.7'}"/>`);
+      if (y < Math.ceil(gartH)) grid.push(`<text x="${PAD_L-6}" y="${PAD_T + (y+0.5)*scaleY + 4}" text-anchor="end" font-size="9" fill="#999">${y+0.5}m</text>`);
+    }
+
+    const placements = calcPlacements(plan.pflanzen, plotW, plotH);
+    const circles = placements.map(({ x, y, pflanze, pi }) => {
+      const r = Math.max(8, Math.min(18, (pflanze.hoehe_cm || 50) / 6));
+      const num = plan.pflanzen.findIndex(pp => pp.name_botanisch === pflanze.name_botanisch) + 1;
+      const c = bloomColor(pflanze.farbe);
+      return `<g>
+        <circle cx="${PAD_L+x}" cy="${PAD_T+y}" r="${r}" fill="${c}" stroke="white" stroke-width="1.5" opacity=".9"/>
+        <text x="${PAD_L+x}" y="${PAD_T+y+4}" text-anchor="middle" font-size="${Math.max(7,r*.65)}px" font-weight="800" fill="rgba(0,0,0,.65)" font-family="system-ui">${num}</text>
+      </g>`;
+    }).join('');
+
+    // Legend
+    const legItems = plan.pflanzen.map((p, i) => {
+      const c = bloomColor(p.farbe);
+      const h = p.hoehe_cm || 50;
+      const r = Math.max(6, Math.min(12, h / 8));
+      return `<g transform="translate(0,${i * 26})">
+        <circle cx="12" cy="10" r="${r}" fill="${c}" stroke="white" stroke-width="1.5"/>
+        <text x="12" y="14" text-anchor="middle" font-size="8" font-weight="800" fill="rgba(0,0,0,.6)" font-family="system-ui">${i+1}</text>
+        <text x="26" y="14" font-size="9.5" fill="#333" font-family="system-ui">${p.name_deutsch}</text>
+      </g>`;
+    }).join('');
+
+    const drawnPolysS = scaledPolygonsForSVG(plotW, plotH, PAD_L, PAD_T);
+    const hasDrawnS = !!drawnPolysS;
+
+    let schemBed, schemClip, schemOutline, schemLabel;
+    if (hasDrawnS) {
+      schemBed = drawnPolysS.map(p =>
+        `<polygon points="${polyPointsAttr(p.svgPoints)}" fill="#f5ede0"/>`).join('');
+      schemClip = `<clipPath id="schemClip">${drawnPolysS.map(p =>
+        `<polygon points="${polyPointsAttr(p.svgPoints)}"/>`).join('')}</clipPath>`;
+      schemOutline = drawnPolysS.map(p =>
+        `<polygon points="${polyPointsAttr(p.svgPoints)}" fill="none" stroke="#a0714f" stroke-width="2" stroke-linejoin="round"/>`).join('');
+      schemLabel = `<text x="${PAD_L + plotW/2}" y="${H - 2}" text-anchor="middle" font-size="11" fill="#555" font-family="system-ui" font-weight="600">Freihandfläche · ${(formData.gartenflaeche||0).toFixed(1)} m²</text>`;
+    } else {
+      schemBed = `<rect x="${PAD_L}" y="${PAD_T}" width="${plotW}" height="${plotH}" fill="#f5ede0" rx="4"/>`;
+      schemClip = `<clipPath id="schemClip"><rect x="${PAD_L}" y="${PAD_T}" width="${plotW}" height="${plotH}" rx="4"/></clipPath>`;
+      schemOutline = `<rect x="${PAD_L}" y="${PAD_T}" width="${plotW}" height="${plotH}" fill="none" stroke="#a0714f" stroke-width="2" rx="4"/>`;
+      schemLabel = `<text x="${PAD_L + plotW/2}" y="${H - 2}" text-anchor="middle" font-size="11" fill="#555" font-family="system-ui" font-weight="600">${gartW.toFixed(1)} m Breite</text>`;
+    }
+
+    const svg = `<svg width="${SVG_W}" height="${H}" xmlns="http://www.w3.org/2000/svg" style="max-width:100%;display:block">
+      <defs>${schemClip}</defs>
+      ${schemBed}
+      <g clip-path="url(#schemClip)">${grid.join('')}</g>
+      ${schemOutline}
+      <g clip-path="url(#schemClip)">${circles}</g>
+      ${schemLabel}
+      ${!hasDrawnS ? `<text x="12" y="${PAD_T + plotH/2}" text-anchor="middle" font-size="11" fill="#555" font-family="system-ui" font-weight="600" transform="rotate(-90,12,${PAD_T+plotH/2})">${gartH.toFixed(1)} m</text>` : ''}
+      <text x="${PAD_L + plotW - 8}" y="${PAD_T + 16}" text-anchor="end" font-size="10" fill="#aaa" font-family="system-ui">N ↑</text>
+      <text x="${PAD_L + plotW + 14}" y="${PAD_T + 14}" font-size="10" font-weight="700" fill="#444" font-family="system-ui">Legende</text>
+      <g transform="translate(${PAD_L + plotW + 10},${PAD_T + 22})">${legItems}</g>
+    </svg>`;
+
+    container.innerHTML = svg;
+  }
+
+  // ── Stückliste ─────────────────────────────────────────────────────────────
+  function renderStueckliste(plan) {
+    const tbody = document.getElementById('stueckliste-body');
+    let totalStueck = 0, totalPreis = 0;
+    tbody.innerHTML = plan.pflanzen.map((p, i) => {
+      const gesamt = (p.preis_stueck_eur || 0) * (p.stueckzahl || 1);
+      totalStueck += p.stueckzahl || 1;
+      totalPreis += gesamt;
+      const c = bloomColor(p.farbe);
+      return `<tr>
+        <td><span class="sl-number">${i+1}</span></td>
+        <td style="font-weight:600">
+          <span class="sl-color-dot" style="background:${c}"></span>
+          ${p.name_deutsch}
+        </td>
+        <td style="font-style:italic;color:#888;font-size:.82rem">${p.name_botanisch}</td>
+        <td style="font-weight:700;font-size:1.05rem">${p.stueckzahl || 1}</td>
+        <td>${p.preis_stueck_eur ? p.preis_stueck_eur.toFixed(2) + ' €' : '—'}</td>
+        <td style="font-weight:700;color:var(--earth)">${gesamt.toFixed(2)} €</td>
+        <td style="font-size:.82rem;color:#666">${p.bluehzeit || '—'}</td>
+        <td style="font-size:.82rem;color:#666">${p.standort || '—'}</td>
+      </tr>`;
+    }).join('');
+    document.getElementById('sl-total-stueck').textContent = totalStueck + ' Stück';
+    document.getElementById('sl-total-preis').textContent = totalPreis.toFixed(2) + ' €';
+  }
+
+  // ── Tab & Saison-Steuerung ────────────────────────────────────────────────
+  function switchTab(name) {
+    document.querySelectorAll('.rtab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.querySelector(`.rtab[onclick*="${name}"]`).classList.add('active');
+    document.getElementById('tab-' + name).classList.add('active');
+    if (name === 'visualisierung' && currentPlan) {
+      setTimeout(() => { renderGrafisch(currentPlan, currentSaison); renderSchematisch(currentPlan); }, 50);
+    }
+  }
+
+  function setSaison(saison) {
+    currentSaison = saison;
+    document.querySelectorAll('.season-btn').forEach(b => b.classList.remove('active'));
+    event.target.classList.add('active');
+    if (currentPlan) renderGrafisch(currentPlan, saison);
+  }
+
+  function downloadPlan() {
+    const svg = document.getElementById('grafisch-svg');
+    if (!svg) return;
+    const blob = new Blob([svg.outerHTML], { type: 'image/svg+xml' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = 'bepflanzungsplan.svg'; a.click();
+  }
+
+  // ── renderErgebnis ────────────────────────────────────────────────────────
+  function renderErgebnis(plan) {
+    document.getElementById('ergebnis-subtitle').textContent =
+      `${plan.pflanzen.length} Pflanzenarten · ${formData.gartenflaeche} m² · ${formData.licht} · ${formData.stil}`;
+
+    const meta = document.getElementById('ergebnis-meta');
+    meta.innerHTML = `
+      <div class="em-item"><strong>${plan.pflanzen.length}</strong> Pflanzenarten</div>
+      <div class="em-item"><strong>${plan.pflanzen.reduce((s,p)=>s+p.stueckzahl,0)}</strong> Pflanzen gesamt</div>
+      <div class="em-item"><strong>${plan.gesamtkosten_geschaetzt}</strong> Gesamtkosten</div>
+    `;
+
+    // Pflanzenkarten (mit echten Fotos oder farbigem Top)
+    const grid = document.getElementById('pflanzen-grid');
+    grid.innerHTML = plan.pflanzen.map((p, i) => {
+      const c = bloomColor(p.farbe);
+      const stars = p.pflege_sterne || 1;
+      const topContent = p.bild_url
+        ? `<img src="${p.bild_url}" alt="${p.name_deutsch}" style="width:100%;height:100%;object-fit:cover;display:block" loading="lazy" onerror="this.parentElement.innerHTML='<div style=\\'font-size:2.2rem;display:flex;align-items:center;justify-content:center;height:100%\\'>${['🌸','🌺','🌼','🌻','🌹','💐','🌷','🌿','🍃','🌾'][i%10]}</div>'">`
+        : `<div style="font-size:2.2rem;display:flex;align-items:center;justify-content:center;height:100%">${['🌸','🌺','🌼','🌻','🌹','💐','🌷','🌿','🍃','🌾'][i%10]}</div>`;
+      return `<div class="pflanze-card">
+        <div class="pflanze-card-top" style="background:linear-gradient(135deg,${hexLighten(c,40)},${c});height:140px;overflow:hidden;position:relative">
+          ${topContent}
+        </div>
+        <div class="pflanze-card-body">
+          <div class="pflanze-name">${p.name_deutsch}</div>
+          <div class="pflanze-botanisch">${p.name_botanisch}</div>
+          <div class="pflanze-beschreibung">${p.beschreibung || ''}</div>
+          <div class="pflanze-tags">
+            <span class="tag">☀️ ${p.standort || ''}</span>
+            <span class="tag">🌸 ${p.bluehzeit || ''}</span>
+            ${p.farbe ? `<span class="tag" style="background:${hexLighten(c,50)};color:${hexDarken(c,40)}">${p.farbe}</span>` : ''}
+            <span class="tag tag-erde">↕ ${p.hoehe_cm} cm</span>
+            <span class="tag tag-stueck">× ${p.stueckzahl} Stück</span>
+          </div>
+          <div class="pflanze-preis">
+            <span>Pflege: <span class="pflege-sterne">${'★'.repeat(stars)}${'☆'.repeat(3-stars)}</span></span>
+            <strong>${((p.preis_stueck_eur||0) * (p.stueckzahl||1)).toFixed(2)} €</strong>
+          </div>
+          <a class="btn-kaufen" href="${p.kauflink}" target="_blank" rel="noopener">Kaufen →</a>
+        </div>
+      </div>`;
+    }).join('');
+
+    // Kalender
+    const jez = { 'Frühling': '🌱', 'Sommer': '☀️', 'Herbst': '🍂', 'Winter': '❄️' };
+    document.getElementById('kalender-grid').innerHTML = Object.entries(plan.pflanzkalender || {}).map(([jz, items]) => `
+      <div class="kalender-card">
+        <h4>${jez[jz] || '📅'} ${jz}</h4>
+        <ul>${(items||[]).map(item => `<li>${item}</li>`).join('')}</ul>
+      </div>`).join('');
+
+    // Tipps
+    const tipps = document.getElementById('tipps-list');
+    tipps.innerHTML = (plan.tipps || []).map(t => `<li>${t}</li>`).join('');
+    if (plan.pflanzabstand_hinweis) tipps.innerHTML += `<li>${plan.pflanzabstand_hinweis}</li>`;
+
+    // Stückliste + Visualisierung vorbereiten
+    renderStueckliste(plan);
+
+    hide('view-loading');
+    // Reset tabs
+    document.querySelectorAll('.rtab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.querySelector('.rtab').classList.add('active');
+    document.getElementById('tab-pflanzen').classList.add('active');
+    currentSaison = 'alle';
+
+    show('view-ergebnis');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function openModal() {
+    document.getElementById('modal-overlay').classList.add('open');
+  }
+  function closeModal() {
+    document.getElementById('modal-overlay').classList.remove('open');
+  }
+  function closeModalOutside(e) {
+    if (e.target === document.getElementById('modal-overlay')) closeModal();
+  }
+
+  async function submitAnfrage() {
+    const name = document.getElementById('anfrage-name').value.trim();
+    const email = document.getElementById('anfrage-email').value.trim();
+    const plz = document.getElementById('anfrage-plz').value.trim();
+    const telefon = document.getElementById('anfrage-telefon').value.trim();
+    const anmerkungen = document.getElementById('anfrage-anmerkungen').value.trim();
+    const errEl = document.getElementById('modal-error');
+
+    if (!name || !email || !plz) {
+      errEl.textContent = 'Bitte Name, E-Mail und PLZ angeben.';
+      errEl.style.display = 'block';
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      errEl.textContent = 'Bitte eine gültige E-Mail-Adresse eingeben.';
+      errEl.style.display = 'block';
+      return;
+    }
+    errEl.style.display = 'none';
+
+    try {
+      const res = await fetch('/api/anfrage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, plz, telefon, anmerkungen, gartenparameter: formData, ki_plan: currentPlan })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Fehler beim Senden.');
+
+      document.getElementById('modal-content').innerHTML = `
+        <div class="success-msg">
+          <div class="success-icon">✅</div>
+          <h3>Anfrage gesendet!</h3>
+          <p>Danke, ${name}! Wir haben deinen Bepflanzungsplan erhalten und melden uns schnellstmöglich mit einem Angebot für die Lieferung deiner Stauden.</p>
+        </div>
+      `;
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.style.display = 'block';
+    }
+  }
+
+  function neustart() {
+    formData = {
+      gartenflaeche: null, licht: '', boden: '', stil: '', farbe: '', saison: '',
+      modus: 'einfach', lieblingspflanzen: [], budget: null, nutzung: [], pflegezeit: ''
+    };
+    currentPlan = null; wishlist = []; polygons = []; currentPoints = [];
+    // Reset einfach form
+    try { document.getElementById('gartenflaeche').value = ''; } catch {}
+    ['btn-next-1','btn-next-2','btn-next-3','btn-next-4'].forEach(id => {
+      try { document.getElementById(id).disabled = true; } catch {}
+    });
+    document.querySelectorAll('.option-card').forEach(c => c.classList.remove('selected'));
+    document.querySelectorAll('.loading-step').forEach(s => s.classList.remove('done'));
+    // Reset professionell form
+    document.querySelectorAll('.nutzung-card').forEach(c => c.classList.remove('selected'));
+    document.querySelectorAll('.pz-card').forEach(c => c.classList.remove('selected'));
+    try { document.getElementById('budget-slider').value = 0; document.getElementById('budget-display').textContent = 'Kein Limit'; } catch {}
+    try { document.getElementById('wishlist-chips').innerHTML = ''; document.getElementById('wishlist-label').style.display='none'; } catch {}
+    try { document.getElementById('pflanzsuche-results').innerHTML = ''; document.getElementById('pflanz-search').value = ''; } catch {}
+    hide('view-ergebnis');
+    showModewahl();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+</script>
+</body>
+</html>
