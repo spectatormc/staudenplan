@@ -12,7 +12,15 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get('/', (req, res) => {
+  try {
+    const fs = require('fs');
+    const html = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8');
+    res.type('text/html').send(html);
+  } catch (e) {
+    res.status(500).send('Fehler beim Laden der Seite: ' + e.message);
+  }
+});
 
 // ─── Datenbank ────────────────────────────────────────────────────────────────
 const db = new Database(path.join(__dirname, 'stauden.db'));
