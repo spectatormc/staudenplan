@@ -10,7 +10,6 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── Datenbank ────────────────────────────────────────────────────────────────
 const db = new Database(path.join(__dirname, 'stauden.db'));
@@ -1202,6 +1201,9 @@ app.post('/admin/update-wissen', async (req, res) => {
     res.status(500).json({ error: err.message, log: [] });
   }
 });
+
+// ─── Static Files (nach allen Routes!) ────────────────────────────────────────
+app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 
