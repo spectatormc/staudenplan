@@ -657,7 +657,7 @@ app.get('/api/pflanzen', (req, res) => {
   let pflanzen = db.prepare(`
     SELECT name_deutsch, name_botanisch, licht, farbe, bluehzeit,
            hoehe_cm_min, hoehe_cm_max, stil, pflege_sterne, beschreibung,
-           feuchtigkeit, wuchs
+           feuchtigkeit, wuchs, bild_url, bienen_freundlich, heimisch
     FROM pflanzen ORDER BY name_deutsch
   `).all();
   if (q) {
@@ -784,82 +784,249 @@ app.get('/datenschutz', (req, res) => {
 // ─── Pflanzenseiten (SEO) ─────────────────────────────────────────────────────
 
 app.get('/pflanzen', (req, res) => {
-  const pflanzen = db.prepare(`
-    SELECT name_deutsch, name_botanisch, licht, bluehzeit, farbe,
-           hoehe_cm_min, hoehe_cm_max, stil, bild_url, pflege_sterne, beschreibung
-    FROM pflanzen ORDER BY name_deutsch
-  `).all();
-
-  const LICHT_FARBEN = { 'Sonne': '#f59e0b', 'Halbschatten': '#6366f1', 'Schatten': '#475569' };
-
-  const cards = pflanzen.map(p => {
-    const lichtKey = (p.licht || '').split('|')[0];
-    const lichtFarbe = LICHT_FARBEN[lichtKey] || '#2d6a4f';
-    const imgStyle = p.bild_url
-      ? `background:url('${p.bild_url}') center/cover no-repeat;content-visibility:auto`
-      : `background:linear-gradient(135deg,#d8f3dc,#b7e4c7)`;
-    return `
-    <a href="/pflanze/${pflanzeToSlug(p.name_botanisch)}" style="display:flex;flex-direction:column;background:#fff;border-radius:14px;text-decoration:none;color:inherit;box-shadow:0 2px 12px rgba(0,0,0,.08);overflow:hidden;transition:transform .15s" onmouseover="this.style.transform='translateY(-3px)'" onmouseout="this.style.transform=''">
-      <div style="${imgStyle};height:140px;position:relative">
-        ${!p.bild_url ? '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:3rem">🌿</div>' : ''}
-        <div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.55));padding:8px 12px">
-          <span style="background:${lichtFarbe};color:#fff;border-radius:4px;padding:2px 8px;font-size:.68rem;font-weight:700">${lichtKey}</span>
-        </div>
-      </div>
-      <div style="padding:14px">
-        <div style="font-weight:700;font-size:.92rem;color:#1b4332;margin-bottom:2px">${p.name_deutsch}</div>
-        <div style="font-size:.73rem;font-style:italic;color:#aaa;margin-bottom:8px">${p.name_botanisch}</div>
-        <div style="display:flex;flex-wrap:wrap;gap:4px">
-          ${p.farbe ? `<span style="background:#f0fdf4;color:#2d6a4f;border-radius:4px;padding:1px 7px;font-size:.7rem">${p.farbe.split('|')[0]}</span>` : ''}
-          ${p.bluehzeit ? `<span style="background:#fef3c7;color:#92400e;border-radius:4px;padding:1px 7px;font-size:.7rem">${p.bluehzeit}</span>` : ''}
-        </div>
-      </div>
-    </a>`;
-  }).join('');
-
+  const total = db.prepare('SELECT COUNT(*) as n FROM pflanzen').get().n;
   res.send(`<!DOCTYPE html><html lang="de"><head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Stauden-Lexikon — ${pflanzen.length} winterharte Gartenstauden | Staudenplan.de</title>
-  <meta name="description" content="Stauden-Lexikon mit ${pflanzen.length} winterharten Gartenstauden: Fotos, Standortanforderungen, Blühzeiten, Pflegetipps und Kaufmöglichkeiten — alle kostenlos.">
-  <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',system-ui,sans-serif;background:#f8f4ef;color:#1a1a1a}</style>
+  <title>Stauden suchen & filtern — ${total} winterharte Gartenstauden | Staudenplan.de</title>
+  <meta name="description" content="Alle ${total} winterharten Gartenstauden filtern nach Standort, Blühzeit, Farbe, Höhe, Feuchtigkeit und mehr — mit Fotos, Pflege-Tipps und Kauflink.">
+  <link rel="canonical" href="https://www.staudenplan.de/pflanzen">
+  <meta property="og:title" content="Stauden suchen — ${total} winterharte Arten">
+  <meta property="og:image" content="https://www.staudenplan.de/images/og-default.jpg">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Segoe UI',system-ui,sans-serif;background:#f8f4ef;color:#1a1a1a}
+    .layout{display:flex;gap:0;max-width:1300px;margin:0 auto;padding:24px 16px 60px;align-items:flex-start}
+    /* Sidebar */
+    .sidebar{width:240px;flex-shrink:0;background:#fff;border-radius:14px;padding:20px;box-shadow:0 2px 12px rgba(0,0,0,.07);position:sticky;top:76px;max-height:calc(100vh - 100px);overflow-y:auto}
+    .sidebar h3{font-size:.78rem;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;margin-top:16px}
+    .sidebar h3:first-child{margin-top:0}
+    .chip-group{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:4px}
+    .chip{background:#f0ede8;color:#555;border:none;border-radius:20px;padding:4px 11px;font-size:.78rem;cursor:pointer;font-family:inherit;transition:all .12s}
+    .chip.active{background:#1b4332;color:#fff}
+    .chip:hover:not(.active){background:#d8f3dc;color:#1b4332}
+    .toggle-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;cursor:pointer}
+    .toggle-row input{accent-color:#2d6a4f;width:16px;height:16px}
+    .toggle-row label{font-size:.85rem;color:#333;cursor:pointer}
+    .btn-reset{width:100%;margin-top:16px;background:#f0ede8;border:none;border-radius:8px;padding:9px;font-size:.82rem;color:#666;cursor:pointer;font-family:inherit}
+    .btn-reset:hover{background:#d8f3dc;color:#1b4332}
+    /* Main */
+    .main{flex:1;min-width:0;padding-left:20px}
+    .search-bar{display:flex;gap:10px;margin-bottom:18px;align-items:center}
+    .search-bar input{flex:1;padding:11px 16px 11px 40px;border:2px solid #e0d9cf;border-radius:10px;font-size:.95rem;font-family:inherit;background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%23aaa' viewBox='0 0 16 16'%3E%3Cpath d='M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.099zm-5.742 1.656a5.5 5.5 0 1 1 0-11 5.5 5.5 0 0 1 0 11z'/%3E%3C/svg%3E") no-repeat 12px center;outline:none;transition:border-color .15s}
+    .search-bar input:focus{border-color:#2d6a4f}
+    #count-label{font-size:.82rem;color:#aaa;margin-bottom:16px}
+    #grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:12px}
+    .p-card{display:flex;flex-direction:column;background:#fff;border-radius:12px;text-decoration:none;color:inherit;box-shadow:0 2px 10px rgba(0,0,0,.07);overflow:hidden;transition:transform .15s;position:relative}
+    .p-card:hover{transform:translateY(-3px)}
+    .p-card-img{height:130px;position:relative;background:linear-gradient(135deg,#d8f3dc,#b7e4c7)}
+    .p-card-img img{width:100%;height:100%;object-fit:cover;display:block}
+    .p-card-body{padding:12px}
+    .p-card-name{font-weight:700;font-size:.9rem;color:#1b4332;margin-bottom:2px}
+    .p-card-bot{font-size:.7rem;font-style:italic;color:#bbb;margin-bottom:7px}
+    .p-card-tags{display:flex;flex-wrap:wrap;gap:3px}
+    .p-tag{border-radius:4px;padding:1px 7px;font-size:.68rem;font-weight:600}
+    .wl-card-btn{position:absolute;top:6px;right:6px;background:rgba(255,255,255,.9);border:none;border-radius:20px;padding:4px 10px;font-size:.7rem;font-weight:700;cursor:pointer;color:#1b4332;box-shadow:0 1px 4px rgba(0,0,0,.15)}
+    .wl-card-btn.added{background:#52b788;color:#fff}
+    #empty{display:none;text-align:center;padding:60px 20px;color:#aaa;font-size:1rem}
+    @media(max-width:700px){
+      .layout{flex-direction:column;padding:12px}
+      .sidebar{width:100%;position:static;max-height:none}
+      .main{padding-left:0;margin-top:16px}
+    }
+  </style>
   </head><body>
   ${NAV_LINKS}
   <!-- Hero -->
-  <div style="background:linear-gradient(160deg,#1b4332 0%,#2d6a4f 55%,#52b788 100%);color:#fff;padding:52px 24px;text-align:center">
-    <h1 style="font-size:2rem;font-weight:800;margin-bottom:10px">Stauden-Lexikon</h1>
-    <p style="opacity:.85;max-width:540px;margin:0 auto 28px;font-size:1rem;line-height:1.6">${pflanzen.length} winterharte Gartenstauden für Deutschland — mit Fotos, Standortanforderungen, Blühzeiten und direktem Kauflink</p>
-    <div style="max-width:520px;margin:0 auto;position:relative">
-      <input type="text" id="search" placeholder="Pflanze suchen… Storchschnabel, Hosta, Salvia…"
-        style="width:100%;padding:14px 20px 14px 44px;border-radius:50px;border:none;font-size:.95rem;box-shadow:0 4px 20px rgba(0,0,0,.2)"
-        oninput="filter(this.value)">
-      <span style="position:absolute;left:16px;top:50%;transform:translateY(-50%);font-size:1.1rem">🔍</span>
-    </div>
-    <div style="margin-top:16px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
-      <button onclick="filterLicht('Sonne')" style="background:rgba(255,255,255,.2);color:#fff;border:none;border-radius:20px;padding:5px 14px;font-size:.78rem;cursor:pointer;font-family:inherit">☀️ Sonne</button>
-      <button onclick="filterLicht('Halbschatten')" style="background:rgba(255,255,255,.2);color:#fff;border:none;border-radius:20px;padding:5px 14px;font-size:.78rem;cursor:pointer;font-family:inherit">🌤️ Halbschatten</button>
-      <button onclick="filterLicht('Schatten')" style="background:rgba(255,255,255,.2);color:#fff;border:none;border-radius:20px;padding:5px 14px;font-size:.78rem;cursor:pointer;font-family:inherit">🌥️ Schatten</button>
-      <button onclick="filter('')" style="background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:20px;padding:5px 14px;font-size:.78rem;cursor:pointer;font-family:inherit">✕ Alle</button>
+  <div style="background:linear-gradient(160deg,#1b4332,#2d6a4f);color:#fff;padding:36px 24px;text-align:center">
+    <h1 style="font-size:1.8rem;font-weight:800;margin-bottom:6px">Stauden suchen & filtern</h1>
+    <p style="opacity:.8;font-size:.95rem">${total} winterharte Gartenstauden — filtere nach Standort, Blühzeit, Farbe und mehr</p>
+  </div>
+
+  <div class="layout">
+    <!-- Sidebar Filter -->
+    <aside class="sidebar">
+      <h3>Standort</h3>
+      <div class="chip-group">
+        <button class="chip" data-filter="licht" data-val="Sonne" onclick="toggleChip(this)">☀️ Sonne</button>
+        <button class="chip" data-filter="licht" data-val="Halbschatten" onclick="toggleChip(this)">🌤️ Halbschatten</button>
+        <button class="chip" data-filter="licht" data-val="Schatten" onclick="toggleChip(this)">🌥️ Schatten</button>
+      </div>
+
+      <h3>Feuchtigkeit</h3>
+      <div class="chip-group">
+        <button class="chip" data-filter="feuchtigkeit" data-val="trocken" onclick="toggleChip(this)">🏜️ Trocken</button>
+        <button class="chip" data-filter="feuchtigkeit" data-val="normal" onclick="toggleChip(this)">🌱 Normal</button>
+        <button class="chip" data-filter="feuchtigkeit" data-val="feucht" onclick="toggleChip(this)">💧 Feucht</button>
+        <button class="chip" data-filter="feuchtigkeit" data-val="nass" onclick="toggleChip(this)">🌊 Nass</button>
+      </div>
+
+      <h3>Höhe</h3>
+      <div class="chip-group">
+        <button class="chip" data-filter="hoehe" data-val="klein" onclick="toggleChip(this)">🌿 &lt;40 cm</button>
+        <button class="chip" data-filter="hoehe" data-val="mittel" onclick="toggleChip(this)">🌾 40–100 cm</button>
+        <button class="chip" data-filter="hoehe" data-val="gross" onclick="toggleChip(this)">🌳 &gt;100 cm</button>
+      </div>
+
+      <h3>Blühzeit</h3>
+      <div class="chip-group">
+        <button class="chip" data-filter="bluehzeit" data-val="frühjahr" onclick="toggleChip(this)">🌷 Frühjahr</button>
+        <button class="chip" data-filter="bluehzeit" data-val="sommer" onclick="toggleChip(this)">🌻 Sommer</button>
+        <button class="chip" data-filter="bluehzeit" data-val="herbst" onclick="toggleChip(this)">🍂 Herbst</button>
+      </div>
+
+      <h3>Farbe</h3>
+      <div class="chip-group">
+        ${[['weiß','#f5f5f5','#333'],['rosa','#ffb6c1','#333'],['rot','#e53e3e','#fff'],
+           ['blau','#3b82f6','#fff'],['violett','#7c3aed','#fff'],['lila','#a855f7','#fff'],
+           ['gelb','#f59e0b','#fff'],['orange','#f97316','#fff']].map(([v,bg,fg]) =>
+          `<button class="chip" data-filter="farbe" data-val="${v}" onclick="toggleChip(this)" style="background:${bg};color:${fg}">${v}</button>`
+        ).join('')}
+      </div>
+
+      <h3>Gartenstil</h3>
+      <div class="chip-group">
+        <button class="chip" data-filter="stil" data-val="Naturgarten" onclick="toggleChip(this)">🌿 Natur</button>
+        <button class="chip" data-filter="stil" data-val="Bauerngarten" onclick="toggleChip(this)">🌸 Bauerngarten</button>
+        <button class="chip" data-filter="stil" data-val="Cottage" onclick="toggleChip(this)">🏡 Cottage</button>
+        <button class="chip" data-filter="stil" data-val="Modern" onclick="toggleChip(this)">◼ Modern</button>
+      </div>
+
+      <h3>Pflege</h3>
+      <div class="chip-group">
+        <button class="chip" data-filter="pflege" data-val="1" onclick="toggleChip(this)">★ Einfach</button>
+        <button class="chip" data-filter="pflege" data-val="2" onclick="toggleChip(this)">★★ Mittel</button>
+        <button class="chip" data-filter="pflege" data-val="3" onclick="toggleChip(this)">★★★ Intensiv</button>
+      </div>
+
+      <h3>Eigenschaften</h3>
+      <label class="toggle-row"><input type="checkbox" id="f-bienen" onchange="applyFilters()"><label for="f-bienen">🐝 Bienenfreundlich</label></label>
+      <label class="toggle-row"><input type="checkbox" id="f-heimisch" onchange="applyFilters()"><label for="f-heimisch">🌱 Heimisch</label></label>
+
+      <button class="btn-reset" onclick="resetFilters()">✕ Alle Filter zurücksetzen</button>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="main">
+      <div class="search-bar">
+        <input type="text" id="search" placeholder="Name suchen… Sonnenhut, Hosta, Salvia…" oninput="applyFilters()">
+      </div>
+      <p id="count-label"></p>
+      <div id="grid"></div>
+      <div id="empty">🌿 Keine Stauden gefunden — probiere andere Filter.</div>
     </div>
   </div>
-  <!-- Grid -->
-  <main style="max-width:1200px;margin:0 auto;padding:32px 20px 60px">
-    <p style="font-size:.82rem;color:#aaa;margin-bottom:20px" id="count-label">${pflanzen.length} Stauden</p>
-    <div id="grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px">${cards}</div>
-  </main>
+
   ${SITE_FOOTER}
   <script>
-    const allCards = Array.from(document.querySelectorAll('#grid a'));
-    function filter(q) {
-      q = q.toLowerCase();
-      let n=0;
-      allCards.forEach(c => { const show = !q || c.textContent.toLowerCase().includes(q); c.style.display=show?'':'none'; if(show)n++; });
-      document.getElementById('count-label').textContent = n + ' Stauden';
+  let allPflanzen = [];
+  const WL_KEY = 'staudenplan_wishlist';
+  function getWL(){try{return JSON.parse(localStorage.getItem(WL_KEY)||'[]');}catch{return[];}}
+  function saveWL(wl){localStorage.setItem(WL_KEY,JSON.stringify(wl));}
+
+  async function loadPflanzen() {
+    const r = await fetch('/api/pflanzen');
+    allPflanzen = await r.json();
+    applyFilters();
+  }
+
+  const activeFilters = {};
+  function toggleChip(btn) {
+    const f = btn.dataset.filter, v = btn.dataset.val;
+    if (!activeFilters[f]) activeFilters[f] = new Set();
+    if (activeFilters[f].has(v)) { activeFilters[f].delete(v); btn.classList.remove('active'); }
+    else { activeFilters[f].add(v); btn.classList.add('active'); }
+    applyFilters();
+  }
+
+  function applyFilters() {
+    const q = (document.getElementById('search').value || '').toLowerCase();
+    const bienen = document.getElementById('f-bienen').checked;
+    const heimisch = document.getElementById('f-heimisch').checked;
+    const wl = getWL();
+
+    const results = allPflanzen.filter(p => {
+      if (q && !p.name_deutsch.toLowerCase().includes(q) && !p.name_botanisch.toLowerCase().includes(q) && !(p.beschreibung||'').toLowerCase().includes(q)) return false;
+      if (activeFilters.licht?.size && !activeFilters.licht.has((p.licht||'').split('|')[0])) return false;
+      if (activeFilters.feuchtigkeit?.size && !activeFilters.feuchtigkeit.has(p.feuchtigkeit||'normal')) return false;
+      if (activeFilters.stil?.size && ![...activeFilters.stil].some(s => (p.stil||'').includes(s))) return false;
+      if (activeFilters.pflege?.size && !activeFilters.pflege.has(String(p.pflege_sterne||1))) return false;
+      if (activeFilters.farbe?.size && ![...activeFilters.farbe].some(f => (p.farbe||'').toLowerCase().includes(f))) return false;
+      if (activeFilters.bluehzeit?.size) {
+        const bz = (p.bluehzeit||'').toLowerCase();
+        const match = [...activeFilters.bluehzeit].some(s =>
+          (s==='frühjahr' && (bz.includes('märz')||bz.includes('april')||bz.includes('mai'))) ||
+          (s==='sommer' && (bz.includes('juni')||bz.includes('juli')||bz.includes('august'))) ||
+          (s==='herbst' && (bz.includes('sept')||bz.includes('okt')||bz.includes('nov')))
+        );
+        if (!match) return false;
+      }
+      if (activeFilters.hoehe?.size) {
+        const h = p.hoehe_cm_max || p.hoehe_cm_min || 50;
+        const ok = [...activeFilters.hoehe].some(s =>
+          (s==='klein' && h<40) || (s==='mittel' && h>=40 && h<=100) || (s==='gross' && h>100));
+        if (!ok) return false;
+      }
+      if (bienen && !p.bienen_freundlich) return false;
+      if (heimisch && !p.heimisch) return false;
+      return true;
+    });
+
+    document.getElementById('count-label').textContent = results.length + ' von ${total} Stauden';
+    document.getElementById('empty').style.display = results.length === 0 ? 'block' : 'none';
+
+    const LICHT_C = {Sonne:'#f59e0b',Halbschatten:'#6366f1',Schatten:'#475569'};
+    document.getElementById('grid').innerHTML = results.map(p => {
+      const slug = p.name_botanisch.toLowerCase().replace(/ä/g,'ae').replace(/ö/g,'oe').replace(/ü/g,'ue').replace(/ß/g,'ss').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+      const lichtKey = (p.licht||'').split('|')[0];
+      const lc = LICHT_C[lichtKey]||'#2d6a4f';
+      const inWl = wl.find(w => w.name_botanisch === p.name_botanisch);
+      return \`<div class="p-card" style="cursor:pointer">
+        <a href="/pflanze/\${slug}" style="text-decoration:none;color:inherit;flex:1;display:flex;flex-direction:column">
+          <div class="p-card-img">
+            \${p.bild_url ? \`<img src="\${p.bild_url}" alt="\${p.name_deutsch}" loading="lazy">\` : '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:3rem">🌿</div>'}
+            <div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.5));padding:6px 10px">
+              <span style="background:\${lc};color:#fff;border-radius:4px;padding:1px 7px;font-size:.65rem;font-weight:700">\${lichtKey}</span>
+            </div>
+          </div>
+          <div class="p-card-body">
+            <div class="p-card-name">\${p.name_deutsch}</div>
+            <div class="p-card-bot">\${p.name_botanisch}</div>
+            <div class="p-card-tags">
+              \${p.farbe ? \`<span class="p-tag" style="background:#f0fdf4;color:#2d6a4f">\${p.farbe.split('|')[0]}</span>\` : ''}
+              \${p.bluehzeit ? \`<span class="p-tag" style="background:#fef3c7;color:#92400e">\${p.bluehzeit}</span>\` : ''}
+              \${p.bienen_freundlich ? '<span class="p-tag" style="background:#fef9c3;color:#92400e">🐝</span>' : ''}
+            </div>
+          </div>
+        </a>
+        <button class="wl-card-btn \${inWl?'added':''}" onclick="toggleWlCard(this,'${p.name_botanisch.replace(/'/g,"\\\\'")}','${p.name_deutsch.replace(/'/g,"\\\\'")}')">
+          \${inWl ? '✓ Wunschliste' : '+ Wunschliste'}
+        </button>
+      </div>\`;
+    }).join('');
+  }
+
+  function toggleWlCard(btn, bot, de) {
+    let wl = getWL();
+    if (wl.find(w => w.name_botanisch === bot)) {
+      wl = wl.filter(w => w.name_botanisch !== bot);
+      btn.textContent = '+ Wunschliste'; btn.classList.remove('added');
+    } else {
+      wl.push({name_deutsch: de, name_botanisch: bot});
+      btn.textContent = '✓ Wunschliste'; btn.classList.add('added');
     }
-    function filterLicht(licht) {
-      let n=0;
-      allCards.forEach(c => { const show = c.textContent.includes(licht); c.style.display=show?'':'none'; if(show)n++; });
-      document.getElementById('count-label').textContent = n + ' Stauden (' + licht + ')';
-    }
+    saveWL(wl);
+  }
+
+  function resetFilters() {
+    Object.keys(activeFilters).forEach(k => activeFilters[k].clear());
+    document.querySelectorAll('.chip.active').forEach(c => c.classList.remove('active'));
+    document.getElementById('f-bienen').checked = false;
+    document.getElementById('f-heimisch').checked = false;
+    document.getElementById('search').value = '';
+    applyFilters();
+  }
+
+  loadPflanzen();
   </script>
   </body></html>`);
 });
@@ -1131,12 +1298,14 @@ const PLAUSIBLE = `<!-- Privacy-friendly analytics by Plausible -->
 <script async src="https://plausible.io/js/pa-CQxds67VLWtj57jHuhY1V.js"></script>
 <script>window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};plausible.init()</script>`;
 
-const NAV_LINKS = `${FAVICON}${PLAUSIBLE}<nav style="background:#1b4332;padding:14px 24px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:50">
+const NAV_LINKS = `${FAVICON}${PLAUSIBLE}<nav style="background:#1b4332;padding:14px 24px;display:flex;align-items:center;gap:6px;position:sticky;top:0;z-index:50">
   <a href="/" style="color:#fff;text-decoration:none;font-weight:700;font-size:1rem;margin-right:auto">🌿 Staudenplan.de</a>
-  <a href="/" style="color:rgba(255,255,255,.8);text-decoration:none;font-size:.88rem">Planer</a>
-  <a href="/pflanzen" style="color:rgba(255,255,255,.8);text-decoration:none;font-size:.88rem">Stauden</a>
-  <a href="/ratgeber" style="color:#fff;text-decoration:none;font-size:.88rem;font-weight:600">Ratgeber</a>
-</nav>`;
+  <a href="/" style="color:rgba(255,255,255,.8);text-decoration:none;font-size:.85rem;padding:5px 10px;border-radius:20px">Planer</a>
+  <a href="/pflanzen" style="color:rgba(255,255,255,.8);text-decoration:none;font-size:.85rem;padding:5px 10px;border-radius:20px">Stauden</a>
+  <a href="/ratgeber" style="color:rgba(255,255,255,.8);text-decoration:none;font-size:.85rem;padding:5px 10px;border-radius:20px">Ratgeber</a>
+  <a href="/" id="nav-wl" style="display:none;background:rgba(255,255,255,.15);color:#fff;text-decoration:none;font-size:.82rem;padding:5px 12px;border-radius:20px;border:1px solid rgba(255,255,255,.3)">🌿 Wunschliste <span id="nav-wl-n"></span></a>
+</nav>
+<script>(function(){try{var wl=JSON.parse(localStorage.getItem('staudenplan_wishlist')||'[]');if(wl.length>0){var el=document.getElementById('nav-wl');var n=document.getElementById('nav-wl-n');if(el){el.style.display='inline';n.textContent='('+wl.length+')';}}}catch(e){}})();</script>`;
 
 const SITE_FOOTER = `<footer style="background:#1b4332;color:rgba(255,255,255,.7);padding:32px 24px;text-align:center;font-size:.82rem">
   <p style="margin-bottom:8px">© 2025 Staudenplan.de · <a href="/impressum" style="color:rgba(255,255,255,.6)">Impressum</a> · <a href="/datenschutz" style="color:rgba(255,255,255,.6)">Datenschutz</a> · <a href="https://www.gartenschmiede.de" style="color:rgba(255,255,255,.6)" target="_blank">Gartenschmiede GmbH</a></p>
