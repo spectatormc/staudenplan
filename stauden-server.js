@@ -238,7 +238,7 @@ Du empfiehlst ausschließlich in Deutschland winterharte Pflanzen. Antworte imme
       ].filter(Boolean).join(' ');
       return `- [${schicht}] ${p.name_deutsch} (${p.name_botanisch}): ${p.licht} | Blüte: ${p.bluehzeit || '?'} | ${p.farbe || '?'} | ${hoehe} | ${p.preis_stueck_eur || '?'}€ | Pflege: ${'★'.repeat(p.pflege_sterne || 2)}${extras ? ' | ' + extras : ''}`;
     }).join('\n');
-    prompt += '\n\nKauflinks: https://www.lubera.com/search?q=BOTANISCHERNAME (URL-kodiert).';
+    prompt += '\n\nKauflinks: https://www.amazon.de/s?k=BOTANISCHERNAME&tag=gartenbaukosten-21 (BOTANISCHERNAME URL-kodiert).';
   }
 
   if (wissen.length > 0) {
@@ -513,7 +513,7 @@ JSON-Format:
     "pflege_sterne": 1,
     "stueckzahl": 0,
     "preis_stueck_eur": 0.00,
-    "kauflink": "https://www.lubera.com/search?q=..."
+    "kauflink": "https://www.amazon.de/s?k=...&tag=gartenbaukosten-21"
   }],
   "gesamtkosten_geschaetzt": "...",
   "pflanzabstand_hinweis": "...",
@@ -857,7 +857,7 @@ app.get('/pflanze/:slug', (req, res) => {
 
   if (!pflanze) return res.status(404).send('<h2>Pflanze nicht gefunden. <a href="/pflanzen">Zurück zum Lexikon</a></h2>');
 
-  const kauflink = `https://www.lubera.com/search?q=${encodeURIComponent(pflanze.name_botanisch)}`;
+  const kauflink = `https://www.amazon.de/s?k=${encodeURIComponent(pflanze.name_botanisch)}&tag=gartenbaukosten-21`;
   const aehnliche = db.prepare(`
     SELECT name_deutsch, name_botanisch FROM pflanzen
     WHERE licht LIKE ? AND id != ? ORDER BY RANDOM() LIMIT 6
@@ -937,7 +937,7 @@ app.get('/pflanze/:slug', (req, res) => {
 
         <!-- CTA Buttons -->
         <div style="display:flex;gap:10px;flex-wrap:wrap">
-          <a href="${kauflink}" target="_blank" rel="noopener" style="background:#6b4226;color:#fff;border-radius:50px;padding:13px 28px;text-decoration:none;font-weight:700;font-size:.9rem;transition:background .15s">Kaufen → Lubera</a>
+          <a href="${kauflink}" target="_blank" rel="noopener" style="background:#6b4226;color:#fff;border-radius:50px;padding:13px 28px;text-decoration:none;font-weight:700;font-size:.9rem;transition:background .15s">Bei Amazon kaufen →</a>
           <a href="/" style="background:#2d6a4f;color:#fff;border-radius:50px;padding:13px 28px;text-decoration:none;font-weight:700;font-size:.9rem">In Plan aufnehmen →</a>
         </div>
       </div>
