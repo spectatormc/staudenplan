@@ -787,7 +787,7 @@ app.get('/pflanzen', (req, res) => {
     const lichtKey = (p.licht || '').split('|')[0];
     const lichtFarbe = LICHT_FARBEN[lichtKey] || '#2d6a4f';
     const imgStyle = p.bild_url
-      ? `background:url('${p.bild_url}') center/cover no-repeat`
+      ? `background:url('${p.bild_url}') center/cover no-repeat;content-visibility:auto`
       : `background:linear-gradient(135deg,#d8f3dc,#b7e4c7)`;
     return `
     <a href="/pflanze/${pflanzeToSlug(p.name_botanisch)}" style="display:flex;flex-direction:column;background:#fff;border-radius:14px;text-decoration:none;color:inherit;box-shadow:0 2px 12px rgba(0,0,0,.08);overflow:hidden;transition:transform .15s" onmouseover="this.style.transform='translateY(-3px)'" onmouseout="this.style.transform=''">
@@ -870,13 +870,25 @@ app.get('/pflanze/:slug', (req, res) => {
 
   const pflegeSterne = '★'.repeat(pflanze.pflege_sterne || 1) + '☆'.repeat(3 - (pflanze.pflege_sterne || 1));
   const hoehe = (pflanze.hoehe_cm_min && pflanze.hoehe_cm_max) ? `${pflanze.hoehe_cm_min}–${pflanze.hoehe_cm_max} cm` : (pflanze.hoehe_cm_min || pflanze.hoehe_cm_max || '—') + ' cm';
-  const schemaOrg = JSON.stringify({
-    "@context": "https://schema.org",
-    "@type": "Product",
-    "name": pflanze.name_deutsch,
-    "description": pflanze.beschreibung || '',
-    "offers": { "@type": "Offer", "priceCurrency": "EUR", "price": pflanze.preis_stueck_eur || 0 }
-  });
+  const schemaOrg = JSON.stringify([
+    {
+      "@context": "https://schema.org",
+      "@type": "Product",
+      "name": `${pflanze.name_deutsch} (${pflanze.name_botanisch})`,
+      "description": pflanze.beschreibung || '',
+      "image": pflanze.bild_url || 'https://www.staudenplan.de/images/og-default.jpg',
+      "offers": { "@type": "Offer", "priceCurrency": "EUR", "price": pflanze.preis_stueck_eur || 0, "availability": "https://schema.org/InStock" }
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "Startseite", "item": "https://www.staudenplan.de/" },
+        { "@type": "ListItem", "position": 2, "name": "Stauden-Lexikon", "item": "https://www.staudenplan.de/pflanzen" },
+        { "@type": "ListItem", "position": 3, "name": pflanze.name_deutsch, "item": `https://www.staudenplan.de/pflanze/${slug}` }
+      ]
+    }
+  ]);
 
   // Ähnliche mit Bildern
   const aehnlicheMitBild = db.prepare(`
@@ -889,7 +901,11 @@ app.get('/pflanze/:slug', (req, res) => {
   <title>${pflanze.name_deutsch} (${pflanze.name_botanisch}) — Pflege, Standort & Verwendung | Staudenplan.de</title>
   <meta name="description" content="${pflanze.name_deutsch} (${pflanze.name_botanisch}): ${(pflanze.beschreibung || '').substring(0, 130)} — Standort ${pflanze.licht||''}, Blühzeit ${pflanze.bluehzeit||''}, Pflege und Kauftipp.">
   <link rel="canonical" href="https://www.staudenplan.de/pflanze/${slug}">
-  <meta property="og:image" content="${pflanze.bild_url || ''}">
+  <meta property="og:title" content="${pflanze.name_deutsch} — Pflege, Standort & Kauftipp">
+  <meta property="og:description" content="${(pflanze.beschreibung || '').substring(0, 155)}">
+  <meta property="og:image" content="${pflanze.bild_url || 'https://www.staudenplan.de/images/og-default.jpg'}">
+  <meta property="og:url" content="https://www.staudenplan.de/pflanze/${slug}">
+  <meta property="og:type" content="product">
   <script type="application/ld+json">${schemaOrg}</script>
   <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',system-ui,sans-serif;background:#f8f4ef;color:#1a1a1a}@media(max-width:680px){.pflanz-grid{grid-template-columns:1fr!important}.pflanz-hero-inner{flex-direction:column!important}}</style>
   </head><body>
@@ -1177,6 +1193,25 @@ app.get('/ratgeber/:slug', (req, res) => {
   const cfg = katCfg(artikel.kategorie);
   const lesezeit = readingTime(artikel.inhalt);
 
+  // Passende Pflanzen zum Artikel (interne Verlinkung)
+  const artikelWoerter = artikel.titel.toLowerCase() + ' ' + artikel.inhalt.toLowerCase();
+  const passendePflanzen = db.prepare('SELECT name_deutsch, name_botanisch, bild_url, bluehzeit, licht FROM pflanzen ORDER BY RANDOM()').all()
+    .filter(p => artikelWoerter.includes(p.name_deutsch.toLowerCase()) || artikelWoerter.includes((p.name_botanisch || '').split(' ')[0].toLowerCase()))
+    .slice(0, 4);
+
+  // Article Schema
+  const articleSchema = JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "Article",
+    "headline": artikel.titel,
+    "description": artikel.inhalt.substring(0, 155),
+    "author": { "@type": "Organization", "name": "Staudenplan.de" },
+    "publisher": { "@type": "Organization", "name": "Staudenplan.de", "url": "https://www.staudenplan.de" },
+    "datePublished": artikel.datum || new Date().toISOString().split('T')[0],
+    "image": "https://www.staudenplan.de/images/og-default.jpg",
+    "mainEntityOfPage": `https://www.staudenplan.de/ratgeber/${slug}`
+  });
+
   // Absätze mit Pull-Quote auf zweitem Absatz
   const absaetzeRaw = artikel.inhalt.split('\n').filter(l => l.trim());
   const absaetze = absaetzeRaw.map((t, i) => {
@@ -1184,6 +1219,21 @@ app.get('/ratgeber/:slug', (req, res) => {
     if (i === 1) return `<blockquote style="border-left:4px solid #52b788;background:#f0fdf4;border-radius:0 10px 10px 0;padding:18px 20px;margin:28px 0;font-size:1rem;line-height:1.7;color:#1b4332;font-style:italic">${t}</blockquote>`;
     return `<p style="margin-bottom:18px;line-height:1.78;font-size:.97rem;color:#333">${t}</p>`;
   }).join('\n');
+
+  const passendePflanzenHtml = passendePflanzen.length > 0 ? `
+    <div style="margin-top:40px;padding-top:28px;border-top:2px solid #e0d9cf">
+      <h2 style="font-size:1.1rem;color:#1b4332;margin-bottom:16px;font-weight:700">🌿 Im Artikel erwähnte Stauden</h2>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px">
+        ${passendePflanzen.map(p => `
+          <a href="/pflanze/${pflanzeToSlug(p.name_botanisch)}" style="background:#fff;border-radius:10px;text-decoration:none;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.07);transition:transform .12s" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
+            ${p.bild_url ? `<div style="height:80px;overflow:hidden"><img src="${p.bild_url}" alt="${p.name_deutsch}" loading="lazy" style="width:100%;height:100%;object-fit:cover"></div>` : `<div style="height:80px;background:linear-gradient(135deg,#d8f3dc,#b7e4c7);display:flex;align-items:center;justify-content:center;font-size:2rem">🌿</div>`}
+            <div style="padding:10px">
+              <div style="font-size:.82rem;font-weight:700;color:#1b4332">${p.name_deutsch}</div>
+              <div style="font-size:.7rem;color:#aaa;font-style:italic">${p.name_botanisch}</div>
+            </div>
+          </a>`).join('')}
+      </div>
+    </div>` : '';
 
   const verwandteHtml = verwandte.length > 0 ? `
     <div style="margin-top:48px;padding-top:32px;border-top:2px solid #e0d9cf">
@@ -1204,6 +1254,10 @@ app.get('/ratgeber/:slug', (req, res) => {
   <link rel="canonical" href="https://www.staudenplan.de/ratgeber/${slug}">
   <meta property="og:title" content="${artikel.titel}">
   <meta property="og:type" content="article">
+  <meta property="og:description" content="${artikel.inhalt.substring(0, 155).replace(/"/g,"'")}">
+  <meta property="og:image" content="https://www.staudenplan.de/images/og-default.jpg">
+  <meta property="og:url" content="https://www.staudenplan.de/ratgeber/${slug}">
+  <script type="application/ld+json">${articleSchema}</script>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:'Segoe UI',system-ui,sans-serif;background:#f8f4ef;color:#1a1a1a}
@@ -1245,6 +1299,7 @@ app.get('/ratgeber/:slug', (req, res) => {
         <a href="/" style="background:#fff;color:#1b4332;border-radius:50px;padding:11px 28px;text-decoration:none;font-weight:700;font-size:.9rem;display:inline-block">Jetzt kostenlosen Plan erstellen →</a>
       </div>
 
+      ${passendePflanzenHtml}
       ${verwandteHtml}
     </article>
 
