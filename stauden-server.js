@@ -1353,6 +1353,7 @@ const NAV_LINKS = `${FAVICON}${PLAUSIBLE}
   window.snavUpdateBtn = updateBtn;
   document.addEventListener('wl-changed', updateBtn);
   updateBtn();
+  setInterval(updateBtn, 500);
   document.addEventListener('click',function(e){
     var dd=document.getElementById('snav-wl-dd');
     var btn=document.getElementById('snav-wl-btn');
