@@ -1135,7 +1135,7 @@ app.get('/pflanze/:slug', (req, res) => {
         <!-- CTA Buttons -->
         <div style="display:flex;gap:10px;flex-wrap:wrap">
           <a href="${kauflink}" target="_blank" rel="noopener sponsored" style="background:#6b4226;color:#fff;border-radius:50px;padding:13px 28px;text-decoration:none;font-weight:700;font-size:.9rem;transition:background .15s">Bei Amazon kaufen →</a>
-          <button id="wl-btn" onclick="addToWunschliste()" style="background:#2d6a4f;color:#fff;border:none;border-radius:50px;padding:13px 28px;font-weight:700;font-size:.9rem;cursor:pointer;transition:background .2s">In Plan aufnehmen →</button>
+          <button id="wl-btn" onclick="addToWunschliste()" style="background:#2d6a4f;color:#fff;border:none;border-radius:50px;padding:13px 28px;font-weight:700;font-size:.9rem;cursor:pointer;transition:background .2s">🌿 Zur Wunschliste</button>
           <script>
           (function(){
             const KEY='staudenplan_wishlist', BOT='${pflanze.name_botanisch.replace(/'/g,"\\'")}', DE='${pflanze.name_deutsch.replace(/'/g,"\\'")}';
@@ -1298,14 +1298,63 @@ const PLAUSIBLE = `<!-- Privacy-friendly analytics by Plausible -->
 <script async src="https://plausible.io/js/pa-CQxds67VLWtj57jHuhY1V.js"></script>
 <script>window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};plausible.init()</script>`;
 
-const NAV_LINKS = `${FAVICON}${PLAUSIBLE}<nav style="background:#1b4332;padding:14px 24px;display:flex;align-items:center;gap:6px;position:sticky;top:0;z-index:50">
-  <a href="/" style="color:#fff;text-decoration:none;font-weight:700;font-size:1rem;margin-right:auto">🌿 Staudenplan.de</a>
-  <a href="/" style="color:rgba(255,255,255,.8);text-decoration:none;font-size:.85rem;padding:5px 10px;border-radius:20px">Planer</a>
-  <a href="/pflanzen" style="color:rgba(255,255,255,.8);text-decoration:none;font-size:.85rem;padding:5px 10px;border-radius:20px">Stauden</a>
-  <a href="/ratgeber" style="color:rgba(255,255,255,.8);text-decoration:none;font-size:.85rem;padding:5px 10px;border-radius:20px">Ratgeber</a>
-  <a href="/" id="nav-wl" style="display:none;background:rgba(255,255,255,.15);color:#fff;text-decoration:none;font-size:.82rem;padding:5px 12px;border-radius:20px;border:1px solid rgba(255,255,255,.3)">🌿 Wunschliste <span id="nav-wl-n"></span></a>
+const NAV_LINKS = `${FAVICON}${PLAUSIBLE}
+<style>
+  .snav{background:#1b4332;padding:12px 20px;display:flex;align-items:center;gap:6px;position:sticky;top:0;z-index:100}
+  .snav a{color:rgba(255,255,255,.8);text-decoration:none;font-size:.85rem;padding:5px 10px;border-radius:20px;transition:background .12s}
+  .snav a:hover{background:rgba(255,255,255,.12);color:#fff}
+  #snav-wl-btn{display:none;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;font-size:.82rem;padding:5px 12px;border-radius:20px;cursor:pointer;font-family:inherit}
+  #snav-wl-dd{display:none;position:fixed;top:52px;right:12px;background:#fff;border-radius:14px;box-shadow:0 8px 32px rgba(0,0,0,.2);padding:16px;min-width:280px;z-index:200}
+  #snav-wl-list{display:flex;flex-direction:column;gap:6px;margin-bottom:12px;max-height:220px;overflow-y:auto}
+  .snav-wl-item{display:flex;justify-content:space-between;align-items:center;background:#f8f4ef;border-radius:8px;padding:8px 12px}
+  .snav-wl-item span{font-size:.85rem;font-weight:600;color:#1b4332}
+  .snav-wl-rm{background:none;border:none;color:#aaa;cursor:pointer;font-size:1rem;padding:0 2px}
+  .snav-wl-rm:hover{color:#e53e3e}
+</style>
+<nav class="snav">
+  <a href="/" style="color:#fff;font-weight:700;font-size:1rem;margin-right:auto">🌿 Staudenplan.de</a>
+  <a href="/">Planer</a>
+  <a href="/pflanzen">Stauden</a>
+  <a href="/ratgeber">Ratgeber</a>
+  <button id="snav-wl-btn" onclick="snavToggle()">🌿 Wunschliste <span id="snav-wl-n"></span></button>
 </nav>
-<script>(function(){try{var wl=JSON.parse(localStorage.getItem('staudenplan_wishlist')||'[]');if(wl.length>0){var el=document.getElementById('nav-wl');var n=document.getElementById('nav-wl-n');if(el){el.style.display='inline';n.textContent='('+wl.length+')';}}}catch(e){}})();</script>`;
+<div id="snav-wl-dd">
+  <p style="font-size:.75rem;color:#aaa;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Meine Wunschliste</p>
+  <div id="snav-wl-list"></div>
+  <a href="/" style="display:block;background:#1b4332;color:#fff;border-radius:10px;padding:11px;text-align:center;text-decoration:none;font-weight:700;font-size:.88rem">Plan mit diesen Pflanzen erstellen →</a>
+  <button onclick="snavClose()" style="width:100%;background:none;border:none;color:#aaa;font-size:.8rem;cursor:pointer;margin-top:8px;padding:4px">Schließen</button>
+</div>
+<script>
+(function(){
+  const WL='staudenplan_wishlist';
+  function getWL(){try{return JSON.parse(localStorage.getItem(WL)||'[]');}catch{return[];}}
+  function saveWL(w){localStorage.setItem(WL,JSON.stringify(w));}
+  function renderDD(){
+    var wl=getWL();
+    var list=document.getElementById('snav-wl-list');
+    list.innerHTML=wl.length?wl.map(function(p){
+      return '<div class="snav-wl-item"><span>'+p.name_deutsch+'</span><button class="snav-wl-rm" onclick="snavRm(\''+p.name_botanisch.replace(/'/g,"\\\\'")+'\')" title="Entfernen">✕</button></div>';
+    }).join(''):'<p style="color:#aaa;font-size:.85rem">Noch leer</p>';
+  }
+  window.snavToggle=function(){var d=document.getElementById('snav-wl-dd');renderDD();d.style.display=d.style.display==='none'?'block':'none';};
+  window.snavClose=function(){document.getElementById('snav-wl-dd').style.display='none';};
+  window.snavRm=function(bot){var wl=getWL().filter(function(p){return p.name_botanisch!==bot;});saveWL(wl);updateBtn();renderDD();};
+  function updateBtn(){
+    var wl=getWL();
+    var btn=document.getElementById('snav-wl-btn');
+    var n=document.getElementById('snav-wl-n');
+    if(!btn)return;
+    if(wl.length>0){btn.style.display='inline-block';n.textContent='('+wl.length+')';}
+    else{btn.style.display='none';document.getElementById('snav-wl-dd').style.display='none';}
+  }
+  updateBtn();
+  document.addEventListener('click',function(e){
+    var dd=document.getElementById('snav-wl-dd');
+    var btn=document.getElementById('snav-wl-btn');
+    if(dd&&btn&&!dd.contains(e.target)&&!btn.contains(e.target))dd.style.display='none';
+  });
+})();
+</script>`;
 
 const SITE_FOOTER = `<footer style="background:#1b4332;color:rgba(255,255,255,.7);padding:32px 24px;text-align:center;font-size:.82rem">
   <p style="margin-bottom:8px">© 2025 Staudenplan.de · <a href="/impressum" style="color:rgba(255,255,255,.6)">Impressum</a> · <a href="/datenschutz" style="color:rgba(255,255,255,.6)">Datenschutz</a> · <a href="https://www.gartenschmiede.de" style="color:rgba(255,255,255,.6)" target="_blank">Gartenschmiede GmbH</a></p>
