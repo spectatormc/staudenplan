@@ -2091,40 +2091,62 @@
   function calcPlacements(pflanzen, bedW, bedH, constraintPolys) {
     const all = [];
     const hasConstraint = constraintPolys && constraintPolys.length > 0;
+
     pflanzen.forEach((p, pi) => {
       const n = p.stueckzahl || 1;
       const h = p.hoehe_cm || 50;
-      const yZone = 1 - Math.min(0.85, (h / 160) * 0.7 + 0.15);
+
+      // Höhenstaffelung: hohe Stauden hinten (kleines y), niedrige vorne (großes y)
+      // Überlappende Zonen für natürliche Wirkung
+      let zoneMin, zoneMax;
+      if (h >= 100)      { zoneMin = 0.00; zoneMax = 0.42; } // Hohe Leitstauden: Hintergrund
+      else if (h >= 60)  { zoneMin = 0.20; zoneMax = 0.68; } // Mittelhohe: Mitte
+      else if (h >= 30)  { zoneMin = 0.48; zoneMax = 0.88; } // Niedrige: Vordergrund
+      else               { zoneMin = 0.62; zoneMax = 1.00; } // Bodendecker: ganz vorne
+
       for (let i = 0; i < n; i++) {
         let x, y, placed = false;
+
         if (hasConstraint) {
-          // Rejection sampling: find a point inside the drawn polygon
+          // Rejection sampling innerhalb des Polygons, mit Höhenzone als Y-Bias
           for (let attempt = 0; attempt < 80 && !placed; attempt++) {
             const seed = pi * 37 + i * 19 + attempt * 13;
             const rx = Math.sin(seed * 127.1 + attempt * 0.7) * 0.5 + 0.5;
             const ry = Math.sin(seed * 311.7 + attempt * 1.3) * 0.5 + 0.5;
-            const cx = rx * bedW, cy = ry * bedH;
+            const cx = rx * bedW;
+            const cy = (zoneMin + ry * (zoneMax - zoneMin)) * bedH;
             if (pointInAnyPolygon(cx, cy, constraintPolys)) {
               x = cx; y = cy; placed = true;
             }
           }
+          // Fallback: beliebige Position im Polygon
+          if (!placed) {
+            for (let attempt = 0; attempt < 40 && !placed; attempt++) {
+              const seed = pi * 100 + i * 50 + attempt;
+              const cx = (Math.sin(seed * 127.1) * 0.5 + 0.5) * bedW;
+              const cy = (Math.sin(seed * 311.7) * 0.5 + 0.5) * bedH;
+              if (pointInAnyPolygon(cx, cy, constraintPolys)) {
+                x = cx; y = cy; placed = true;
+              }
+            }
+          }
         }
+
         if (!placed) {
-          // Gleichmäßige Verteilung über gesamte Fläche (Phyllotaxis-artig)
+          // Rechteck: gleichmäßige X-Verteilung innerhalb der Höhenzone
           const seed = pi * 37 + i * 19;
-          const totalPlants = pflanzen.reduce((s, pp) => s + (pp.stueckzahl || 1), 0);
-          const idx = all.length;
-          const goldenAngle = 2.399963; // radians
-          const r = Math.sqrt((idx + 0.5) / totalPlants) * 0.44;
-          const theta = idx * goldenAngle;
-          const xRand = (Math.sin(seed * 127.1 + 0.3) * 0.5 + 0.5);
-          const yRand = (Math.sin(seed * 311.7 + 1.1) * 0.5 + 0.5) * 0.28 - 0.14;
-          x = (0.5 + r * Math.cos(theta) + (xRand - 0.5) * 0.06) * bedW;
-          y = (yZone + yRand) * bedH;
+          const xRand = Math.sin(seed * 127.1 + 0.3) * 0.5 + 0.5;
+          const yRand = Math.sin(seed * 311.7 + 1.1) * 0.5 + 0.5;
+          // X: Arten gleichmäßig über Breite verteilt, Stücke innerhalb der Art streuen
+          const xBase = (pi + (i + 0.5) / n) / pflanzen.length;
+          x = (xBase + (xRand - 0.5) * 0.14) * bedW;
+          // Y: innerhalb der Höhenzone mit natürlicher Variation
+          y = (zoneMin + yRand * (zoneMax - zoneMin)) * bedH;
         }
+
         all.push({
-          x: Math.max(0.05 * bedW, Math.min(0.95 * bedW, x)),
-          y: Math.max(0.05 * bedH, Math.min(0.95 * bedH, y)),
+          x: Math.max(0.04 * bedW, Math.min(0.96 * bedW, x)),
+          y: Math.max(0.04 * bedH, Math.min(0.96 * bedH, y)),
           pflanze: p, pi
         });
       }
