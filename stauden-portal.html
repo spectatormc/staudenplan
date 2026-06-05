@@ -2074,23 +2074,57 @@
   }
 
   // ── Placement-Algorithmus ─────────────────────────────────────────────────
-  function calcPlacements(pflanzen, bedW, bedH) {
+  function pointInPolygon(x, y, poly) {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const [xi, yi] = poly[i], [xj, yj] = poly[j];
+      if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi))
+        inside = !inside;
+    }
+    return inside;
+  }
+
+  function pointInAnyPolygon(x, y, polys) {
+    return polys.some(p => pointInPolygon(x, y, p.svgPoints));
+  }
+
+  function calcPlacements(pflanzen, bedW, bedH, constraintPolys) {
     const all = [];
+    const hasConstraint = constraintPolys && constraintPolys.length > 0;
     pflanzen.forEach((p, pi) => {
       const n = p.stueckzahl || 1;
       const h = p.hoehe_cm || 50;
-      // Tall plants to back (small y = top of SVG = back of bed)
       const yZone = 1 - Math.min(0.85, (h / 160) * 0.7 + 0.15);
       for (let i = 0; i < n; i++) {
-        const seed = pi * 37 + i * 19;
-        const xRand = (Math.sin(seed * 127.1 + 0.3) * 0.5 + 0.5);
-        const yRand = (Math.sin(seed * 311.7 + 1.1) * 0.5 + 0.5) * 0.28 - 0.14;
-        const xBase = (pi / pflanzen.length) + (i + 0.5) / (pflanzen.length * n);
-        const x = (xBase + (xRand - 0.5) * 0.12) * bedW;
-        const y = (yZone + yRand) * bedH;
+        let x, y, placed = false;
+        if (hasConstraint) {
+          // Rejection sampling: find a point inside the drawn polygon
+          for (let attempt = 0; attempt < 80 && !placed; attempt++) {
+            const seed = pi * 37 + i * 19 + attempt * 13;
+            const rx = Math.sin(seed * 127.1 + attempt * 0.7) * 0.5 + 0.5;
+            const ry = Math.sin(seed * 311.7 + attempt * 1.3) * 0.5 + 0.5;
+            const cx = rx * bedW, cy = ry * bedH;
+            if (pointInAnyPolygon(cx, cy, constraintPolys)) {
+              x = cx; y = cy; placed = true;
+            }
+          }
+        }
+        if (!placed) {
+          // Gleichmäßige Verteilung über gesamte Fläche (Phyllotaxis-artig)
+          const seed = pi * 37 + i * 19;
+          const totalPlants = pflanzen.reduce((s, pp) => s + (pp.stueckzahl || 1), 0);
+          const idx = all.length;
+          const goldenAngle = 2.399963; // radians
+          const r = Math.sqrt((idx + 0.5) / totalPlants) * 0.44;
+          const theta = idx * goldenAngle;
+          const xRand = (Math.sin(seed * 127.1 + 0.3) * 0.5 + 0.5);
+          const yRand = (Math.sin(seed * 311.7 + 1.1) * 0.5 + 0.5) * 0.28 - 0.14;
+          x = (0.5 + r * Math.cos(theta) + (xRand - 0.5) * 0.06) * bedW;
+          y = (yZone + yRand) * bedH;
+        }
         all.push({
-          x: Math.max(0.06 * bedW, Math.min(0.94 * bedW, x)),
-          y: Math.max(0.06 * bedH, Math.min(0.94 * bedH, y)),
+          x: Math.max(0.05 * bedW, Math.min(0.95 * bedW, x)),
+          y: Math.max(0.05 * bedH, Math.min(0.95 * bedH, y)),
           pflanze: p, pi
         });
       }
@@ -2134,8 +2168,6 @@
     const bedH = H - PAD * 2;
     const gartW = Math.sqrt((formData.gartenflaeche || 15) * 3).toFixed(1);
     const gartH = ((formData.gartenflaeche || 15) / gartW).toFixed(1);
-
-    const placements = calcPlacements(plan.pflanzen, bedW, bedH);
 
     // Defs (gradients + filters)
     const gradDefs = plan.pflanzen.map((p, pi) => {
@@ -2186,7 +2218,11 @@
 
     // Use drawn polygon as bed shape if available
     const drawnPolys = scaledPolygonsForSVG(bedW, bedH, PAD, PAD);
+    // Polygone ohne Offset für Placement-Berechnung
+    const placementPolys = scaledPolygonsForSVG(bedW, bedH, 0, 0);
     const hasDrawn = !!drawnPolys;
+
+    const placements = calcPlacements(plan.pflanzen, bedW, bedH, hasDrawn ? placementPolys : null);
 
     let bedShape, bedClipContent, bedOutline, bedLabel;
     if (hasDrawn) {
@@ -2277,7 +2313,8 @@
       if (y < Math.ceil(gartH)) grid.push(`<text x="${PAD_L-6}" y="${PAD_T + (y+0.5)*scaleY + 4}" text-anchor="end" font-size="9" fill="#999">${y+0.5}m</text>`);
     }
 
-    const placements = calcPlacements(plan.pflanzen, plotW, plotH);
+    const drawnPolysForPlacement = scaledPolygonsForSVG(plotW, plotH, 0, 0);
+    const placements = calcPlacements(plan.pflanzen, plotW, plotH, drawnPolysForPlacement);
     const circles = placements.map(({ x, y, pflanze, pi }) => {
       const r = Math.max(8, Math.min(18, (pflanze.hoehe_cm || 50) / 6));
       const num = plan.pflanzen.findIndex(pp => pp.name_botanisch === pflanze.name_botanisch) + 1;
