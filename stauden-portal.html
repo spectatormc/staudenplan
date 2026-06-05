@@ -50,14 +50,27 @@
     header {
       background: var(--green-dark);
       color: #fff;
-      padding: 18px 32px;
+      padding: 14px 24px;
       display: flex;
       align-items: center;
       gap: 12px;
+      position: sticky;
+      top: 0;
+      z-index: 50;
     }
     header .logo { font-size: 1.5rem; }
     header h1 { font-size: 1.1rem; font-weight: 600; letter-spacing: 0.02em; }
     header p { font-size: 0.78rem; opacity: 0.7; margin-top: 2px; }
+    .header-nav { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+    .header-nav a { color: rgba(255,255,255,.75); text-decoration: none; font-size: .85rem; padding: 6px 12px; border-radius: 20px; transition: background .15s; }
+    .header-nav a:hover { background: rgba(255,255,255,.12); color: #fff; }
+    #wl-nav-btn { background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.3); color: #fff; font-size: .85rem; padding: 6px 14px; border-radius: 20px; cursor: pointer; display: none; align-items: center; gap: 6px; transition: background .15s; }
+    #wl-nav-btn:hover { background: rgba(255,255,255,.25); }
+    #wl-count { background: #52b788; color: #fff; border-radius: 50%; width: 18px; height: 18px; font-size: .7rem; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+    /* Wunschliste Dropdown */
+    #wl-dropdown { display: none; position: absolute; top: 60px; right: 16px; background: #fff; border-radius: 14px; box-shadow: 0 8px 32px rgba(0,0,0,.18); padding: 16px; min-width: 280px; z-index: 100; }
+    #wl-dropdown.open { display: block; }
+    #wl-dropdown-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; max-height: 220px; overflow-y: auto; }
 
     /* HERO */
     #view-hero {
@@ -929,7 +942,22 @@
       <p>KI-gestützte Bepflanzungsplanung</p>
     </div>
   </a>
+  <nav class="header-nav">
+    <a href="/pflanzen">Stauden</a>
+    <a href="/ratgeber">Ratgeber</a>
+    <button id="wl-nav-btn" onclick="toggleWlDropdown()">
+      🌿 Wunschliste <span id="wl-count">0</span>
+    </button>
+  </nav>
 </header>
+
+<!-- Wunschliste Dropdown -->
+<div id="wl-dropdown" style="position:fixed;top:60px;right:16px;background:#fff;border-radius:14px;box-shadow:0 8px 32px rgba(0,0,0,.18);padding:18px;min-width:290px;z-index:200;display:none">
+  <p style="font-size:.78rem;color:#aaa;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Meine Wunschliste</p>
+  <div id="wl-dropdown-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px;max-height:240px;overflow-y:auto"></div>
+  <button onclick="startMitWunschliste()" style="width:100%;background:#1b4332;color:#fff;border:none;border-radius:10px;padding:12px;font-weight:700;font-size:.9rem;cursor:pointer">Plan mit diesen Pflanzen erstellen →</button>
+  <button onclick="toggleWlDropdown()" style="width:100%;background:none;border:none;color:#aaa;font-size:.82rem;cursor:pointer;margin-top:8px;padding:4px">Schließen</button>
+</div>
 
 <!-- HERO -->
 <div id="view-hero">
@@ -1936,12 +1964,42 @@
     const cta = document.getElementById('hero-wl-cta');
     const names = document.getElementById('hero-wl-names');
     if (!cta) return;
-    if (wishlist.length === 0) { cta.style.display = 'none'; return; }
-    cta.style.display = 'block';
-    names.textContent = wishlist.map(w => w.name_deutsch).join(', ');
+    if (wishlist.length === 0) { cta.style.display = 'none'; }
+    else { cta.style.display = 'block'; names.textContent = wishlist.map(w => w.name_deutsch).join(', '); }
+    // Nav-Button aktualisieren
+    const btn = document.getElementById('wl-nav-btn');
+    const count = document.getElementById('wl-count');
+    if (btn) { btn.style.display = wishlist.length > 0 ? 'flex' : 'none'; }
+    if (count) count.textContent = wishlist.length;
+    // Dropdown-Liste aktualisieren
+    const list = document.getElementById('wl-dropdown-list');
+    if (list) {
+      list.innerHTML = wishlist.length === 0
+        ? '<p style="color:#aaa;font-size:.85rem">Noch keine Pflanzen gewählt</p>'
+        : wishlist.map(w => `
+          <div style="display:flex;align-items:center;justify-content:space-between;background:#f8f4ef;border-radius:8px;padding:8px 12px">
+            <span style="font-size:.88rem;font-weight:600;color:#1b4332">${w.name_deutsch}</span>
+            <button onclick="removeFromWishlist('${w.name_botanisch.replace(/'/g,"\\'")}');updateHeroWishlistCTA()" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:1rem;line-height:1;padding:0 4px" title="Entfernen">✕</button>
+          </div>`).join('');
+    }
   }
 
+  function toggleWlDropdown() {
+    const d = document.getElementById('wl-dropdown');
+    if (!d) return;
+    d.style.display = d.style.display === 'none' ? 'block' : 'none';
+  }
+
+  // Klick außerhalb schließt Dropdown
+  document.addEventListener('click', e => {
+    const d = document.getElementById('wl-dropdown');
+    const btn = document.getElementById('wl-nav-btn');
+    if (d && btn && !d.contains(e.target) && !btn.contains(e.target)) d.style.display = 'none';
+  });
+
   function startMitWunschliste() {
+    hide('view-hero');
+    document.getElementById('wl-dropdown') && document.getElementById('wl-dropdown').classList.remove('open');
     startModus('professionell');
   }
 
