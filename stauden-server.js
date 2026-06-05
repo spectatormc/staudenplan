@@ -1085,7 +1085,11 @@ const KAT_CONFIG = {
 function katCfg(k) { return KAT_CONFIG[k] || { icon: '🌱', grad: 'linear-gradient(135deg,#1b4332,#52b788)', img: '' }; }
 function readingTime(text) { return Math.max(1, Math.round(text.split(/\s+/).length / 200)); }
 
-const NAV_LINKS = `<nav style="background:#1b4332;padding:14px 24px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:50">
+const PLAUSIBLE = `<!-- Privacy-friendly analytics by Plausible -->
+<script async src="https://plausible.io/js/pa-CQxds67VLWtj57jHuhY1V.js"></script>
+<script>window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};plausible.init()</script>`;
+
+const NAV_LINKS = `${PLAUSIBLE}<nav style="background:#1b4332;padding:14px 24px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:50">
   <a href="/" style="color:#fff;text-decoration:none;font-weight:700;font-size:1rem;margin-right:auto">🌿 Staudenplan.de</a>
   <a href="/" style="color:rgba(255,255,255,.8);text-decoration:none;font-size:.88rem">Planer</a>
   <a href="/pflanzen" style="color:rgba(255,255,255,.8);text-decoration:none;font-size:.88rem">Stauden</a>
