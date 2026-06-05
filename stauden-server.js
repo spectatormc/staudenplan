@@ -1304,7 +1304,7 @@ const NAV_LINKS = `${FAVICON}${PLAUSIBLE}
   .snav{background:#1b4332;padding:12px 20px;display:flex;align-items:center;gap:6px;position:sticky;top:0;z-index:100}
   .snav a{color:rgba(255,255,255,.8);text-decoration:none;font-size:.85rem;padding:5px 10px;border-radius:20px;transition:background .12s}
   .snav a:hover{background:rgba(255,255,255,.12);color:#fff}
-  #snav-wl-btn{display:none;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;font-size:.82rem;padding:5px 12px;border-radius:20px;cursor:pointer;font-family:inherit}
+  #snav-wl-btn{font-family:inherit}
   #snav-wl-dd{display:none;position:fixed;top:52px;right:12px;background:#fff;border-radius:14px;box-shadow:0 8px 32px rgba(0,0,0,.2);padding:16px;min-width:280px;z-index:200}
   #snav-wl-list{display:flex;flex-direction:column;gap:6px;margin-bottom:12px;max-height:220px;overflow-y:auto}
   .snav-wl-item{display:flex;justify-content:space-between;align-items:center;background:#f8f4ef;border-radius:8px;padding:8px 12px}
@@ -1317,7 +1317,7 @@ const NAV_LINKS = `${FAVICON}${PLAUSIBLE}
   <a href="/">Planer</a>
   <a href="/pflanzen">Stauden</a>
   <a href="/ratgeber">Ratgeber</a>
-  <button id="snav-wl-btn" onclick="snavToggle()">🌿 Wunschliste <span id="snav-wl-n"></span></button>
+  <button id="snav-wl-btn" style="display:none;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;font-size:.82rem;padding:5px 12px;border-radius:20px;cursor:pointer;font-family:inherit" onclick="snavToggle()">🌿 Wunschliste <span id="snav-wl-n"></span></button>
 </nav>
 <div id="snav-wl-dd">
   <p style="font-size:.75rem;color:#aaa;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Meine Wunschliste</p>
