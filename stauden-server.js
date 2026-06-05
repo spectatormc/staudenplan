@@ -961,6 +961,60 @@ app.get('/pflanze/:slug', (req, res) => {
       <p style="line-height:1.75;color:#333"><strong>Pflanzzeit:</strong> März–Mai (Frühjahr) oder September–Oktober (Herbst). ${pflanze.bienen_freundlich?'Als bienenfreundliche Staude leistet sie einen wichtigen Beitrag zur Gartenökologie.':''} ${pflanze.heimisch?'Als heimische Art ist sie besonders wertvoll für einheimische Insekten und Vögel.':''}</p>
     </section>
 
+    ${(() => {
+      const d = pflanze.inhalt_lang ? (() => { try { return JSON.parse(pflanze.inhalt_lang); } catch { return null; } })() : null;
+      if (!d) return '';
+      return `
+    <!-- Pflege im Detail -->
+    <section style="background:#fff;border-radius:14px;padding:24px;box-shadow:0 2px 12px rgba(0,0,0,.07);margin-bottom:24px">
+      <h2 style="font-size:1.15rem;color:#1b4332;margin-bottom:20px;font-weight:700">🌿 Pflege im Detail</h2>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px">
+        ${[
+          ['📅 Pflanzzeit', d.pflanzzeit],
+          ['📐 Pflanzabstand', d.pflanzabstand],
+          ['💧 Gießen', d.giessen],
+          ['🌱 Düngen', d.duengen],
+          ['✂️ Rückschnitt', d.rueckschnitt],
+          ['❄️ Überwinterung', d.ueberwinterung],
+        ].filter(([,v]) => v).map(([label, val]) => `
+          <div style="background:#f8f4ef;border-radius:10px;padding:14px 16px">
+            <div style="font-size:.75rem;font-weight:700;color:#2d6a4f;margin-bottom:5px;text-transform:uppercase;letter-spacing:.04em">${label}</div>
+            <p style="font-size:.88rem;color:#333;line-height:1.6;margin:0">${val}</p>
+          </div>`).join('')}
+      </div>
+      ${d.tipp ? `<div style="background:linear-gradient(135deg,#d8f3dc,#b7e4c7);border-radius:10px;padding:14px 18px;margin-top:14px;display:flex;gap:12px;align-items:flex-start">
+        <span style="font-size:1.4rem;flex-shrink:0">💡</span>
+        <div><div style="font-size:.75rem;font-weight:700;color:#1b4332;margin-bottom:3px;text-transform:uppercase">Experten-Tipp</div><p style="font-size:.88rem;color:#1b4332;line-height:1.6;margin:0">${d.tipp}</p></div>
+      </div>` : ''}
+    </section>
+
+    <!-- Kombinationen -->
+    ${d.kombinationen && d.kombinationen.length > 0 ? `
+    <section style="background:#fff;border-radius:14px;padding:24px;box-shadow:0 2px 12px rgba(0,0,0,.07);margin-bottom:24px">
+      <h2 style="font-size:1.15rem;color:#1b4332;margin-bottom:16px;font-weight:700">🌸 Ideale Kombinationspartner</h2>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        ${d.kombinationen.map(k => `
+          <a href="/pflanze/${pflanzeToSlug(k.name_botanisch)}" style="display:flex;gap:14px;align-items:center;background:#f8f4ef;border-radius:10px;padding:12px 16px;text-decoration:none;color:inherit;transition:background .12s" onmouseover="this.style.background='#d8f3dc'" onmouseout="this.style.background='#f8f4ef'">
+            <span style="font-size:1.5rem;flex-shrink:0">🌿</span>
+            <div>
+              <div style="font-weight:700;font-size:.92rem;color:#1b4332">${k.name_deutsch} <span style="font-style:italic;color:#aaa;font-weight:400;font-size:.8rem">${k.name_botanisch}</span></div>
+              <div style="font-size:.82rem;color:#555;margin-top:2px">${k.grund}</div>
+            </div>
+            <span style="margin-left:auto;color:#2d6a4f;font-size:.8rem;font-weight:600;white-space:nowrap">Ansehen →</span>
+          </a>`).join('')}
+      </div>
+    </section>` : ''}
+
+    <!-- Häufige Fehler -->
+    ${d.fehler && d.fehler.length > 0 ? `
+    <section style="background:#fff5f5;border-radius:14px;padding:24px;box-shadow:0 2px 12px rgba(0,0,0,.07);margin-bottom:24px">
+      <h2 style="font-size:1.15rem;color:#9b2335;margin-bottom:14px;font-weight:700">⚠️ Häufige Fehler vermeiden</h2>
+      <ul style="list-style:none;padding:0;display:flex;flex-direction:column;gap:8px">
+        ${d.fehler.map(f => `<li style="display:flex;gap:10px;font-size:.88rem;color:#333;line-height:1.6"><span style="color:#e53e3e;font-weight:700;flex-shrink:0">✗</span>${f}</li>`).join('')}
+      </ul>
+    </section>` : ''}`;
+    })()}
+
     <!-- Stile-Tags -->
     <section style="background:#f0fdf4;border-radius:14px;padding:20px 24px;margin-bottom:24px">
       <h2 style="font-size:1rem;color:#1b4332;margin-bottom:12px;font-weight:700">🎨 Gartenstil-Empfehlung</h2>
