@@ -82,6 +82,23 @@ const transporter = nodemailer.createTransport({
 });
 
 // ─── Rate Limiting ────────────────────────────────────────────────────────────
+
+// Global: max 200 Requests pro IP pro Minute (schützt vor Bot-Floods)
+app.use(rateLimit({
+  windowMs: 60 * 1000,
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: req => req.path.startsWith('/images/') || req.path.endsWith('.jpg') || req.path.endsWith('.png'),
+  message: 'Zu viele Anfragen. Bitte versuche es in einer Minute erneut.',
+}));
+
+// /api/pflanzen: max 30 Abrufe pro Minute (verhindert automatisiertes Scraping)
+const pflanzenLimiter = rateLimit({
+  windowMs: 60 * 1000, max: 30,
+  message: { error: 'Zu viele Anfragen.' }
+});
+
 const planLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, max: 10,
   message: { error: 'Zu viele Anfragen, bitte versuche es später erneut.' }
@@ -652,7 +669,7 @@ app.get('/sitemap.xml', (req, res) => {
 });
 
 // ─── Pflanzen-API (für Client-Suche) ─────────────────────────────────────────
-app.get('/api/pflanzen', (req, res) => {
+app.get('/api/pflanzen', pflanzenLimiter, (req, res) => {
   const q = (req.query.q || '').toLowerCase();
   let pflanzen = db.prepare(`
     SELECT name_deutsch, name_botanisch, licht, farbe, bluehzeit,
