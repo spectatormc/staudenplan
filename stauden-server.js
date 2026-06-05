@@ -1015,21 +1015,43 @@ app.get('/pflanze/:slug', (req, res) => {
     </section>
 
     <!-- Kombinationen -->
-    ${d.kombinationen && d.kombinationen.length > 0 ? `
+    ${(() => {
+      if (!d.kombinationen || d.kombinationen.length === 0) return '';
+      // Für jeden Partner passende DB-Pflanze suchen (Genus-Match als Fallback)
+      const kombinationenMitLink = d.kombinationen.map(k => {
+        const genus = (k.name_botanisch || '').split(' ')[0];
+        const match = db.prepare(
+          `SELECT name_botanisch, name_deutsch FROM pflanzen
+           WHERE name_botanisch = ? OR name_botanisch LIKE ? OR name_deutsch = ?
+           LIMIT 1`
+        ).get(k.name_botanisch, `${genus} %`, k.name_deutsch);
+        return { ...k, slug: match ? pflanzeToSlug(match.name_botanisch) : null,
+                       name_deutsch: match ? match.name_deutsch : k.name_deutsch };
+      });
+      return `
     <section style="background:#fff;border-radius:14px;padding:24px;box-shadow:0 2px 12px rgba(0,0,0,.07);margin-bottom:24px">
       <h2 style="font-size:1.15rem;color:#1b4332;margin-bottom:16px;font-weight:700">🌸 Ideale Kombinationspartner</h2>
       <div style="display:flex;flex-direction:column;gap:10px">
-        ${d.kombinationen.map(k => `
-          <a href="/pflanze/${pflanzeToSlug(k.name_botanisch)}" style="display:flex;gap:14px;align-items:center;background:#f8f4ef;border-radius:10px;padding:12px 16px;text-decoration:none;color:inherit;transition:background .12s" onmouseover="this.style.background='#d8f3dc'" onmouseout="this.style.background='#f8f4ef'">
-            <span style="font-size:1.5rem;flex-shrink:0">🌿</span>
-            <div>
-              <div style="font-weight:700;font-size:.92rem;color:#1b4332">${k.name_deutsch} <span style="font-style:italic;color:#aaa;font-weight:400;font-size:.8rem">${k.name_botanisch}</span></div>
-              <div style="font-size:.82rem;color:#555;margin-top:2px">${k.grund}</div>
-            </div>
-            <span style="margin-left:auto;color:#2d6a4f;font-size:.8rem;font-weight:600;white-space:nowrap">Ansehen →</span>
-          </a>`).join('')}
+        ${kombinationenMitLink.map(k => k.slug
+          ? `<a href="/pflanze/${k.slug}" style="display:flex;gap:14px;align-items:center;background:#f8f4ef;border-radius:10px;padding:12px 16px;text-decoration:none;color:inherit;transition:background .12s" onmouseover="this.style.background='#d8f3dc'" onmouseout="this.style.background='#f8f4ef'">
+              <span style="font-size:1.5rem;flex-shrink:0">🌿</span>
+              <div>
+                <div style="font-weight:700;font-size:.92rem;color:#1b4332">${k.name_deutsch} <span style="font-style:italic;color:#aaa;font-weight:400;font-size:.8rem">${k.name_botanisch}</span></div>
+                <div style="font-size:.82rem;color:#555;margin-top:2px">${k.grund}</div>
+              </div>
+              <span style="margin-left:auto;color:#2d6a4f;font-size:.8rem;font-weight:600;white-space:nowrap">Ansehen →</span>
+            </a>`
+          : `<div style="display:flex;gap:14px;align-items:center;background:#f8f4ef;border-radius:10px;padding:12px 16px;">
+              <span style="font-size:1.5rem;flex-shrink:0">🌿</span>
+              <div>
+                <div style="font-weight:700;font-size:.92rem;color:#1b4332">${k.name_deutsch} <span style="font-style:italic;color:#aaa;font-weight:400;font-size:.8rem">${k.name_botanisch}</span></div>
+                <div style="font-size:.82rem;color:#555;margin-top:2px">${k.grund}</div>
+              </div>
+            </div>`
+        ).join('')}
       </div>
-    </section>` : ''}
+    </section>`;
+    })()}
 
     <!-- Häufige Fehler -->
     ${d.fehler && d.fehler.length > 0 ? `
