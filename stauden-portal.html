@@ -2195,6 +2195,12 @@
     for (let y = meterPxY; y < bedH; y += meterPxY)
       gridLines.push(`<line x1="${PAD}" y1="${PAD+y}" x2="${PAD+bedW}" y2="${PAD+y}" stroke="rgba(255,255,255,.12)" stroke-width="1" stroke-dasharray="4,4"/>`);
 
+    // Polygon-Constraints für Placement
+    const drawnPolysEarly = scaledPolygonsForSVG(bedW, bedH, PAD, PAD);
+    const placementPolysEarly = scaledPolygonsForSVG(bedW, bedH, 0, 0);
+    const hasDrawnEarly = !!drawnPolysEarly;
+    const placements = calcPlacements(plan.pflanzen, bedW, bedH, hasDrawnEarly ? placementPolysEarly : null);
+
     // Plant circles (back-to-front: sort by y asc = draw back ones first)
     const sorted = [...placements].sort((a, b) => a.y - b.y);
     const circles = sorted.map(({ x, y, pflanze, pi }) => {
@@ -2217,12 +2223,8 @@
     const scaleY = PAD + bedH + 8;
 
     // Use drawn polygon as bed shape if available
-    const drawnPolys = scaledPolygonsForSVG(bedW, bedH, PAD, PAD);
-    // Polygone ohne Offset für Placement-Berechnung
-    const placementPolys = scaledPolygonsForSVG(bedW, bedH, 0, 0);
-    const hasDrawn = !!drawnPolys;
-
-    const placements = calcPlacements(plan.pflanzen, bedW, bedH, hasDrawn ? placementPolys : null);
+    const drawnPolys = drawnPolysEarly;
+    const hasDrawn = hasDrawnEarly;
 
     let bedShape, bedClipContent, bedOutline, bedLabel;
     if (hasDrawn) {
