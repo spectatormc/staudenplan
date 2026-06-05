@@ -968,7 +968,16 @@ app.get('/pflanze/:slug', (req, res) => {
         <!-- CTA Buttons -->
         <div style="display:flex;gap:10px;flex-wrap:wrap">
           <a href="${kauflink}" target="_blank" rel="noopener sponsored" style="background:#6b4226;color:#fff;border-radius:50px;padding:13px 28px;text-decoration:none;font-weight:700;font-size:.9rem;transition:background .15s">Bei Amazon kaufen →</a>
-          <a href="/?pflanze=${encodeURIComponent(pflanze.name_botanisch)}&pname=${encodeURIComponent(pflanze.name_deutsch)}" style="background:#2d6a4f;color:#fff;border-radius:50px;padding:13px 28px;text-decoration:none;font-weight:700;font-size:.9rem">In Plan aufnehmen →</a>
+          <button id="wl-btn" onclick="addToWunschliste()" style="background:#2d6a4f;color:#fff;border:none;border-radius:50px;padding:13px 28px;font-weight:700;font-size:.9rem;cursor:pointer;transition:background .2s">In Plan aufnehmen →</button>
+          <script>
+          (function(){
+            const KEY='staudenplan_wishlist', BOT='${pflanze.name_botanisch.replace(/'/g,"\\'")}', DE='${pflanze.name_deutsch.replace(/'/g,"\\'")}';
+            function getWL(){try{return JSON.parse(localStorage.getItem(KEY)||'[]');}catch{return[];}}
+            function setAdded(){const b=document.getElementById('wl-btn');if(!b)return;b.textContent='✓ Auf Wunschliste';b.style.background='#52b788';b.style.cursor='default';b.onclick=function(){window.location='/'};}
+            window.addToWunschliste=function(){const wl=getWL();if(!wl.find(p=>p.name_botanisch===BOT)){wl.push({name_deutsch:DE,name_botanisch:BOT});localStorage.setItem(KEY,JSON.stringify(wl));}setAdded();};
+            if(getWL().find(p=>p.name_botanisch===BOT))setAdded();
+          })();
+          </script>
         </div>
         <p style="font-size:.72rem;color:#bbb;margin-top:8px">* Als Amazon-Partner verdienen wir an qualifizierten Käufen.
         </div>
