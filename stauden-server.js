@@ -1141,7 +1141,7 @@ app.get('/pflanze/:slug', (req, res) => {
             const KEY='staudenplan_wishlist', BOT='${pflanze.name_botanisch.replace(/'/g,"\\'")}', DE='${pflanze.name_deutsch.replace(/'/g,"\\'")}';
             function getWL(){try{return JSON.parse(localStorage.getItem(KEY)||'[]');}catch{return[];}}
             function setAdded(){const b=document.getElementById('wl-btn');if(!b)return;b.textContent='✓ Auf Wunschliste';b.style.background='#52b788';b.style.cursor='default';b.onclick=function(){window.location='/'};}
-            window.addToWunschliste=function(){const wl=getWL();if(!wl.find(p=>p.name_botanisch===BOT)){wl.push({name_deutsch:DE,name_botanisch:BOT});localStorage.setItem(KEY,JSON.stringify(wl));}setAdded();};
+            window.addToWunschliste=function(){const wl=getWL();if(!wl.find(p=>p.name_botanisch===BOT)){wl.push({name_deutsch:DE,name_botanisch:BOT});localStorage.setItem(KEY,JSON.stringify(wl));}setAdded();if(window.snavUpdateBtn)window.snavUpdateBtn();};
             if(getWL().find(p=>p.name_botanisch===BOT))setAdded();
           })();
           </script>
@@ -1347,6 +1347,7 @@ const NAV_LINKS = `${FAVICON}${PLAUSIBLE}
     if(wl.length>0){btn.style.display='inline-block';n.textContent='('+wl.length+')';}
     else{btn.style.display='none';document.getElementById('snav-wl-dd').style.display='none';}
   }
+  window.snavUpdateBtn = updateBtn;
   updateBtn();
   document.addEventListener('click',function(e){
     var dd=document.getElementById('snav-wl-dd');
