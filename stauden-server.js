@@ -613,6 +613,13 @@ app.post('/api/anfrage', anfrageLimiter, async (req, res) => {
 });
 
 // ─── robots.txt ──────────────────────────────────────────────────────────────
+// ─── IndexNow ─────────────────────────────────────────────────────────────────
+const INDEXNOW_KEY = '57b3c160fda14faa96ad948cb07805aa';
+
+app.get(`/${INDEXNOW_KEY}.txt`, (req, res) => {
+  res.type('text/plain').send(INDEXNOW_KEY);
+});
+
 app.get('/robots.txt', (req, res) => {
   const base = process.env.SITE_URL || `${req.protocol}://${req.hostname}`;
   res.type('text/plain');
@@ -758,7 +765,9 @@ app.get('/datenschutz', (req, res) => {
     <h2>4. Ihre Rechte</h2>
     <p>Sie haben das Recht auf Auskunft, Berichtigung, Löschung, Einschränkung der Verarbeitung sowie Datenübertragbarkeit Ihrer gespeicherten personenbezogenen Daten. Wenden Sie sich dazu an: <a href="mailto:info@gartenschmiede.de">info@gartenschmiede.de</a></p>
     <p>Sie haben außerdem das Recht, sich bei einer Aufsichtsbehörde zu beschweren. Zuständig ist das Bayerische Landesamt für Datenschutzaufsicht (BayLDA), Promenade 18, 91522 Ansbach.</p>
-    <h2>5. Cookies</h2>
+    <h2>5. Webanalyse (Plausible)</h2>
+    <p>Diese Website nutzt <strong>Plausible Analytics</strong> zur datenschutzfreundlichen Besucherstatistik. Plausible erhebt keine personenbezogenen Daten, setzt keine Cookies und ist vollständig DSGVO-konform. Es werden ausschließlich aggregierte, anonymisierte Seitenaufrufstatistiken erfasst (Seitenaufrufe, Verweildauer, Herkunftsland). Ihre IP-Adresse wird dabei nicht gespeichert. Betreiber: Plausible Insights OÜ, Västriku tn 2, 50403 Tartu, Estland. Weitere Informationen: <a href="https://plausible.io/data-policy" target="_blank" rel="noopener">plausible.io/data-policy</a></p>
+    <h2>6. Cookies</h2>
     <p>Diese Website verwendet keine eigenen Tracking-Cookies und keine Werbe-Cookies. Es werden ausschließlich technisch notwendige Funktionen ohne Cookie-Einsatz verwendet. Bitte beachten Sie, dass externe Websites (z.B. Amazon.de), die Sie über Links auf dieser Website aufrufen, eigene Cookies setzen können. Für diese gilt die jeweilige Datenschutzerklärung des Anbieters.</p>
     <h2>6. Affiliate-Links (Amazon Associates)</h2>
     <p>Diese Website nimmt am Amazon-Partnerprogramm (Amazon Associates) teil, einem Partnerwerbeprogramm, das für Websites konzipiert wurde, mittels dessen durch die Platzierung von Werbeanzeigen und Links zu Amazon.de Werbekostenerstattungen verdient werden können.</p>
@@ -1085,11 +1094,13 @@ const KAT_CONFIG = {
 function katCfg(k) { return KAT_CONFIG[k] || { icon: '🌱', grad: 'linear-gradient(135deg,#1b4332,#52b788)', img: '' }; }
 function readingTime(text) { return Math.max(1, Math.round(text.split(/\s+/).length / 200)); }
 
+const FAVICON = `<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">`;
+
 const PLAUSIBLE = `<!-- Privacy-friendly analytics by Plausible -->
 <script async src="https://plausible.io/js/pa-CQxds67VLWtj57jHuhY1V.js"></script>
 <script>window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};plausible.init()</script>`;
 
-const NAV_LINKS = `${PLAUSIBLE}<nav style="background:#1b4332;padding:14px 24px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:50">
+const NAV_LINKS = `${FAVICON}${PLAUSIBLE}<nav style="background:#1b4332;padding:14px 24px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:50">
   <a href="/" style="color:#fff;text-decoration:none;font-weight:700;font-size:1rem;margin-right:auto">🌿 Staudenplan.de</a>
   <a href="/" style="color:rgba(255,255,255,.8);text-decoration:none;font-size:.88rem">Planer</a>
   <a href="/pflanzen" style="color:rgba(255,255,255,.8);text-decoration:none;font-size:.88rem">Stauden</a>
@@ -1422,10 +1433,34 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   const pflanzenN = db.prepare('SELECT COUNT(*) as n FROM pflanzen').get().n;
   let wissenN = 0;
   try { wissenN = db.prepare('SELECT COUNT(*) as n FROM wissen').get().n; } catch {}
   console.log(`Stauden-Portal läuft auf http://localhost:${PORT}`);
   console.log(`Datenbank: ${pflanzenN} Pflanzen, ${wissenN} Wissens-Einträge`);
+
+  // IndexNow: alle URLs bei Bing einreichen
+  const BASE = process.env.SITE_URL || 'https://www.staudenplan.de';
+  try {
+    const pflanzen = db.prepare('SELECT name_botanisch FROM pflanzen').all();
+    let wissens = [];
+    try { wissens = db.prepare('SELECT titel FROM wissen').all(); } catch {}
+    const urls = [
+      BASE + '/',
+      BASE + '/pflanzen',
+      BASE + '/ratgeber',
+      ...pflanzen.map(p => `${BASE}/pflanze/${pflanzeToSlug(p.name_botanisch)}`),
+      ...wissens.map(w => `${BASE}/ratgeber/${slugify(w.titel)}`),
+    ];
+    const res = await fetch('https://api.indexnow.org/indexnow', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      body: JSON.stringify({ host: 'www.staudenplan.de', key: INDEXNOW_KEY, urlList: urls }),
+      signal: AbortSignal.timeout(10000)
+    });
+    console.log(`IndexNow: ${urls.length} URLs eingereicht (Status ${res.status})`);
+  } catch (e) {
+    console.log(`IndexNow: ${e.message}`);
+  }
 });
