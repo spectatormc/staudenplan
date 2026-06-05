@@ -818,7 +818,7 @@ app.get('/pflanze/:slug', (req, res) => {
           ? `<div style="border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.12);aspect-ratio:4/3">
                <img src="${pflanze.bild_url}" alt="${pflanze.name_deutsch} — ${pflanze.name_botanisch}" style="width:100%;height:100%;object-fit:cover;display:block">
              </div>
-             <p style="font-size:.68rem;color:#bbb;margin-top:6px;text-align:right">Foto: Wikipedia Commons</p>`
+             <p style="font-size:.68rem;color:#bbb;margin-top:6px;text-align:right">Foto: Pixabay</p>`
           : `<div style="border-radius:16px;background:linear-gradient(135deg,#d8f3dc,#b7e4c7);aspect-ratio:4/3;display:flex;align-items:center;justify-content:center;font-size:6rem">🌿</div>`}
       </div>
 
