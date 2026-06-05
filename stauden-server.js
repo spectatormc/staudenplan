@@ -1317,7 +1317,7 @@ const NAV_LINKS = `${FAVICON}${PLAUSIBLE}
   <a href="/">Planer</a>
   <a href="/pflanzen">Stauden</a>
   <a href="/ratgeber">Ratgeber</a>
-  <button id="snav-wl-btn" style="display:none;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;font-size:.82rem;padding:5px 12px;border-radius:20px;cursor:pointer;font-family:inherit" onclick="snavToggle()">🌿 Wunschliste <span id="snav-wl-n"></span></button>
+  <button id="snav-wl-btn" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;font-size:.82rem;padding:5px 12px;border-radius:20px;cursor:pointer;font-family:inherit" onclick="snavToggle()">🌿 <span id="snav-wl-n">0</span></button>
 </nav>
 <div id="snav-wl-dd">
   <p style="font-size:.75rem;color:#aaa;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Meine Wunschliste</p>
@@ -1342,11 +1342,13 @@ const NAV_LINKS = `${FAVICON}${PLAUSIBLE}
   window.snavRm=function(bot){var wl=getWL().filter(function(p){return p.name_botanisch!==bot;});saveWL(wl);updateBtn();renderDD();};
   function updateBtn(){
     var wl=getWL();
-    var btn=document.getElementById('snav-wl-btn');
     var n=document.getElementById('snav-wl-n');
+    if(n) n.textContent=wl.length;
+    var btn=document.getElementById('snav-wl-btn');
     if(!btn)return;
-    if(wl.length>0){btn.style.display='inline-block';n.textContent='('+wl.length+')';}
-    else{btn.style.display='none';document.getElementById('snav-wl-dd').style.display='none';}
+    if(wl.length>0){btn.style.opacity='1';btn.style.borderColor='rgba(255,255,255,.5)';}
+    else{btn.style.opacity='0.5';btn.style.borderColor='rgba(255,255,255,.2)';}
+    if(wl.length===0)document.getElementById('snav-wl-dd') && (document.getElementById('snav-wl-dd').style.display='none');
   }
   window.snavUpdateBtn = updateBtn;
   document.addEventListener('wl-changed', updateBtn);
