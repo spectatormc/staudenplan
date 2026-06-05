@@ -1582,6 +1582,24 @@
   let currentPlan = null;
   let currentStep = 1;
 
+  // ── URL-Parameter: Pflanze aus Lexikon vorauswählen ───────────────────────
+  (function checkUrlPflanze() {
+    const p = new URLSearchParams(window.location.search);
+    const botanisch = p.get('pflanze');
+    const deutsch   = p.get('pname');
+    if (!botanisch || !deutsch) return;
+    wishlist.push({ name_deutsch: deutsch, name_botanisch: botanisch });
+    formData.lieblingspflanzen = wishlist;
+    // Toast-Hinweis anzeigen
+    const toast = document.createElement('div');
+    toast.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1b4332;color:#fff;padding:13px 24px;border-radius:50px;font-size:.9rem;font-weight:600;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,.3);display:flex;gap:10px;align-items:center';
+    toast.innerHTML = `<span style="font-size:1.2rem">🌿</span> <strong>${deutsch}</strong> wurde zur Wunschliste hinzugefügt`;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 4000);
+    // URL sauber halten
+    history.replaceState({}, '', '/');
+  })();
+
   // ── Modus-Auswahl ──────────────────────────────────────────────────────────
   function showModewahl() {
     hide('view-hero'); hide('view-fragebogen'); hide('view-professionell');

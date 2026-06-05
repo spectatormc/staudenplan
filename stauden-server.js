@@ -942,7 +942,7 @@ app.get('/pflanze/:slug', (req, res) => {
         <!-- CTA Buttons -->
         <div style="display:flex;gap:10px;flex-wrap:wrap">
           <a href="${kauflink}" target="_blank" rel="noopener sponsored" style="background:#6b4226;color:#fff;border-radius:50px;padding:13px 28px;text-decoration:none;font-weight:700;font-size:.9rem;transition:background .15s">Bei Amazon kaufen →</a>
-          <a href="/" style="background:#2d6a4f;color:#fff;border-radius:50px;padding:13px 28px;text-decoration:none;font-weight:700;font-size:.9rem">In Plan aufnehmen →</a>
+          <a href="/?pflanze=${encodeURIComponent(pflanze.name_botanisch)}&pname=${encodeURIComponent(pflanze.name_deutsch)}" style="background:#2d6a4f;color:#fff;border-radius:50px;padding:13px 28px;text-decoration:none;font-weight:700;font-size:.9rem">In Plan aufnehmen →</a>
         </div>
         <p style="font-size:.72rem;color:#bbb;margin-top:8px">* Als Amazon-Partner verdienen wir an qualifizierten Käufen.
         </div>
