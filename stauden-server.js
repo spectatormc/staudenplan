@@ -649,7 +649,8 @@ app.get('/api/pflanzen', (req, res) => {
   const q = (req.query.q || '').toLowerCase();
   let pflanzen = db.prepare(`
     SELECT name_deutsch, name_botanisch, licht, farbe, bluehzeit,
-           hoehe_cm_min, hoehe_cm_max, stil, pflege_sterne, beschreibung
+           hoehe_cm_min, hoehe_cm_max, stil, pflege_sterne, beschreibung,
+           feuchtigkeit, wuchs
     FROM pflanzen ORDER BY name_deutsch
   `).all();
   if (q) {

@@ -924,6 +924,12 @@
 
 <!-- HERO -->
 <div id="view-hero">
+  <!-- Wunschlisten-CTA (wird per JS ein/ausgeblendet) -->
+  <div id="hero-wl-cta" style="display:none;background:rgba(255,255,255,.15);border:2px solid rgba(255,255,255,.4);border-radius:16px;padding:16px 24px;margin-bottom:28px;max-width:480px;width:100%">
+    <p style="font-size:.85rem;opacity:.8;margin-bottom:8px">Deine Wunschliste</p>
+    <div id="hero-wl-names" style="font-weight:700;font-size:1rem;margin-bottom:12px"></div>
+    <button onclick="startMitWunschliste()" style="background:#fff;color:#1b4332;border:none;border-radius:50px;padding:10px 24px;font-weight:700;font-size:.9rem;cursor:pointer;width:100%">Plan mit diesen Pflanzen erstellen →</button>
+  </div>
   <div class="hero-icon">🌸</div>
   <h2>Dein persönlicher<br>Bepflanzungsplan</h2>
   <p>KI-gestützte Gartenplanung mit über 220 geprüften Stauden — in 2 Minuten zum fertigen Plan mit Visualisierung.</p>
@@ -1596,9 +1602,12 @@
     toast.innerHTML = `<span style="font-size:1.2rem">🌿</span> <strong>${deutsch}</strong> wurde zur Wunschliste hinzugefügt`;
     document.body.appendChild(toast);
     setTimeout(() => toast.remove(), 4000);
-    // URL sauber halten
+    saveWishlist();
     history.replaceState({}, '', '/');
   })();
+
+  // CTA beim Seitenload anzeigen falls Wunschliste vorhanden
+  document.addEventListener('DOMContentLoaded', updateHeroWishlistCTA);
 
   // ── Modus-Auswahl ──────────────────────────────────────────────────────────
   function showModewahl() {
@@ -1901,7 +1910,65 @@
 
   // ── Pflanzensuche ─────────────────────────────────────────────────────────
   let pflanzenDB = [];
-  let wishlist = [];
+
+  // ── Wunschliste mit localStorage-Persistenz ───────────────────────────────
+  let wishlist = (() => {
+    try { return JSON.parse(localStorage.getItem('staudenplan_wishlist') || '[]'); } catch { return []; }
+  })();
+  formData && (formData.lieblingspflanzen = wishlist);
+
+  function saveWishlist() {
+    try { localStorage.setItem('staudenplan_wishlist', JSON.stringify(wishlist)); } catch {}
+    formData.lieblingspflanzen = wishlist;
+    updateHeroWishlistCTA();
+  }
+
+  function updateHeroWishlistCTA() {
+    const cta = document.getElementById('hero-wl-cta');
+    const names = document.getElementById('hero-wl-names');
+    if (!cta) return;
+    if (wishlist.length === 0) { cta.style.display = 'none'; return; }
+    cta.style.display = 'block';
+    names.textContent = wishlist.map(w => w.name_deutsch).join(', ');
+  }
+
+  function startMitWunschliste() {
+    startModus('professionell');
+    // Direkt zu Schritt 5 springen (Wünsche)
+    setTimeout(() => proGoStep(5), 100);
+  }
+
+  // ── Kompatibilitäts-Check ─────────────────────────────────────────────────
+  const FEUCHT_INCOMPAT = {
+    'trocken': ['feucht', 'nass'],
+    'feucht':  ['trocken'],
+    'nass':    ['trocken'],
+  };
+  const LICHT_INCOMPAT = {
+    'Sonne':    ['Schatten'],
+    'Schatten': ['Sonne'],
+  };
+
+  function checkKompatibilitaet(neuePflanze) {
+    if (!neuePflanze.feuchtigkeit && !neuePflanze.licht) return null;
+    for (const w of wishlist) {
+      const dbP = pflanzenDB.find(p => p.name_botanisch === w.name_botanisch);
+      if (!dbP) continue;
+      // Feuchtigkeit
+      const incompat = FEUCHT_INCOMPAT[neuePflanze.feuchtigkeit] || [];
+      if (incompat.includes(dbP.feuchtigkeit)) {
+        return `${neuePflanze.name_deutsch} (${neuePflanze.feuchtigkeit}) passt nicht gut zu ${dbP.name_deutsch} (${dbP.feuchtigkeit}) — unterschiedliche Feuchtigkeitsansprüche.`;
+      }
+      // Licht
+      const lichtNeu = (neuePflanze.licht || '').split('|')[0].trim();
+      const lichtAlt = (dbP.licht || '').split('|')[0].trim();
+      const lichtIncompat = LICHT_INCOMPAT[lichtNeu] || [];
+      if (lichtAlt && lichtIncompat.some(l => lichtAlt.includes(l))) {
+        return `${neuePflanze.name_deutsch} (${lichtNeu}) passt nicht gut zu ${dbP.name_deutsch} (${lichtAlt}) — unterschiedliche Lichtansprüche.`;
+      }
+    }
+    return null;
+  }
 
   async function loadPflanzenDB() {
     if (pflanzenDB.length > 0) return;
@@ -1940,19 +2007,38 @@
 
   function addToWishlist(name_deutsch, name_botanisch, el) {
     if (wishlist.find(w => w.name_botanisch === name_botanisch)) return;
+    // Kompatibilitäts-Check
+    const dbP = pflanzenDB.find(p => p.name_botanisch === name_botanisch);
+    if (dbP && wishlist.length > 0) {
+      const warnung = checkKompatibilitaet(dbP);
+      if (warnung) showKompatWarnung(warnung);
+    }
     wishlist.push({ name_deutsch, name_botanisch });
-    formData.lieblingspflanzen = wishlist;
+    saveWishlist();
     el.classList.add('added');
     renderWishlist();
   }
 
   function removeFromWishlist(name_botanisch) {
     wishlist = wishlist.filter(w => w.name_botanisch !== name_botanisch);
-    formData.lieblingspflanzen = wishlist;
+    saveWishlist();
     renderWishlist();
-    // refresh search results
     const q = document.getElementById('pflanz-search').value;
     if (q) searchPflanzen(q);
+  }
+
+  function showKompatWarnung(text) {
+    let el = document.getElementById('compat-warn');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'compat-warn';
+      el.style.cssText = 'background:#fff8e1;border:1px solid #f59e0b;border-radius:10px;padding:10px 14px;margin-top:10px;font-size:.82rem;color:#92400e;display:flex;gap:8px;align-items:flex-start';
+      const chips = document.getElementById('wishlist-chips');
+      chips && chips.parentNode.insertBefore(el, chips.nextSibling);
+    }
+    el.innerHTML = `<span>⚠️</span><span>${text}</span>`;
+    el.style.display = 'flex';
+    setTimeout(() => { if (el) el.style.display = 'none'; }, 6000);
   }
 
   function renderWishlist() {
@@ -2773,6 +2859,8 @@
       modus: 'einfach', lieblingspflanzen: [], budget: null, nutzung: [], pflegezeit: ''
     };
     currentPlan = null; wishlist = []; polygons = []; currentPoints = [];
+    try { localStorage.removeItem('staudenplan_wishlist'); } catch {}
+    updateHeroWishlistCTA();
     // Reset einfach form
     try { document.getElementById('gartenflaeche').value = ''; } catch {}
     ['btn-next-1','btn-next-2','btn-next-3','btn-next-4'].forEach(id => {
