@@ -14,6 +14,8 @@
   <link rel="canonical" href="https://www.staudenplan.de/">
   <meta name="robots" content="index, follow">
   <meta name="google-site-verification" content="l7et-TgmIhwvxiUBjfAf0jD6KYLcn80JhcYnfOZIfaA" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
   <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"Staudenplan.de","url":"https://www.staudenplan.de","description":"KI-gestützter Bepflanzungsplaner für Privatgärten mit über 220 winterharten Stauden","applicationCategory":"LifestyleApplication","operatingSystem":"Web","offers":{"@type":"Offer","price":"0","priceCurrency":"EUR"}}</script>
   <style>
     :root {
@@ -1514,7 +1516,7 @@
       <div class="viz-card">
         <div class="viz-card-title">
           <span>🎨 Grafischer Bepflanzungsplan — Draufsicht</span>
-          <button class="btn-print" style="font-size:.78rem;padding:6px 14px" onclick="downloadPlan()">⬇️ SVG herunterladen</button>
+          <button class="btn-print" style="font-size:.78rem;padding:6px 14px" onclick="showEmailGate()">⬇️ PDF herunterladen</button>
         </div>
         <div class="viz-card-body">
           <div class="viz-svg-wrap" id="grafisch-container"></div>
@@ -2441,12 +2443,186 @@
     if (currentPlan) renderGrafisch(currentPlan, saison);
   }
 
-  function downloadPlan() {
-    const svg = document.getElementById('grafisch-svg');
-    if (!svg) return;
-    const blob = new Blob([svg.outerHTML], { type: 'image/svg+xml' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = 'bepflanzungsplan.svg'; a.click();
+  // ── E-Mail-Gate ──────────────────────────────────────────────────────────────
+  function showEmailGate() {
+    if (!currentPlan) return;
+    document.getElementById('email-gate-overlay').style.display = 'flex';
+    document.getElementById('gate-email').focus();
+  }
+
+  function closeEmailGate() {
+    document.getElementById('email-gate-overlay').style.display = 'none';
+    document.getElementById('gate-error').textContent = '';
+    document.getElementById('gate-email').value = '';
+  }
+
+  async function submitEmailGate() {
+    const email = document.getElementById('gate-email').value.trim();
+    const errEl = document.getElementById('gate-error');
+    const btn   = document.getElementById('gate-btn');
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      errEl.textContent = 'Bitte eine gültige E-Mail eingeben.'; return;
+    }
+    btn.disabled = true; btn.textContent = 'Wird erstellt…';
+    try {
+      await fetch('/api/email-gate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, gartenflaeche: formData.gartenflaeche, licht: formData.licht, stil: formData.stil })
+      });
+      closeEmailGate();
+      await generatePDF();
+    } catch (e) {
+      errEl.textContent = 'Fehler — bitte erneut versuchen.';
+    }
+    btn.disabled = false; btn.textContent = 'Kostenlos herunterladen →';
+  }
+
+  // ── PDF-Generator ─────────────────────────────────────────────────────────
+  async function svgToPngDataUrl(svgEl) {
+    const svgData = new XMLSerializer().serializeToString(svgEl);
+    const w = parseInt(svgEl.getAttribute('width')) || svgEl.clientWidth || 800;
+    const h = parseInt(svgEl.getAttribute('height')) || svgEl.clientHeight || 400;
+    const canvas = document.createElement('canvas');
+    canvas.width = w * 2; canvas.height = h * 2;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(2, 2);
+    const img = new Image();
+    await new Promise(resolve => {
+      img.onload = resolve;
+      img.onerror = resolve;
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgData);
+    });
+    ctx.drawImage(img, 0, 0);
+    return canvas.toDataURL('image/png');
+  }
+
+  async function generatePDF() {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const plan = currentPlan;
+    const W = 210, MARGIN = 14, CW = W - MARGIN * 2;
+    let y = 0;
+
+    // ── Header ──
+    doc.setFillColor(27, 67, 50);
+    doc.rect(0, 0, W, 28, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(18); doc.setFont('helvetica', 'bold');
+    doc.text('Ihr persönlicher Bepflanzungsplan', MARGIN, 12);
+    doc.setFontSize(9); doc.setFont('helvetica', 'normal');
+    doc.text('staudenplan.de  ·  ' + new Date().toLocaleDateString('de-DE', { day:'2-digit', month:'long', year:'numeric' }), MARGIN, 21);
+    y = 34;
+
+    // ── Gartendaten ──
+    doc.setTextColor(27, 67, 50);
+    doc.setFontSize(11); doc.setFont('helvetica', 'bold');
+    doc.text('Ihre Gartendaten', MARGIN, y); y += 6;
+    doc.setFontSize(9); doc.setFont('helvetica', 'normal'); doc.setTextColor(60, 60, 60);
+    const gData = [
+      ['Fläche', (formData.gartenflaeche || '?') + ' m²'],
+      ['Standort', formData.licht || '?'],
+      ['Bodentyp', formData.boden || '?'],
+      ['Gartenstil', formData.stil || '?'],
+      ['Geschätzte Gesamtkosten', plan.gesamtkosten_geschaetzt || '?'],
+    ];
+    doc.autoTable({ startY: y, head: [], body: gData, margin: { left: MARGIN, right: MARGIN },
+      styles: { fontSize: 9, cellPadding: 1.5 },
+      columnStyles: { 0: { fontStyle: 'bold', cellWidth: 55, textColor: [80, 80, 80] }, 1: { textColor: [40, 40, 40] } },
+      theme: 'plain' });
+    y = doc.lastAutoTable.finalY + 6;
+
+    // ── Grafischer Plan ──
+    const svgEl = document.getElementById('grafisch-svg');
+    if (svgEl) {
+      doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.setTextColor(27, 67, 50);
+      doc.text('Grafischer Pflanzplan', MARGIN, y); y += 4;
+      try {
+        const imgData = await svgToPngDataUrl(svgEl);
+        const svgW = parseInt(svgEl.getAttribute('width')) || 800;
+        const svgH = parseInt(svgEl.getAttribute('height')) || 400;
+        const imgH = CW * (svgH / svgW);
+        doc.addImage(imgData, 'PNG', MARGIN, y, CW, imgH);
+        y += imgH + 6;
+      } catch (e) { y += 4; }
+    }
+
+    // ── Stückliste ──
+    doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.setTextColor(27, 67, 50);
+    doc.text('Stückliste', MARGIN, y); y += 3;
+    const rows = plan.pflanzen.map((p, i) => [
+      i + 1,
+      p.name_deutsch,
+      p.name_botanisch,
+      p.stueckzahl || 1,
+      p.bluehzeit || '–',
+      p.farbe || '–',
+      p.preis_stueck_eur ? ((p.preis_stueck_eur * (p.stueckzahl || 1)).toFixed(2) + ' €') : '–',
+    ]);
+    const gesamtpreis = plan.pflanzen.reduce((s, p) => s + (p.preis_stueck_eur || 0) * (p.stueckzahl || 1), 0);
+    rows.push(['', '', { content: 'Gesamt', styles: { fontStyle: 'bold' } }, plan.pflanzen.reduce((s,p) => s + (p.stueckzahl||1), 0), '', '', { content: gesamtpreis.toFixed(2) + ' €', styles: { fontStyle: 'bold' } }]);
+    doc.autoTable({
+      startY: y,
+      head: [['#', 'Pflanze', 'Botanisch', 'Stk.', 'Blüte', 'Farbe', 'Preis']],
+      body: rows,
+      margin: { left: MARGIN, right: MARGIN },
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [45, 106, 79], textColor: 255, fontStyle: 'bold' },
+      columnStyles: { 0: { cellWidth: 8 }, 3: { cellWidth: 12 }, 6: { cellWidth: 22 } },
+      alternateRowStyles: { fillColor: [245, 250, 247] },
+      theme: 'striped'
+    });
+    y = doc.lastAutoTable.finalY + 6;
+
+    // ── Pflanzkalender ──
+    if (plan.pflanzkalender) {
+      if (y > 230) { doc.addPage(); y = 20; }
+      doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.setTextColor(27, 67, 50);
+      doc.text('Pflanzkalender', MARGIN, y); y += 3;
+      const kalRows = [
+        ['🌱 Frühling', (plan.pflanzkalender['Frühling'] || []).join(', ') || '–'],
+        ['☀️ Sommer',   (plan.pflanzkalender['Sommer']   || []).join(', ') || '–'],
+        ['🍂 Herbst',   (plan.pflanzkalender['Herbst']   || []).join(', ') || '–'],
+        ['❄️ Winter',   (plan.pflanzkalender['Winter']   || []).join(', ') || '–'],
+      ];
+      doc.autoTable({ startY: y, head: [], body: kalRows, margin: { left: MARGIN, right: MARGIN },
+        styles: { fontSize: 8.5, cellPadding: 2.5 },
+        columnStyles: { 0: { fontStyle: 'bold', cellWidth: 28, textColor: [45, 106, 79] } },
+        theme: 'plain', alternateRowStyles: { fillColor: [245, 250, 247] } });
+      y = doc.lastAutoTable.finalY + 6;
+    }
+
+    // ── Tipps ──
+    if (plan.tipps && plan.tipps.length > 0) {
+      if (y > 240) { doc.addPage(); y = 20; }
+      doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.setTextColor(27, 67, 50);
+      doc.text('Tipps & Hinweise', MARGIN, y); y += 5;
+      doc.setFontSize(8.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(60, 60, 60);
+      plan.tipps.forEach(t => {
+        const lines = doc.splitTextToSize('• ' + t, CW);
+        if (y + lines.length * 4.5 > 275) { doc.addPage(); y = 20; }
+        doc.text(lines, MARGIN, y);
+        y += lines.length * 4.5 + 2;
+      });
+    }
+
+    if (plan.pflanzabstand_hinweis) {
+      if (y > 260) { doc.addPage(); y = 20; }
+      doc.setFontSize(8); doc.setTextColor(120, 120, 120);
+      const lines = doc.splitTextToSize('Pflanzabstand: ' + plan.pflanzabstand_hinweis, CW);
+      doc.text(lines, MARGIN, y); y += lines.length * 4 + 4;
+    }
+
+    // ── Footer auf jeder Seite ──
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setDrawColor(200, 200, 200); doc.line(MARGIN, 286, W - MARGIN, 286);
+      doc.setFontSize(7.5); doc.setTextColor(160, 160, 160); doc.setFont('helvetica', 'normal');
+      doc.text('staudenplan.de  ·  Kostenloser KI-Bepflanzungsplaner  ·  Seite ' + i + ' / ' + pageCount, MARGIN, 291);
+    }
+
+    doc.save('bepflanzungsplan-staudenplan.pdf');
   }
 
   // ── renderErgebnis ────────────────────────────────────────────────────────
@@ -2597,5 +2773,24 @@
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 </script>
+
+<!-- E-Mail-Gate Modal -->
+<div id="email-gate-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;align-items:center;justify-content:center;padding:20px">
+  <div style="background:#fff;border-radius:20px;padding:36px 32px;max-width:420px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+    <div style="font-size:3rem;margin-bottom:12px">📄</div>
+    <h2 style="font-size:1.4rem;color:#1b4332;margin-bottom:10px;font-weight:800">Plan als PDF herunterladen</h2>
+    <p style="color:#666;font-size:.9rem;line-height:1.6;margin-bottom:22px">Kostenlos — trag einfach deine E-Mail ein.<br>Keine Werbung, nur gelegentliche Gartentipps.</p>
+    <input type="email" id="gate-email" placeholder="deine@email.de"
+      style="width:100%;padding:13px 16px;border:2px solid #e0d9cf;border-radius:10px;font-size:1rem;outline:none;margin-bottom:8px;box-sizing:border-box"
+      onfocus="this.style.borderColor='#2d6a4f'" onblur="this.style.borderColor='#e0d9cf'"
+      onkeydown="if(event.key==='Enter') submitEmailGate()">
+    <p id="gate-error" style="color:#e53e3e;font-size:.82rem;min-height:18px;margin-bottom:8px"></p>
+    <button id="gate-btn" onclick="submitEmailGate()"
+      style="width:100%;background:linear-gradient(135deg,#2d6a4f,#1b4332);color:#fff;border:none;border-radius:12px;padding:14px;font-size:1rem;font-weight:700;cursor:pointer;margin-bottom:10px">
+      Kostenlos herunterladen →
+    </button>
+    <button onclick="closeEmailGate()" style="background:none;border:none;color:#aaa;font-size:.85rem;cursor:pointer">Abbrechen</button>
+  </div>
+</div>
 </body>
 </html>

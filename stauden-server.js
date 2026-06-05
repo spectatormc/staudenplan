@@ -54,6 +54,16 @@ db.exec(`
     abgerufen_am TEXT DEFAULT (datetime('now')),
     eintraege_erstellt INTEGER DEFAULT 0
   );
+
+  CREATE TABLE IF NOT EXISTS email_gate (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    erstellt_am TEXT DEFAULT (datetime('now')),
+    email TEXT NOT NULL,
+    gartenflaeche REAL,
+    licht TEXT,
+    stil TEXT,
+    quelle TEXT DEFAULT 'pdf-download'
+  );
 `);
 
 // ─── OpenAI (lazy) ────────────────────────────────────────────────────────────
@@ -539,6 +549,21 @@ JSON-Format:
   } catch (err) {
     console.error('OpenAI Fehler:', err.message);
     res.status(500).json({ error: 'Fehler bei der KI-Planung. Bitte versuche es erneut.' });
+  }
+});
+
+app.post('/api/email-gate', rateLimit({ windowMs: 60*60*1000, max: 10, message: { error: 'Zu viele Anfragen.' } }), (req, res) => {
+  const { email, gartenflaeche, licht, stil } = req.body;
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ error: 'Bitte eine gültige E-Mail-Adresse eingeben.' });
+  }
+  try {
+    db.prepare(`INSERT INTO email_gate (email, gartenflaeche, licht, stil) VALUES (?, ?, ?, ?)`)
+      .run(email, gartenflaeche || null, licht || null, stil || null);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Email-Gate Fehler:', err.message);
+    res.status(500).json({ error: 'Fehler beim Speichern.' });
   }
 });
 
@@ -1201,8 +1226,9 @@ app.get('/admin', (req, res) => {
     return res.status(401).send('<h2>Bitte /admin?pw=PASSWORT aufrufen</h2>');
   }
 
-  const anfragen  = db.prepare('SELECT * FROM anfragen ORDER BY erstellt_am DESC').all();
-  const pflanzenN = db.prepare('SELECT COUNT(*) as n FROM pflanzen').get().n;
+  const anfragen   = db.prepare('SELECT * FROM anfragen ORDER BY erstellt_am DESC').all();
+  const emailGates = db.prepare('SELECT * FROM email_gate ORDER BY erstellt_am DESC').all();
+  const pflanzenN  = db.prepare('SELECT COUNT(*) as n FROM pflanzen').get().n;
   let wissenN = 0;
   try { wissenN = db.prepare('SELECT COUNT(*) as n FROM wissen').get().n; } catch {}
 
@@ -1230,14 +1256,19 @@ app.get('/admin', (req, res) => {
   <body>
   <h1>Stauden-Portal Admin</h1>
   <div class="stat-row">
-    <div class="stat"><strong>${anfragen.length}</strong>Anfragen</div>
+    <div class="stat"><strong>${emailGates.length}</strong>PDF-Downloads (E-Mails)</div>
+    <div class="stat"><strong>${anfragen.length}</strong>Beratungsanfragen</div>
     <div class="stat"><strong>${pflanzenN}</strong>Pflanzen in DB</div>
     <div class="stat"><strong>${wissenN}</strong>Wissens-Einträge</div>
   </div>
   <h2>Wissensdatenbank</h2>
   <button class="btn orange" onclick="updateWissen()">🌿 Wissen aktualisieren (Web-Suche)</button>
   <div id="update-log"></div>
-  <h2>Bepflanzungsanfragen (${anfragen.length})</h2>
+  <h2>📧 PDF-Downloads / E-Mail-Liste (${emailGates.length})</h2>
+  <table><tr><th>#</th><th>Datum</th><th>E-Mail</th><th>Fläche</th><th>Licht</th><th>Stil</th></tr>
+  ${emailGates.map(e => `<tr><td>${e.id}</td><td>${e.erstellt_am}</td><td><a href="mailto:${e.email}">${e.email}</a></td><td>${e.gartenflaeche||'—'} m²</td><td>${e.licht||'—'}</td><td>${e.stil||'—'}</td></tr>`).join('')}
+  </table>
+  <h2>Beratungsanfragen (${anfragen.length})</h2>
   <table><tr><th>#</th><th>Datum</th><th>Name</th><th>E-Mail</th><th>PLZ</th><th>Fläche</th><th>Licht</th><th>Stil</th><th>Anmerkungen</th></tr>${rows}</table>
   <script>
   async function updateWissen() {
