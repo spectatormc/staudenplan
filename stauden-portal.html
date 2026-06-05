@@ -922,11 +922,13 @@
 <body>
 
 <header>
-  <span class="logo">🌿</span>
-  <div>
-    <h1>Staudenplan.de</h1>
-    <p>KI-gestützte Bepflanzungsplanung</p>
-  </div>
+  <a onclick="goHome()" style="display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;cursor:pointer">
+    <span class="logo">🌿</span>
+    <div>
+      <h1>Staudenplan.de</h1>
+      <p>KI-gestützte Bepflanzungsplanung</p>
+    </div>
+  </a>
 </header>
 
 <!-- HERO -->
@@ -2856,6 +2858,13 @@
       errEl.textContent = err.message;
       errEl.style.display = 'block';
     }
+  }
+
+  function goHome() {
+    neustart();
+    hide('view-fragebogen'); hide('view-professionell'); hide('view-modewahl'); hide('view-loading'); hide('view-ergebnis');
+    show('view-hero');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   function neustart() {
