@@ -102,76 +102,138 @@ const STIL_MAP = {
   'Cottage-Garten / Englisch': 'Cottage',
 };
 
-function getPflanzenkandidaten(licht, boden, stil) {
+function getFeuchtigkeit(boden, standortBeschr) {
+  const s = (standortBeschr || '').toLowerCase();
+  if (s.includes('nass') || s.includes('teichrand') || s.includes('sumpf')) return 'nass';
+  if (s.includes('dauerhaft feucht') || s.includes('feucht-kühl') || s.includes('feucht-nass')) return 'feucht';
+  if (s.includes('sehr trocken') || s.includes('kiesgarten') || s.includes('trocken')) return 'trocken';
+  if (s.includes('wechselfeucht')) return 'wechselfeucht';
+  if (boden === 'Sandig / durchlässig') return 'trocken';
+  if (boden === 'Lehmig / schwer') return 'feucht';
+  return 'normal';
+}
+
+// Welche DB-Feuchtigkeit-Werte passen zu einem Standort
+const FEUCHT_COMPAT = {
+  'trocken':       ['trocken', 'normal'],
+  'normal':        ['normal', 'trocken', 'wechselfeucht'],
+  'wechselfeucht': ['wechselfeucht', 'normal', 'trocken'],
+  'feucht':        ['feucht', 'wechselfeucht', 'normal'],
+  'nass':          ['nass', 'feucht'],
+};
+
+function getPflanzenkandidaten(licht, boden, stil, standortBeschr) {
   const pflanzenCount = db.prepare('SELECT COUNT(*) as n FROM pflanzen').get().n;
   if (pflanzenCount === 0) return [];
 
-  const lichtTerm = LICHT_MAP[licht] || licht.split(' ')[0];
-  const bodenTerm = BODEN_MAP[boden] || 'normal';
-  const stilTerm  = STIL_MAP[stil] || stil.split('/')[0].trim();
+  const lichtTerm   = LICHT_MAP[licht] || licht.split(' ')[0];
+  const bodenTerm   = BODEN_MAP[boden] || 'normal';
+  const stilTerm    = STIL_MAP[stil]   || stil.split('/')[0].trim();
+  const feuchtigkeit = getFeuchtigkeit(boden, standortBeschr);
+  const feuchTerms  = FEUCHT_COMPAT[feuchtigkeit] || ['normal'];
+  const feuchPlaceholders = feuchTerms.map(() => '?').join(',');
 
-  // Try to find plants matching all criteria, fallback to licht-only
+  // Vollständiger Match mit Feuchtigkeit
   let kandidaten = db.prepare(`
     SELECT name_deutsch, name_botanisch, beschreibung, licht, boden, stil,
            bluehzeit, farbe, hoehe_cm_min, hoehe_cm_max,
-           pflege_sterne, preis_stueck_eur, bienen_freundlich, heimisch
+           pflege_sterne, preis_stueck_eur, bienen_freundlich, heimisch,
+           feuchtigkeit, wuchs
     FROM pflanzen
     WHERE licht LIKE ? AND (boden LIKE ? OR boden LIKE ?) AND stil LIKE ?
-    ORDER BY RANDOM() LIMIT 30
-  `).all(`%${lichtTerm}%`, `%${bodenTerm}%`, '%normal%', `%${stilTerm}%`);
+      AND (feuchtigkeit IN (${feuchPlaceholders}) OR feuchtigkeit IS NULL)
+    ORDER BY RANDOM() LIMIT 35
+  `).all(`%${lichtTerm}%`, `%${bodenTerm}%`, '%normal%', `%${stilTerm}%`, ...feuchTerms);
 
+  // Fallback: nur Licht + Feuchtigkeit
   if (kandidaten.length < 10) {
     kandidaten = db.prepare(`
       SELECT name_deutsch, name_botanisch, beschreibung, licht, boden, stil,
              bluehzeit, farbe, hoehe_cm_min, hoehe_cm_max,
-             pflege_sterne, preis_stueck_eur, bienen_freundlich, heimisch
+             pflege_sterne, preis_stueck_eur, bienen_freundlich, heimisch,
+             feuchtigkeit, wuchs
       FROM pflanzen
       WHERE licht LIKE ?
-      ORDER BY RANDOM() LIMIT 30
+        AND (feuchtigkeit IN (${feuchPlaceholders}) OR feuchtigkeit IS NULL)
+      ORDER BY RANDOM() LIMIT 35
+    `).all(`%${lichtTerm}%`, ...feuchTerms);
+  }
+
+  // Letzter Fallback: nur Licht
+  if (kandidaten.length < 8) {
+    kandidaten = db.prepare(`
+      SELECT name_deutsch, name_botanisch, beschreibung, licht, boden, stil,
+             bluehzeit, farbe, hoehe_cm_min, hoehe_cm_max,
+             pflege_sterne, preis_stueck_eur, bienen_freundlich, heimisch,
+             feuchtigkeit, wuchs
+      FROM pflanzen WHERE licht LIKE ? ORDER BY RANDOM() LIMIT 35
     `).all(`%${lichtTerm}%`);
   }
 
   return kandidaten;
 }
 
-function getRelevantesWissen(stil, licht) {
+function getRelevantesWissen(stil, licht, feuchtigkeit) {
   try {
     const count = db.prepare('SELECT COUNT(*) as n FROM wissen').get().n;
     if (count === 0) return [];
 
-    const stilTerm = (STIL_MAP[stil] || stil.split('/')[0].trim()).toLowerCase();
-    const lichtTerm = (LICHT_MAP[licht] || licht.split(' ')[0]).toLowerCase();
-    const ftsQuery = `${stilTerm} OR ${lichtTerm} OR Staudenbeet`;
+    const stilTerm   = (STIL_MAP[stil]  || stil.split('/')[0].trim()).toLowerCase();
+    const lichtTerm  = (LICHT_MAP[licht] || licht.split(' ')[0]).toLowerCase();
+    const feuchTerm  = feuchtigkeit === 'nass' || feuchtigkeit === 'feucht' ? 'Feuchtbeet' : '';
+    const ftsTerms   = [stilTerm, lichtTerm, 'Höhenstaffelung', feuchTerm].filter(Boolean);
+    const ftsQuery   = ftsTerms.join(' OR ');
 
     return db.prepare(`
       SELECT titel, inhalt, kategorie FROM wissen
       WHERE wissen MATCH ?
-      ORDER BY rank LIMIT 4
+      ORDER BY rank LIMIT 6
     `).all(ftsQuery);
   } catch {
-    // FTS match syntax error fallback
     try {
-      return db.prepare('SELECT titel, inhalt, kategorie FROM wissen ORDER BY rowid DESC LIMIT 3').all();
+      return db.prepare('SELECT titel, inhalt, kategorie FROM wissen ORDER BY rowid DESC LIMIT 4').all();
     } catch { return []; }
   }
 }
 
 function buildSystemPrompt(kandidaten, wissen) {
-  let prompt = 'Du bist ein erfahrener Staudenspezialist und Gartenplaner aus Deutschland mit 20 Jahren Erfahrung. Du empfiehlst ausschließlich in Deutschland winterharte, ökologisch wertvolle Pflanzen. Antworte immer als valides JSON ohne Markdown-Formatierung.';
+  let prompt = `Du bist ein erfahrener Staudenspezialist und Gartenplaner aus Deutschland mit 20 Jahren Erfahrung. \
+Du empfiehlst ausschließlich in Deutschland winterharte Pflanzen. Antworte immer als valides JSON ohne Markdown-Formatierung.
+
+## PLANUNGSREGELN (strikt einhalten):
+1. HÖHENSTAFFELUNG: Hohe Stauden (>100cm) in den Hintergrund, Mittelhohe (50–100cm) in die Mitte, Niedrige (<50cm) und Bodendecker in den Vordergrund.
+2. SCHICHTEN: Plane nach dem Drei-Schichten-Prinzip: 15% Leitstauden, 55% Begleitstauden, 30% Füllstauden/Bodendecker.
+3. BLÜTENFOLGE: Verteile die Blütezeiten — immer mind. 2 Arten pro Saison (Frühjahr/Sommer/Herbst) einplanen.
+4. FARBHARMONIE: Maximal 3–4 Hauptfarben, Weiß oder Silber als Verbinder nutzen.`;
 
   if (kandidaten.length > 0) {
-    prompt += '\n\n## VERFÜGBARE PFLANZEN (geprüfte Arten für diese Bedingungen):\n';
+    // Warnliste für ausbreitende Arten
+    const ausbreiter = kandidaten.filter(p => p.wuchs && p.wuchs !== 'horstig');
+    if (ausbreiter.length > 0) {
+      prompt += `\n\n## ACHTUNG AUSBREITUNGSVERHALTEN:\n`;
+      prompt += ausbreiter.map(p =>
+        `- ${p.name_deutsch} (${p.name_botanisch}): wuchs=${p.wuchs} — nur bewusst einsetzen, ggf. Rhizomsperre`
+      ).join('\n');
+    }
+
+    prompt += '\n\n## VERFÜGBARE PFLANZEN (standortgeprüft):\n';
     prompt += kandidaten.map(p => {
       const hoehe = (p.hoehe_cm_min && p.hoehe_cm_max) ? `${p.hoehe_cm_min}–${p.hoehe_cm_max}cm` : '';
-      const extras = [p.bienen_freundlich ? '🐝bienenfr.' : '', p.heimisch ? 'heimisch' : ''].filter(Boolean).join(', ');
-      return `- ${p.name_deutsch} (${p.name_botanisch}): ${p.licht} | Blüte: ${p.bluehzeit || '?'} | Farbe: ${p.farbe || '?'} | ${hoehe} | ca. ${p.preis_stueck_eur || '?'}€ | Pflege: ${'★'.repeat(p.pflege_sterne || 2)}${extras ? ' | ' + extras : ''}`;
+      const schicht = (p.hoehe_cm_max || 50) >= 100 ? 'Leitstaude' : (p.hoehe_cm_max || 50) >= 50 ? 'Begleiter' : 'Bodendecker';
+      const extras = [
+        p.bienen_freundlich ? '🐝bienenfr.' : '',
+        p.heimisch ? '🌿heimisch' : '',
+        p.feuchtigkeit && p.feuchtigkeit !== 'normal' ? `💧${p.feuchtigkeit}` : '',
+        p.wuchs && p.wuchs !== 'horstig' ? `⚠️${p.wuchs}` : '',
+      ].filter(Boolean).join(' ');
+      return `- [${schicht}] ${p.name_deutsch} (${p.name_botanisch}): ${p.licht} | Blüte: ${p.bluehzeit || '?'} | ${p.farbe || '?'} | ${hoehe} | ${p.preis_stueck_eur || '?'}€ | Pflege: ${'★'.repeat(p.pflege_sterne || 2)}${extras ? ' | ' + extras : ''}`;
     }).join('\n');
-    prompt += '\n\nWähle vorzugsweise Pflanzen aus dieser Liste. Kauflinks: https://www.lubera.com/search?q=BOTANISCHERNAME (URL-kodiert).';
+    prompt += '\n\nKauflinks: https://www.lubera.com/search?q=BOTANISCHERNAME (URL-kodiert).';
   }
 
   if (wissen.length > 0) {
     prompt += '\n\n## EXPERTENWISSEN BEPFLANZUNGSPLANUNG:\n';
-    prompt += wissen.map(w => `### ${w.titel}\n${w.inhalt.substring(0, 500)}...`).join('\n\n');
+    prompt += wissen.map(w => `### ${w.titel}\n${w.inhalt.substring(0, 600)}`).join('\n\n');
   }
 
   return prompt;
@@ -397,11 +459,12 @@ app.post('/api/plan', planLimiter, async (req, res) => {
   }
 
   // RAG: Hol Kontext aus der Wissensdatenbank
-  const kandidaten = getPflanzenkandidaten(licht, boden, stil);
-  const wissen = getRelevantesWissen(stil, licht);
+  const feuchtigkeit = getFeuchtigkeit(boden, standort_beschreibung);
+  const kandidaten = getPflanzenkandidaten(licht, boden, stil, standort_beschreibung);
+  const wissen = getRelevantesWissen(stil, licht, feuchtigkeit);
 
   if (kandidaten.length > 0) {
-    console.log(`RAG: ${kandidaten.length} Pflanzenkandidaten, ${wissen.length} Wissensdokumente injiziert`);
+    console.log(`RAG: ${kandidaten.length} Pflanzenkandidaten (feuchtigkeit=${feuchtigkeit}), ${wissen.length} Wissensdokumente`);
   }
 
   const systemPrompt = buildSystemPrompt(kandidaten, wissen);
@@ -450,7 +513,7 @@ JSON-Format:
 
   try {
     const completion = await getOpenAI().chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: 'gpt-4o',
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt }
