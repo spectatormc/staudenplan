@@ -850,8 +850,8 @@ app.get('/pflanzen', (req, res) => {
     .p-card-img{height:130px;position:relative;background:linear-gradient(135deg,#d8f3dc,#b7e4c7)}
     .p-card-img img{width:100%;height:100%;object-fit:cover;display:block}
     .p-card-body{padding:12px}
-    .p-card-name{font-weight:700;font-size:.9rem;color:#1b4332;margin-bottom:2px}
-    .p-card-bot{font-size:.7rem;font-style:italic;color:#bbb;margin-bottom:7px}
+    .p-card-name{font-weight:700;font-size:.9rem;color:#1b4332;margin-bottom:2px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+    .p-card-bot{font-size:.7rem;font-style:italic;color:#bbb;margin-bottom:7px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
     .p-card-tags{display:flex;flex-wrap:wrap;gap:3px}
     .p-tag{border-radius:4px;padding:1px 7px;font-size:.68rem;font-weight:600}
     .wl-card-btn{position:absolute;top:6px;right:6px;background:rgba(255,255,255,.9);border:none;border-radius:20px;padding:4px 10px;font-size:.7rem;font-weight:700;cursor:pointer;color:#1b4332;box-shadow:0 1px 4px rgba(0,0,0,.15)}
