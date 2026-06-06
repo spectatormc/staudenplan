@@ -1821,10 +1821,10 @@
   }
 
   function validateProStep1() {
-    const v = parseFloat(document.getElementById('pro-gartenflaeche').value);
-    const valid = v > 0 && !!formData.sichtseite;
+    const inputV = parseFloat(document.getElementById('pro-gartenflaeche').value);
+    if (inputV > 0) formData.gartenflaeche = inputV;
+    const valid = (formData.gartenflaeche > 0) && !!formData.sichtseite;
     document.getElementById('pro-btn-next-1').disabled = !valid;
-    if (v > 0) formData.gartenflaeche = v;
   }
 
   function selectProOption(field, value, el) {
@@ -1939,7 +1939,7 @@
   function updateCanvasArea() {
     drawNetto = polygons.reduce((s, p) => s + p.area, 0);
     formData.gartenflaeche = drawNetto > 0 ? Math.round(drawNetto * 10) / 10 : null;
-    document.getElementById('pro-btn-next-1').disabled = !(drawNetto > 0);
+    validateProStep1();
     document.getElementById('canvas-area-result').textContent =
       drawNetto > 0 ? `Gesamtfläche: ${drawNetto.toFixed(1)} m²` : '';
     const list = document.getElementById('poly-list');
