@@ -519,6 +519,8 @@ Plane IMMER auch 3–4 schnellwüchsige Füllstauden oder Bodendecker ein (z.B. 
 ${lieblingsList ? 'Die genannten Lieblingspflanzen MÜSSEN im Plan enthalten sein.' : ''}${budget ? ` Halte die Gesamtkosten unter ${budget} €.` : ''}
 ${kandidaten.length > 0 ? 'Wähle primär aus der bereitgestellten Pflanzenliste.' : ''}
 
+Vergib jeder Pflanze eine Rolle nach Hansen & Stahl: "Leitstaude" (1–3 auffällige Strukturpflanzen, max. 3 Arten), "Begleitstaude" (rahmt Leitstauden ein, 3–5 Arten), "Füllstaude" (Bodendecker/Lückenfüller, Rest). Leitstauden sind die visuellen Ankerpunkte des Beetes.
+
 JSON-Format:
 {
   "pflanzen": [{
@@ -530,6 +532,7 @@ JSON-Format:
     "farbe": "...",
     "hoehe_cm": 0,
     "pflege_sterne": 1,
+    "rolle": "Leitstaude",
     "stueckzahl": 0,
     "preis_stueck_eur": 0.00,
     "kauflink": "https://www.amazon.de/s?k=...&tag=gartenbaukosten-21"
