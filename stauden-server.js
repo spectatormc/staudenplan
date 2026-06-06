@@ -1015,7 +1015,7 @@ app.get('/pflanzen', (req, res) => {
             </div>
           </div>
         </a>
-        <button class="wl-card-btn \${inWl?'added':''}" onclick="toggleWlCard(this,'${p.name_botanisch.replace(/'/g,"\\\\'")}','${p.name_deutsch.replace(/'/g,"\\\\'")}')">
+        <button class="wl-card-btn \${inWl?'added':''}" data-bot="\${p.name_botanisch.replace(/"/g,'&quot;')}" data-de="\${p.name_deutsch.replace(/"/g,'&quot;')}" onclick="toggleWlCard(this,this.dataset.bot,this.dataset.de)">
           \${inWl ? '✓ Wunschliste' : '+ Wunschliste'}
         </button>
       </div>\`;
