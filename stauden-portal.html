@@ -2482,22 +2482,67 @@
     const hasDrawnEarly = !!drawnPolysEarly;
     const placements = calcPlacements(plan.pflanzen, bedW, bedH, hasDrawnEarly ? placementPolysEarly : null);
 
-    // Plant circles (back-to-front: sort by y asc = draw back ones first)
+    // Rolle-Helfer (lokal, identisch zu calcPlacements)
+    function getRolleViz(p) {
+      if (p.rolle === 'Leitstaude') return 'leit';
+      if (p.rolle === 'Begleitstaude') return 'begleit';
+      if (p.rolle === 'Füllstaude') return 'fuell';
+      return (p.hoehe_cm || 50) >= 80 ? 'leit' : (p.hoehe_cm || 50) >= 40 ? 'begleit' : 'fuell';
+    }
+
+    // Placements sortiert (hinten → vorne = größere y zuletzt)
     const sorted = [...placements].sort((a, b) => a.y - b.y);
-    const circles = sorted.map(({ x, y, pflanze, pi }) => {
-      const r = Math.max(11, Math.min(26, (pflanze.hoehe_cm || 50) / 5.5));
-      const inSaison = plantInSaison(pflanze.bluehzeit, saison);
-      const opacity = inSaison ? '1' : '0.25';
-      const glowFilter = inSaison && saison !== 'alle'
-        ? `filter="url(#glow)"` : '';
+
+    // ── Füllstauden: Drift-Patches (Aquarell-Farbflächen) ──────────────────
+    // Gruppieren nach Art (pi)
+    const fuellGroups = {};
+    sorted.forEach(pl => {
+      if (getRolleViz(pl.pflanze) !== 'fuell') return;
+      if (!fuellGroups[pl.pi]) fuellGroups[pl.pi] = { pts: [], pflanze: pl.pflanze, pi: pl.pi };
+      fuellGroups[pl.pi].pts.push({ x: pl.x, y: pl.y });
+    });
+
+    const driftPatches = Object.values(fuellGroups).map(({ pts, pflanze, pi }) => {
+      const c = bloomColor(pflanze.farbe);
+      const cLight = hexLighten(c, 40);
       const num = plan.pflanzen.findIndex(pp => pp.name_botanisch === pflanze.name_botanisch) + 1;
+      const cx = pts.reduce((s,p) => s + p.x, 0) / pts.length;
+      const cy = pts.reduce((s,p) => s + p.y, 0) / pts.length;
+      const inSaison = plantInSaison(pflanze.bluehzeit, saison);
+      const opa = inSaison ? '0.68' : '0.18';
+      // Radius: größer = weichere Fläche, besser bei wenigen Pflanzen
+      const blobR = Math.max(20, Math.min(34, (pflanze.hoehe_cm || 30) / 2.8));
+      const blobs = pts.map(({x,y}) =>
+        `<circle cx="${PAD+x}" cy="${PAD+y}" r="${blobR}" fill="${c}"/>`
+      ).join('');
       return `
-        <g opacity="${opacity}">
-          <circle cx="${PAD+x}" cy="${PAD+y}" r="${r+2}" fill="rgba(0,0,0,.2)"/>
-          <circle cx="${PAD+x}" cy="${PAD+y}" r="${r}" fill="url(#pg${pi})" stroke="rgba(255,255,255,.6)" stroke-width="1.5" ${glowFilter}/>
-          <text x="${PAD+x}" y="${PAD+y+4}" text-anchor="middle" font-size="${Math.max(8, r*0.55)}px" font-weight="800" fill="rgba(0,0,0,.6)" font-family="system-ui">${num}</text>
-        </g>`;
+        <g opacity="${opa}" filter="url(#driftBlob)">
+          ${blobs}
+        </g>
+        <text x="${PAD+cx}" y="${PAD+cy+3}" text-anchor="middle" font-size="8.5" font-weight="700"
+          fill="rgba(0,0,0,.65)" font-family="system-ui" opacity="${inSaison ? 1 : 0.3}">${num}</text>`;
     }).join('');
+
+    // ── Leit- & Begleitstauden: Einzelkreise ────────────────────────────────
+    const circles = sorted
+      .filter(({pflanze}) => getRolleViz(pflanze) !== 'fuell')
+      .map(({ x, y, pflanze, pi }) => {
+        const rolle = getRolleViz(pflanze);
+        const baseR = Math.max(11, Math.min(26, (pflanze.hoehe_cm || 50) / 5.2));
+        const r = rolle === 'leit' ? baseR * 1.18 : baseR;
+        const inSaison = plantInSaison(pflanze.bluehzeit, saison);
+        const opacity = inSaison ? '1' : '0.25';
+        const glowFilter = inSaison && saison !== 'alle' ? `filter="url(#glow)"` : '';
+        const strokeW = rolle === 'leit' ? '2.5' : '1.5';
+        const strokeC = rolle === 'leit' ? 'rgba(255,255,255,.95)' : 'rgba(255,255,255,.6)';
+        const num = plan.pflanzen.findIndex(pp => pp.name_botanisch === pflanze.name_botanisch) + 1;
+        return `
+          <g opacity="${opacity}">
+            <circle cx="${PAD+x}" cy="${PAD+y}" r="${r+2}" fill="rgba(0,0,0,.2)"/>
+            <circle cx="${PAD+x}" cy="${PAD+y}" r="${r}" fill="url(#pg${pi})" stroke="${strokeC}" stroke-width="${strokeW}" ${glowFilter}/>
+            <text x="${PAD+x}" y="${PAD+y+4}" text-anchor="middle" font-size="${Math.max(8, r*0.55)}px" font-weight="800" fill="rgba(0,0,0,.6)" font-family="system-ui">${num}</text>
+          </g>`;
+      }).join('');
 
     // Scale bar
     const scaleBarW = Math.round(meterPxX);
@@ -2530,6 +2575,11 @@
       <defs>
         ${gradDefs}
         <filter id="glow"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        <filter id="driftBlob" x="-35%" y="-35%" width="170%" height="170%" color-interpolation-filters="sRGB">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="11" result="blur"/>
+          <feColorMatrix in="blur" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -7" result="goo"/>
+          <feComposite in="SourceGraphic" in2="goo" operator="in"/>
+        </filter>
         <linearGradient id="soilGrad" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stop-color="#7a5230"/>
           <stop offset="100%" stop-color="#4e3019"/>
@@ -2541,7 +2591,9 @@
       <g clip-path="url(#bedClip)">${soilDots}${gridLines.join('')}</g>
       <!-- Beetrahmen -->
       ${bedOutline}
-      <!-- Pflanzen (geclippt) -->
+      <!-- Füllstauden: Drift-Flächen (unter Leit-/Begleitstauden) -->
+      <g clip-path="url(#bedClip)">${driftPatches}</g>
+      <!-- Leit- & Begleitstauden: Einzelkreise -->
       <g clip-path="url(#bedClip)">${circles}</g>
       <!-- Beschriftung -->
       ${!hasDrawn ? `<text x="${W/2}" y="${PAD - 4}" text-anchor="middle" font-size="10" fill="#888" font-family="system-ui">↑ Hinten (${gartW} m)</text>
@@ -2558,10 +2610,16 @@
     const legend = document.getElementById('grafisch-legend');
     legend.innerHTML = plan.pflanzen.map((p, i) => {
       const active = plantInSaison(p.bluehzeit, saison);
+      const rolle = getRolleViz(p);
+      const dotStyle = rolle === 'fuell'
+        ? `background:${bloomColor(p.farbe)};opacity:.7;border-radius:3px;`
+        : `background:${bloomColor(p.farbe)};border-radius:50%;`;
+      const rolleLabel = rolle === 'leit' ? '⭐' : rolle === 'begleit' ? '🌿' : '▪';
       return `<div class="vl-item" style="opacity:${active?1:.4}">
         <span class="vl-num">${i+1}</span>
-        <span class="vl-dot" style="background:${bloomColor(p.farbe)}"></span>
+        <span class="vl-dot" style="${dotStyle}"></span>
         <span>${p.name_deutsch}</span>
+        <span style="color:#bbb;font-size:.7rem">${rolleLabel}</span>
         ${p.bluehzeit ? `<span style="color:#999;font-size:.72rem">${p.bluehzeit}</span>` : ''}
       </div>`;
     }).join('');
