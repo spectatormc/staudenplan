@@ -855,6 +855,12 @@ app.get('/pflanzen', (req, res) => {
     .p-card-tags{display:flex;flex-wrap:wrap;gap:3px}
     .p-tag{border-radius:4px;padding:1px 7px;font-size:.68rem;font-weight:600}
     .wl-card-btn{position:absolute;top:6px;right:6px;background:rgba(255,255,255,.9);border:none;border-radius:20px;padding:4px 10px;font-size:.7rem;font-weight:700;cursor:pointer;color:#1b4332;box-shadow:0 1px 4px rgba(0,0,0,.15)}
+    #pagination{display:flex;align-items:center;justify-content:center;gap:5px;margin-top:28px;flex-wrap:wrap}
+    .page-btn{background:#fff;border:1.5px solid #e0dbd2;border-radius:8px;padding:6px 13px;font-size:.82rem;font-family:inherit;cursor:pointer;color:#555;transition:all .12s;min-width:36px}
+    .page-btn:hover:not(:disabled){border-color:#2d6a4f;color:#1b4332;background:#f0fdf4}
+    .page-btn.cur{background:#1b4332;border-color:#1b4332;color:#fff;font-weight:700;cursor:default}
+    .page-btn:disabled{opacity:.3;cursor:default}
+    .page-dots{padding:0 4px;color:#bbb;font-size:.85rem;align-self:center}
     .wl-card-btn.added{background:#52b788;color:#fff}
     #empty{display:none;text-align:center;padding:60px 20px;color:#aaa;font-size:1rem}
     @media(max-width:700px){
@@ -942,6 +948,7 @@ app.get('/pflanzen', (req, res) => {
       <p id="count-label"></p>
       <div id="grid"></div>
       <div id="empty">🌿 Keine Stauden gefunden — probiere andere Filter.</div>
+      <div id="pagination"></div>
     </div>
   </div>
 
@@ -974,13 +981,17 @@ app.get('/pflanzen', (req, res) => {
     applyFilters();
   }
 
+  const PAGE_SIZE = 40;
+  let currentPage = 1;
+  let filteredResults = [];
+
   function applyFilters() {
+    currentPage = 1;
     const q = (document.getElementById('search').value || '').toLowerCase();
     const bienen = document.getElementById('f-bienen').checked;
     const heimisch = document.getElementById('f-heimisch').checked;
-    const wl = getWL();
 
-    const results = allPflanzen.filter(p => {
+    filteredResults = allPflanzen.filter(p => {
       if (q && !p.name_deutsch.toLowerCase().includes(q) && !p.name_botanisch.toLowerCase().includes(q) && !(p.beschreibung||'').toLowerCase().includes(q)) return false;
       if (activeFilters.licht?.size && !activeFilters.licht.has((p.licht||'').split('|')[0])) return false;
       if (activeFilters.feuchtigkeit?.size && !activeFilters.feuchtigkeit.has(p.feuchtigkeit||'normal')) return false;
@@ -1007,11 +1018,30 @@ app.get('/pflanzen', (req, res) => {
       return true;
     });
 
-    document.getElementById('count-label').textContent = results.length + ' von ${total} Stauden';
-    document.getElementById('empty').style.display = results.length === 0 ? 'block' : 'none';
+    renderPage();
+  }
+
+  function goPage(n) {
+    currentPage = n;
+    renderPage();
+    window.scrollTo({ top: document.getElementById('grid').offsetTop - 80, behavior: 'smooth' });
+  }
+
+  function renderPage() {
+    const total = filteredResults.length;
+    const totalPages = Math.ceil(total / PAGE_SIZE);
+    const from = (currentPage - 1) * PAGE_SIZE;
+    const pageItems = filteredResults.slice(from, from + PAGE_SIZE);
+
+    document.getElementById('empty').style.display = total === 0 ? 'block' : 'none';
+    document.getElementById('count-label').textContent = total === 0 ? '' :
+      total <= PAGE_SIZE
+        ? total + ' Stauden'
+        : (from + 1) + '–' + Math.min(from + PAGE_SIZE, total) + ' von ' + total + ' Stauden';
 
     const LICHT_C = {Sonne:'#f59e0b',Halbschatten:'#6366f1',Schatten:'#475569'};
-    document.getElementById('grid').innerHTML = results.map(p => {
+    const wl = getWL();
+    document.getElementById('grid').innerHTML = pageItems.map(p => {
       const slug = p.name_botanisch.toLowerCase().replace(/ä/g,'ae').replace(/ö/g,'oe').replace(/ü/g,'ue').replace(/ß/g,'ss').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
       const lichtKey = (p.licht||'').split('|')[0];
       const lc = LICHT_C[lichtKey]||'#2d6a4f';
@@ -1039,6 +1069,23 @@ app.get('/pflanzen', (req, res) => {
         </button>
       </div>\`;
     }).join('');
+
+    // Pagination
+    const pg = document.getElementById('pagination');
+    if (totalPages <= 1) { pg.innerHTML = ''; return; }
+
+    const parts = [];
+    parts.push(\`<button class="page-btn" onclick="goPage(\${currentPage-1})" \${currentPage===1?'disabled':''}>← zurück</button>\`);
+    let last = 0;
+    for (let i = 1; i <= totalPages; i++) {
+      if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) {
+        if (last && i - last > 1) parts.push('<span class="page-dots">…</span>');
+        parts.push(\`<button class="page-btn \${i===currentPage?'cur':''}" onclick="\${i===currentPage?'':' goPage('+i+')'}">\${i}</button>\`);
+        last = i;
+      }
+    }
+    parts.push(\`<button class="page-btn" onclick="goPage(\${currentPage+1})" \${currentPage===totalPages?'disabled':''}>weiter →</button>\`);
+    pg.innerHTML = parts.join('');
   }
 
   function toggleWlCard(btn, bot, de) {
