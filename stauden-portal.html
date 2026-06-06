@@ -2930,8 +2930,7 @@
       gartenflaeche: null, licht: '', boden: '', stil: '', farbe: '', saison: '',
       modus: 'einfach', lieblingspflanzen: [], budget: null, nutzung: [], pflegezeit: ''
     };
-    currentPlan = null; wishlist = []; polygons = []; currentPoints = [];
-    try { localStorage.removeItem('staudenplan_wishlist'); } catch {}
+    currentPlan = null; polygons = []; currentPoints = [];
     updateHeroWishlistCTA();
     // Reset einfach form
     try { document.getElementById('gartenflaeche').value = ''; } catch {}
