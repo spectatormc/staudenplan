@@ -948,6 +948,12 @@
       .sl-wrap > .sl-toolbar { padding: 0 14px; }
       .sl-table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; padding: 0 14px; }
       .sl-table { min-width: 560px; }
+      /* Visualisierung: kompakter */
+      .viz-card-body { padding: 14px; }
+      .viz-wrap { padding: 0 10px 60px; }
+      .viz-legend { gap: 5px; }
+      .vl-item { padding: 3px 8px; font-size: .74rem; }
+      .vl-bluehzeit { display: none; }
     }
   </style>
 </head>
@@ -2525,8 +2531,9 @@
       const cy = pts.reduce((s,p) => s + p.y, 0) / pts.length;
       const inSaison = plantInSaison(pflanze.bluehzeit, saison);
       const opa = inSaison ? '0.68' : '0.18';
-      // Radius: größer = weichere Fläche, besser bei wenigen Pflanzen
-      const blobR = Math.max(20, Math.min(34, (pflanze.hoehe_cm || 30) / 2.8));
+      // Radius skaliert mit Canvas-Breite (Mobile: kleinere Kreise)
+      const rScale = Math.min(1, W / 700);
+      const blobR = Math.max(8, Math.min(34 * rScale, (pflanze.hoehe_cm || 30) / 2.8));
       const blobs = pts.map(({x,y}) =>
         `<circle cx="${PAD+x}" cy="${PAD+y}" r="${blobR}" fill="${c}"/>`
       ).join('');
@@ -2543,7 +2550,8 @@
       .filter(({pflanze}) => getRolleViz(pflanze) !== 'fuell')
       .map(({ x, y, pflanze, pi }) => {
         const rolle = getRolleViz(pflanze);
-        const baseR = Math.max(11, Math.min(26, (pflanze.hoehe_cm || 50) / 5.2));
+        const rScale = Math.min(1, W / 700);
+        const baseR = Math.max(5, Math.min(26 * rScale, (pflanze.hoehe_cm || 50) / 5.2));
         const r = rolle === 'leit' ? baseR * 1.18 : baseR;
         const inSaison = plantInSaison(pflanze.bluehzeit, saison);
         const opacity = inSaison ? '1' : '0.25';
@@ -2591,7 +2599,7 @@
         ${gradDefs}
         <filter id="glow"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
         <filter id="driftBlob" x="-35%" y="-35%" width="170%" height="170%" color-interpolation-filters="sRGB">
-          <feGaussianBlur in="SourceGraphic" stdDeviation="11" result="blur"/>
+          <feGaussianBlur in="SourceGraphic" stdDeviation="${Math.max(5, Math.round(11 * Math.min(1, W / 700)))}" result="blur"/>
           <feColorMatrix in="blur" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -7" result="goo"/>
           <feComposite in="SourceGraphic" in2="goo" operator="in"/>
         </filter>
@@ -2635,7 +2643,7 @@
         <span class="vl-dot" style="${dotStyle}"></span>
         <span>${p.name_deutsch}</span>
         <span style="color:#bbb;font-size:.7rem">${rolleLabel}</span>
-        ${p.bluehzeit ? `<span style="color:#999;font-size:.72rem">${p.bluehzeit}</span>` : ''}
+        ${p.bluehzeit ? `<span class="vl-bluehzeit" style="color:#999;font-size:.72rem">${p.bluehzeit}</span>` : ''}
       </div>`;
     }).join('');
   }
@@ -2644,15 +2652,20 @@
   function renderSchematisch(plan) {
     const container = document.getElementById('schematisch-container');
     const W = Math.min(container.clientWidth || 700, 760);
-    const LEGEND_W = 180;
+    const isMobile = W < 520;
+    const LEGEND_W = isMobile ? 0 : 180;
     const SVG_W = W;
-    const H = 320;
-    const PAD_L = 44, PAD_T = 32, PAD_B = 40, PAD_R = LEGEND_W + 16;
+    const PAD_L = 44, PAD_T = 32, PAD_B = 40, PAD_R = LEGEND_W > 0 ? LEGEND_W + 16 : 16;
     const plotW = SVG_W - PAD_L - PAD_R;
-    const plotH = H - PAD_T - PAD_B;
 
     const gartW = Math.sqrt((formData.gartenflaeche || 15) * 3);
     const gartH = (formData.gartenflaeche || 15) / gartW;
+
+    // Adaptives H: Gartenaspektverhältnis einhalten
+    const idealPlotH = Math.round(plotW * gartH / gartW);
+    const plotH = Math.max(80, Math.min(320, idealPlotH));
+    const H = plotH + PAD_T + PAD_B;
+
     const scaleX = plotW / gartW;
     const scaleY = plotH / gartH;
 
@@ -2712,6 +2725,10 @@
       schemLabel = `<text x="${PAD_L + plotW/2}" y="${H - 2}" text-anchor="middle" font-size="11" fill="#555" font-family="system-ui" font-weight="600">${gartW.toFixed(1)} m Breite</text>`;
     }
 
+    const svgLegend = !isMobile ? `
+      <text x="${PAD_L + plotW + 14}" y="${PAD_T + 14}" font-size="10" font-weight="700" fill="#444" font-family="system-ui">Legende</text>
+      <g transform="translate(${PAD_L + plotW + 10},${PAD_T + 22})">${legItems}</g>` : '';
+
     const svg = `<svg width="${SVG_W}" height="${H}" xmlns="http://www.w3.org/2000/svg" style="max-width:100%;display:block">
       <defs>${schemClip}</defs>
       ${schemBed}
@@ -2721,11 +2738,21 @@
       ${schemLabel}
       ${!hasDrawnS ? `<text x="12" y="${PAD_T + plotH/2}" text-anchor="middle" font-size="11" fill="#555" font-family="system-ui" font-weight="600" transform="rotate(-90,12,${PAD_T+plotH/2})">${gartH.toFixed(1)} m</text>` : ''}
       <text x="${PAD_L + plotW - 8}" y="${PAD_T + 16}" text-anchor="end" font-size="10" fill="#aaa" font-family="system-ui">N ↑</text>
-      <text x="${PAD_L + plotW + 14}" y="${PAD_T + 14}" font-size="10" font-weight="700" fill="#444" font-family="system-ui">Legende</text>
-      <g transform="translate(${PAD_L + plotW + 10},${PAD_T + 22})">${legItems}</g>
+      ${svgLegend}
     </svg>`;
 
-    container.innerHTML = svg;
+    // Auf Mobile: HTML-Legende unterhalb des SVG
+    const mobileLegendHtml = isMobile ? `<div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:5px">` +
+      plan.pflanzen.map((p, i) => {
+        const c = bloomColor(p.farbe);
+        return `<div style="display:flex;align-items:center;gap:5px;background:#f8f4ef;border-radius:6px;padding:3px 8px;font-size:.78rem">
+          <span style="background:#2d6a4f;color:#fff;border-radius:50%;width:16px;height:16px;min-width:16px;display:inline-flex;align-items:center;justify-content:center;font-size:.62rem;font-weight:700">${i+1}</span>
+          <span style="width:10px;height:10px;min-width:10px;border-radius:50%;background:${c};border:1.5px solid rgba(0,0,0,.15)"></span>
+          <span>${p.name_deutsch}</span>
+        </div>`;
+      }).join('') + `</div>` : '';
+
+    container.innerHTML = svg + mobileLegendHtml;
   }
 
   // ── Stückliste ─────────────────────────────────────────────────────────────
