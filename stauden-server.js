@@ -1328,10 +1328,18 @@ const NAV_LINKS = `${FAVICON}${PLAUSIBLE}
   .snav-wl-item span{font-size:.85rem;font-weight:600;color:#1b4332}
   .snav-wl-rm{background:none;border:none;color:#aaa;cursor:pointer;font-size:1rem;padding:0 2px}
   .snav-wl-rm:hover{color:#e53e3e}
+  @media(max-width:600px){
+    .snav{padding:8px 12px;gap:2px}
+    .snav a{font-size:.75rem;padding:4px 6px}
+    #snav-wl-btn{font-size:.75rem;padding:4px 10px}
+    #snav-wl-dd{left:8px;right:8px;min-width:0;top:50px}
+    #snav-planer{display:none}
+    .snav-logo-text{display:none}
+  }
 </style>
 <nav class="snav">
-  <a href="/" style="color:#fff;font-weight:700;font-size:1rem;margin-right:auto">🌿 Staudenplan.de</a>
-  <a href="/">Planer</a>
+  <a href="/" style="color:#fff;font-weight:700;font-size:1rem;margin-right:auto">🌿 <span class="snav-logo-text">Staudenplan.de</span></a>
+  <a href="/" id="snav-planer">Planer</a>
   <a href="/pflanzen">Stauden</a>
   <a href="/ratgeber">Ratgeber</a>
   <button id="snav-wl-btn" style="background:rgba(255,255,255,.25);border:1.5px solid rgba(255,255,255,.6);color:#fff;font-size:.82rem;padding:5px 14px;border-radius:20px;cursor:pointer;font-family:inherit;font-weight:600" onclick="snavToggle()">🌿 <span id="snav-wl-n">0</span></button>
