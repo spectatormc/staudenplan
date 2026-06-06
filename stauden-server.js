@@ -150,7 +150,7 @@ const FEUCHT_COMPAT = {
 };
 
 function getPflanzenkandidaten(licht, boden, stil, standortBeschr) {
-  const pflanzenCount = db.prepare('SELECT COUNT(*) as n FROM pflanzen WHERE name_deutsch != 'Test-Pflanze'').get().n;
+  const pflanzenCount = db.prepare("SELECT COUNT(*) as n FROM pflanzen WHERE name_deutsch != 'Test-Pflanze'").get().n;
   if (pflanzenCount === 0) return [];
 
   const lichtTerm   = LICHT_MAP[licht] || licht.split(' ')[0];
@@ -274,7 +274,7 @@ Du empfiehlst ausschließlich in Deutschland winterharte Pflanzen. Antworte imme
 app.get('/', (req, res) => {
   try {
     // Inject SEO content from DB into the SPA
-    const pflanzenCount = db.prepare('SELECT COUNT(*) as n FROM pflanzen WHERE name_deutsch != 'Test-Pflanze'').get().n;
+    const pflanzenCount = db.prepare("SELECT COUNT(*) as n FROM pflanzen WHERE name_deutsch != 'Test-Pflanze'").get().n;
     let wissenCount = 0;
     try { wissenCount = db.prepare('SELECT COUNT(*) as n FROM wissen').get().n; } catch {}
 
@@ -810,7 +810,7 @@ app.get('/datenschutz', (req, res) => {
 // ─── Pflanzenseiten (SEO) ─────────────────────────────────────────────────────
 
 app.get('/pflanzen', (req, res) => {
-  const total = db.prepare('SELECT COUNT(*) as n FROM pflanzen WHERE name_deutsch != 'Test-Pflanze'').get().n;
+  const total = db.prepare("SELECT COUNT(*) as n FROM pflanzen WHERE name_deutsch != 'Test-Pflanze'").get().n;
   res.send(`<!DOCTYPE html><html lang="de"><head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Stauden suchen & filtern — ${total} winterharte Gartenstauden | Staudenplan.de</title>
@@ -1648,7 +1648,7 @@ app.get('/admin', (req, res) => {
 
   const anfragen   = db.prepare('SELECT * FROM anfragen ORDER BY erstellt_am DESC').all();
   const emailGates = db.prepare('SELECT * FROM email_gate ORDER BY erstellt_am DESC').all();
-  const pflanzenN  = db.prepare('SELECT COUNT(*) as n FROM pflanzen WHERE name_deutsch != 'Test-Pflanze'').get().n;
+  const pflanzenN  = db.prepare("SELECT COUNT(*) as n FROM pflanzen WHERE name_deutsch != 'Test-Pflanze'").get().n;
   let wissenN = 0;
   try { wissenN = db.prepare('SELECT COUNT(*) as n FROM wissen').get().n; } catch {}
 
@@ -1723,7 +1723,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // ─── Start ────────────────────────────────────────────────────────────────────
 
 app.listen(PORT, async () => {
-  const pflanzenN = db.prepare('SELECT COUNT(*) as n FROM pflanzen WHERE name_deutsch != 'Test-Pflanze'').get().n;
+  const pflanzenN = db.prepare("SELECT COUNT(*) as n FROM pflanzen WHERE name_deutsch != 'Test-Pflanze'").get().n;
   let wissenN = 0;
   try { wissenN = db.prepare('SELECT COUNT(*) as n FROM wissen').get().n; } catch {}
   console.log(`Stauden-Portal läuft auf http://localhost:${PORT}`);
