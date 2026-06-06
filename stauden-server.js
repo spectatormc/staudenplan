@@ -847,7 +847,7 @@ app.get('/pflanzen', (req, res) => {
     #grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:12px}
     .p-card{display:flex;flex-direction:column;background:#fff;border-radius:12px;text-decoration:none;color:inherit;box-shadow:0 2px 10px rgba(0,0,0,.07);overflow:hidden;transition:transform .15s;position:relative}
     .p-card:hover{transform:translateY(-3px)}
-    .p-card-img{height:130px;position:relative;background:linear-gradient(135deg,#d8f3dc,#b7e4c7)}
+    .p-card-img{height:130px;position:relative;background:linear-gradient(135deg,#d8f3dc,#b7e4c7);width:100%;flex-shrink:0}
     .p-card-img img{width:100%;height:100%;object-fit:cover;display:block}
     .p-card-body{padding:12px}
     .p-card-name{font-weight:700;font-size:.9rem;color:#1b4332;margin-bottom:2px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
@@ -954,6 +954,7 @@ app.get('/pflanzen', (req, res) => {
 
   ${SITE_FOOTER}
   <script>
+  function imgErr(img){img.parentElement.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:3rem">🌿</div>';}
   let allPflanzen = [];
   const WL_KEY = 'staudenplan_wishlist';
   function getWL(){try{return JSON.parse(localStorage.getItem(WL_KEY)||'[]');}catch{return[];}}
@@ -1049,7 +1050,7 @@ app.get('/pflanzen', (req, res) => {
       return \`<div class="p-card" style="cursor:pointer">
         <a href="/pflanze/\${slug}" style="text-decoration:none;color:inherit;flex:1;display:flex;flex-direction:column">
           <div class="p-card-img">
-            \${p.bild_url ? \`<img src="\${p.bild_url}" alt="\${p.name_deutsch}" loading="lazy" onerror="this.parentElement.innerHTML='<div style=\\"display:flex;align-items:center;justify-content:center;height:100%;font-size:3rem\\">🌿</div>'">\` : '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:3rem">🌿</div>'}
+            \${p.bild_url ? \`<img src="\${p.bild_url}" alt="\${p.name_deutsch.replace(/"/g,'&quot;')}" loading="lazy" onerror="imgErr(this)">\` : '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:3rem">🌿</div>'}
             <div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.5));padding:6px 10px">
               <span style="background:\${lc};color:#fff;border-radius:4px;padding:1px 7px;font-size:.65rem;font-weight:700">\${lichtKey}</span>
             </div>
