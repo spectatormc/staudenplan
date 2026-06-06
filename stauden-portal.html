@@ -1695,7 +1695,7 @@
   }
 
   // ── Einfach-Form (unverändert) ─────────────────────────────────────────────
-  function show(id) { document.getElementById(id).style.display = id === 'view-loading' ? 'flex' : 'block'; }
+  function show(id) { document.getElementById(id).style.display = ['view-loading','view-hero'].includes(id) ? 'flex' : 'block'; }
   function hide(id) { document.getElementById(id).style.display = 'none'; }
 
   function updateProgress(step) {
@@ -2122,7 +2122,7 @@
     document.getElementById('pflanzsuche-results').innerHTML = '';
   }
 
-  function show(id) { document.getElementById(id).style.display = id === 'view-loading' ? 'flex' : 'block'; }
+  function show(id) { document.getElementById(id).style.display = ['view-loading','view-hero'].includes(id) ? 'flex' : 'block'; }
   function hide(id) { document.getElementById(id).style.display = 'none'; }
 
   function updateProgress(step) {
