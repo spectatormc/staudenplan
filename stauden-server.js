@@ -1049,7 +1049,7 @@ app.get('/pflanzen', (req, res) => {
       return \`<div class="p-card" style="cursor:pointer">
         <a href="/pflanze/\${slug}" style="text-decoration:none;color:inherit;flex:1;display:flex;flex-direction:column">
           <div class="p-card-img">
-            \${p.bild_url ? \`<img src="\${p.bild_url}" alt="\${p.name_deutsch}" loading="lazy">\` : '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:3rem">🌿</div>'}
+            \${p.bild_url ? \`<img src="\${p.bild_url}" alt="\${p.name_deutsch}" loading="lazy" onerror="this.parentElement.innerHTML='<div style=\\"display:flex;align-items:center;justify-content:center;height:100%;font-size:3rem\\">🌿</div>'">\` : '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:3rem">🌿</div>'}
             <div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.5));padding:6px 10px">
               <span style="background:\${lc};color:#fff;border-radius:4px;padding:1px 7px;font-size:.65rem;font-weight:700">\${lichtKey}</span>
             </div>
