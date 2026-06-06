@@ -828,9 +828,11 @@ app.get('/pflanzen', (req, res) => {
     .sidebar h3{font-size:.78rem;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;margin-top:16px}
     .sidebar h3:first-child{margin-top:0}
     .chip-group{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:4px}
-    .chip{background:#f0ede8;color:#555;border:none;border-radius:20px;padding:4px 11px;font-size:.78rem;cursor:pointer;font-family:inherit;transition:all .12s}
+    .chip{background:#f0ede8;color:#555;border:none;border-radius:20px;padding:4px 11px;font-size:.78rem;cursor:pointer;font-family:inherit;transition:all .15s}
     .chip.active{background:#1b4332;color:#fff}
     .chip:hover:not(.active){background:#d8f3dc;color:#1b4332}
+    /* Farb-Chips: inline-style hat höhere Priorität als .active — deswegen Ring statt Hintergrund */
+    .chip[data-filter="farbe"].active{outline:2.5px solid #1b4332;box-shadow:inset 0 0 0 2px rgba(255,255,255,.9),0 2px 8px rgba(0,0,0,.2);transform:scale(1.1)}
     .toggle-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;cursor:pointer}
     .toggle-row input{accent-color:#2d6a4f;width:16px;height:16px}
     .toggle-row label{font-size:.85rem;color:#333;cursor:pointer}
@@ -960,8 +962,15 @@ app.get('/pflanzen', (req, res) => {
   function toggleChip(btn) {
     const f = btn.dataset.filter, v = btn.dataset.val;
     if (!activeFilters[f]) activeFilters[f] = new Set();
-    if (activeFilters[f].has(v)) { activeFilters[f].delete(v); btn.classList.remove('active'); }
-    else { activeFilters[f].add(v); btn.classList.add('active'); }
+    if (activeFilters[f].has(v)) {
+      activeFilters[f].delete(v);
+      btn.classList.remove('active');
+      if (f === 'farbe') btn.textContent = v; // Häkchen entfernen
+    } else {
+      activeFilters[f].add(v);
+      btn.classList.add('active');
+      if (f === 'farbe') btn.textContent = '✓ ' + v; // Häkchen zeigen
+    }
     applyFilters();
   }
 
@@ -1047,7 +1056,10 @@ app.get('/pflanzen', (req, res) => {
 
   function resetFilters() {
     Object.keys(activeFilters).forEach(k => activeFilters[k].clear());
-    document.querySelectorAll('.chip.active').forEach(c => c.classList.remove('active'));
+    document.querySelectorAll('.chip.active').forEach(c => {
+      c.classList.remove('active');
+      if (c.dataset.filter === 'farbe') c.textContent = c.dataset.val; // Häkchen entfernen
+    });
     document.getElementById('f-bienen').checked = false;
     document.getElementById('f-heimisch').checked = false;
     document.getElementById('search').value = '';
