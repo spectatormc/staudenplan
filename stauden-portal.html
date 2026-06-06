@@ -1052,7 +1052,22 @@
       <div class="poly-list" id="poly-list"></div>
       <div class="canvas-area-result" id="canvas-area-result"></div>
     </div>
-    <div id="pro-err-1" class="error-msg" style="display:none">Bitte Fläche eingeben oder zeichnen.</div>
+    <label class="field-label" style="margin-top:20px;margin-bottom:8px;display:block">Blickrichtung aufs Beet</label>
+    <div class="option-grid" id="sichtseite-grid-pro" style="grid-template-columns:1fr 1fr 1fr;margin-bottom:0">
+      <div class="option-card" onclick="selectSichtseite('Einseitig (Beet an Mauer/Zaun)',this,'pro')">
+        <div class="oc-icon">🏠</div><div class="oc-label">Einseitig</div>
+        <div class="oc-sub">Blick von vorne, Rücken zur Wand</div>
+      </div>
+      <div class="option-card" onclick="selectSichtseite('Rundbeet (Insel, Blick von allen Seiten)',this,'pro')">
+        <div class="oc-icon">🔄</div><div class="oc-label">Rundbeet</div>
+        <div class="oc-sub">Insel, von allen Seiten sichtbar</div>
+      </div>
+      <div class="option-card" onclick="selectSichtseite('Eckbeet (Blick von zwei Seiten)',this,'pro')">
+        <div class="oc-icon">📐</div><div class="oc-label">Eckbeet</div>
+        <div class="oc-sub">Ecke, von zwei Seiten sichtbar</div>
+      </div>
+    </div>
+    <div id="pro-err-1" class="error-msg" style="display:none">Bitte Fläche eingeben und Blickrichtung wählen.</div>
     <div class="btn-row" style="margin-top:20px">
       <button class="btn-back" onclick="showModewahl()">← Modus ändern</button>
       <button class="btn-next" id="pro-btn-next-1" onclick="proGoStep(2)" disabled>Weiter →</button>
@@ -1268,7 +1283,22 @@
         <span>m²</span>
       </div>
     </div>
-    <div id="err-1" class="error-msg" style="display:none">Bitte eine Fläche eingeben (min. 1 m²).</div>
+    <label class="field-label" style="margin-top:20px;margin-bottom:8px;display:block">Blickrichtung aufs Beet</label>
+    <div class="option-grid" id="sichtseite-grid-einfach" style="grid-template-columns:1fr 1fr 1fr;margin-bottom:0">
+      <div class="option-card" onclick="selectSichtseite('Einseitig (Beet an Mauer/Zaun)',this,'einfach')">
+        <div class="oc-icon">🏠</div><div class="oc-label">Einseitig</div>
+        <div class="oc-sub">Blick von vorne, Rücken zur Wand</div>
+      </div>
+      <div class="option-card" onclick="selectSichtseite('Rundbeet (Insel, Blick von allen Seiten)',this,'einfach')">
+        <div class="oc-icon">🔄</div><div class="oc-label">Rundbeet</div>
+        <div class="oc-sub">Insel, von allen Seiten sichtbar</div>
+      </div>
+      <div class="option-card" onclick="selectSichtseite('Eckbeet (Blick von zwei Seiten)',this,'einfach')">
+        <div class="oc-icon">📐</div><div class="oc-label">Eckbeet</div>
+        <div class="oc-sub">Ecke, von zwei Seiten sichtbar</div>
+      </div>
+    </div>
+    <div id="err-1" class="error-msg" style="display:none">Bitte Fläche eingeben und Blickrichtung wählen.</div>
     <div class="btn-row">
       <button class="btn-next" id="btn-next-1" onclick="goStep(2)" disabled>Weiter →</button>
     </div>
@@ -1642,7 +1672,7 @@
 <script>
   // ── State ──────────────────────────────────────────────────────────────────
   let formData = {
-    gartenflaeche: null, licht: '', boden: '', stil: '', farbe: '', saison: '',
+    gartenflaeche: null, licht: '', boden: '', stil: '', sichtseite: '', farbe: '', saison: '',
     modus: 'einfach',
     lieblingspflanzen: [], budget: null, nutzung: [], pflegezeit: ''
   };
@@ -1735,12 +1765,21 @@
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
+  function selectSichtseite(value, el, mode) {
+    const gridId = mode === 'pro' ? 'sichtseite-grid-pro' : 'sichtseite-grid-einfach';
+    document.getElementById(gridId).querySelectorAll('.option-card').forEach(c => c.classList.remove('selected'));
+    el.classList.add('selected');
+    formData.sichtseite = value;
+    if (mode === 'pro') validateProStep1();
+    else validateStep1();
+  }
+
   function validateStep1() {
     const v = parseFloat(document.getElementById('gartenflaeche').value);
-    const valid = v > 0;
+    const valid = v > 0 && !!formData.sichtseite;
     document.getElementById('btn-next-1').disabled = !valid;
     document.getElementById('err-1').style.display = valid ? 'none' : 'block';
-    if (valid) formData.gartenflaeche = v;
+    if (v > 0) formData.gartenflaeche = v;
   }
 
   function selectOption(field, value, el) {
@@ -1769,7 +1808,8 @@
 
   function validateProStep1() {
     const v = parseFloat(document.getElementById('pro-gartenflaeche').value);
-    document.getElementById('pro-btn-next-1').disabled = !(v > 0);
+    const valid = v > 0 && !!formData.sichtseite;
+    document.getElementById('pro-btn-next-1').disabled = !valid;
     if (v > 0) formData.gartenflaeche = v;
   }
 
@@ -2165,10 +2205,10 @@
 
   function validateStep1() {
     const v = parseFloat(document.getElementById('gartenflaeche').value);
-    const valid = v > 0;
+    const valid = v > 0 && !!formData.sichtseite;
     document.getElementById('btn-next-1').disabled = !valid;
     document.getElementById('err-1').style.display = valid ? 'none' : 'block';
-    if (valid) formData.gartenflaeche = v;
+    if (v > 0) formData.gartenflaeche = v;
   }
 
   function selectOption(field, value, el) {
@@ -2202,7 +2242,8 @@
         gartenflaeche: formData.gartenflaeche,
         licht: formData.licht, boden: formData.boden,
         standort_beschreibung: formData.standort_beschreibung || null,
-        stil: formData.stil, farbe: formData.farbe, saison: formData.saison,
+        stil: formData.stil, sichtseite: formData.sichtseite,
+        farbe: formData.farbe, saison: formData.saison,
         lieblingspflanzen: formData.lieblingspflanzen,
         budget: formData.budget,
         nutzung: formData.nutzung,
