@@ -284,6 +284,12 @@
     }
     .ergebnis-meta .em-item strong { display: block; font-size: 1.1rem; }
 
+    .dichte-toggle { display:flex;align-items:center;gap:8px;padding:14px 20px;background:#f8f4ef;border-radius:12px;margin:0 0 20px;flex-wrap:wrap }
+    .dichte-toggle span { font-size:.85rem;font-weight:600;color:#1b4332;margin-right:4px }
+    .dichte-btn { background:#fff;border:1.5px solid #d4c9bb;color:#555;font-size:.82rem;padding:5px 16px;border-radius:20px;cursor:pointer;font-family:inherit;font-weight:600;transition:all .15s }
+    .dichte-btn:hover { border-color:#2d6a4f;color:#1b4332 }
+    .dichte-btn.active { background:#1b4332;border-color:#1b4332;color:#fff }
+
     .section-title {
       font-size: 1.2rem;
       font-weight: 700;
@@ -1527,6 +1533,14 @@
     <h2>🌸 Dein persönlicher Bepflanzungsplan</h2>
     <p id="ergebnis-subtitle">Maßgeschneidert für deinen Garten</p>
     <div class="ergebnis-meta" id="ergebnis-meta"></div>
+  </div>
+
+  <!-- Pflanzendichte -->
+  <div class="dichte-toggle">
+    <span>Pflanzendichte:</span>
+    <button class="dichte-btn" onclick="setDichte(0.6,this)">🌿 Locker</button>
+    <button class="dichte-btn active" onclick="setDichte(1,this)">🌿 Normal</button>
+    <button class="dichte-btn" onclick="setDichte(1.5,this)">🌿 Dicht</button>
   </div>
 
   <!-- Tab Navigation -->
@@ -2860,7 +2874,31 @@
   }
 
   // ── renderErgebnis ────────────────────────────────────────────────────────
+  let _baseStueck = null;
+
+  function setDichte(factor, btn) {
+    if (!_baseStueck || !currentPlan) return;
+    document.querySelectorAll('.dichte-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentPlan.pflanzen.forEach((p, i) => {
+      p.stueckzahl = Math.max(1, Math.round(_baseStueck[i] * factor));
+      const se = document.getElementById('stueck-' + i);
+      const pe = document.getElementById('preis-' + i);
+      if (se) se.textContent = '× ' + p.stueckzahl + ' Stück';
+      if (pe) pe.textContent = ((p.preis_stueck_eur||0) * p.stueckzahl).toFixed(2) + ' €';
+    });
+    const totalStueck = currentPlan.pflanzen.reduce((s,p) => s + p.stueckzahl, 0);
+    const totalKosten = currentPlan.pflanzen.reduce((s,p) => s + (p.preis_stueck_eur||0) * p.stueckzahl, 0);
+    const metaStrong = document.querySelectorAll('#ergebnis-meta .em-item strong');
+    if (metaStrong[1]) metaStrong[1].textContent = totalStueck;
+    if (metaStrong[2]) metaStrong[2].textContent = totalKosten.toFixed(0) + ' €';
+    renderStueckliste(currentPlan);
+  }
+
   function renderErgebnis(plan) {
+    _baseStueck = plan.pflanzen.map(p => p.stueckzahl);
+    document.querySelectorAll('.dichte-btn').forEach((b,i) => b.classList.toggle('active', i===1));
+
     document.getElementById('ergebnis-subtitle').textContent =
       `${plan.pflanzen.length} Pflanzenarten · ${formData.gartenflaeche} m² · ${formData.licht} · ${formData.stil}`;
 
@@ -2892,11 +2930,11 @@
             <span class="tag">🌸 ${p.bluehzeit || ''}</span>
             ${p.farbe ? `<span class="tag" style="background:${hexLighten(c,50)};color:${hexDarken(c,40)}">${p.farbe}</span>` : ''}
             <span class="tag tag-erde">↕ ${p.hoehe_cm} cm</span>
-            <span class="tag tag-stueck">× ${p.stueckzahl} Stück</span>
+            <span class="tag tag-stueck" id="stueck-${i}">× ${p.stueckzahl} Stück</span>
           </div>
           <div class="pflanze-preis">
             <span>Pflege: <span class="pflege-sterne">${'★'.repeat(stars)}${'☆'.repeat(3-stars)}</span></span>
-            <strong>${((p.preis_stueck_eur||0) * (p.stueckzahl||1)).toFixed(2)} €</strong>
+            <strong id="preis-${i}">${((p.preis_stueck_eur||0) * (p.stueckzahl||1)).toFixed(2)} €</strong>
           </div>
           <a class="btn-kaufen" href="${p.kauflink}" target="_blank" rel="noopener">Kaufen →</a>
         </div>
