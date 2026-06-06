@@ -312,6 +312,7 @@ app.get('/', (req, res) => {
 
     const fs = require('fs');
     let html = fs.readFileSync(path.join(__dirname, 'stauden-portal.html'), 'utf8');
+    html = html.replace(/__PFLANZEN_COUNT__/g, pflanzenCount);
 
   // Inject SEO sections before </body>
   const seoSection = `
