@@ -930,11 +930,24 @@
 
     @media (max-width: 600px) {
       .option-grid { grid-template-columns: 1fr 1fr; }
-      #view-ergebnis .ergebnis-header { padding: 20px; }
+      #view-ergebnis .ergebnis-header { padding: 20px 14px; }
       .modal { padding: 24px; }
       #view-hero h2 { font-size: 1.7rem; }
-      .result-tabs { gap: 4px; }
-      .rtab { padding: 8px 14px; font-size: .8rem; }
+      /* Tabs: einzeilig, gleichmäßig verteilt */
+      .result-tabs { gap: 3px; flex-wrap: nowrap; }
+      .rtab { padding: 8px 6px; font-size: .74rem; flex: 1; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      /* Meta-Stats: kompakter */
+      .ergebnis-meta { gap: 8px; margin-top: 12px; }
+      .ergebnis-meta .em-item { padding: 8px 10px; font-size: .78rem; }
+      .ergebnis-meta .em-item strong { font-size: .95rem; }
+      /* Pflanzendichte: kompakter */
+      .dichte-toggle { padding: 10px 14px; gap: 5px; }
+      .dichte-btn { padding: 4px 10px; font-size: .78rem; }
+      /* Stückliste: horizontal scrollbar statt Überlauf */
+      .sl-wrap { padding: 0 0 60px; }
+      .sl-wrap > .sl-toolbar { padding: 0 14px; }
+      .sl-table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; padding: 0 14px; }
+      .sl-table { min-width: 560px; }
     }
   </style>
 </head>
@@ -1575,6 +1588,7 @@
         <h3>📋 Stückliste</h3>
         <button class="btn-print" onclick="window.print()">🖨️ Drucken / PDF</button>
       </div>
+      <div class="sl-table-scroll">
       <table class="sl-table" id="stueckliste-table">
         <thead>
           <tr>
@@ -1599,6 +1613,7 @@
           </tr>
         </tfoot>
       </table>
+      </div>
       <div style="margin-top:24px">
         <div class="anfrage-cta">
           <h3>🚚 Komplettpaket bestellen</h3>
@@ -2973,7 +2988,7 @@
     meta.innerHTML = `
       <div class="em-item"><strong>${plan.pflanzen.length}</strong> Pflanzenarten</div>
       <div class="em-item"><strong>${plan.pflanzen.reduce((s,p)=>s+p.stueckzahl,0)}</strong> Pflanzen gesamt</div>
-      <div class="em-item"><strong>${plan.gesamtkosten_geschaetzt}</strong> Gesamtkosten</div>
+      <div class="em-item"><strong>${typeof plan.gesamtkosten_geschaetzt === 'number' ? plan.gesamtkosten_geschaetzt.toFixed(0) + ' €' : plan.gesamtkosten_geschaetzt || '—'}</strong> Gesamtkosten</div>
     `;
 
     // Pflanzenkarten (mit echten Fotos oder farbigem Top)
