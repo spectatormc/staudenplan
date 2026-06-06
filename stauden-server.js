@@ -695,7 +695,7 @@ app.get('/api/pflanzen', pflanzenLimiter, (req, res) => {
       (p.stil || '').toLowerCase().includes(q)
     );
   }
-  res.json(pflanzen.slice(0, 40));
+  res.json(pflanzen);
 });
 
 // ─── SEO-Hilfsfunktionen ──────────────────────────────────────────────────────
