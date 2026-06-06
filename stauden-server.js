@@ -1351,7 +1351,7 @@ const NAV_LINKS = `${FAVICON}${PLAUSIBLE}
     var wl=getWL();
     var list=document.getElementById('snav-wl-list');
     list.innerHTML=wl.length?wl.map(function(p){
-      return '<div class="snav-wl-item"><span>'+p.name_deutsch+'</span><button class="snav-wl-rm" onclick="snavRm(\''+p.name_botanisch.replace(/'/g,"\\\\'")+'\')" title="Entfernen">✕</button></div>';
+      return '<div class="snav-wl-item"><span>'+p.name_deutsch+'</span><button class="snav-wl-rm" onclick="snavRm(this.dataset.bot)" data-bot="'+p.name_botanisch.replace(/"/g,'&quot;')+'" title="Entfernen">✕</button></div>';
     }).join(''):'<p style="color:#aaa;font-size:.85rem">Noch leer</p>';
   }
   window.snavToggle=function(){var d=document.getElementById('snav-wl-dd');renderDD();d.style.display=d.style.display==='block'?'none':'block';};
