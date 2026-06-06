@@ -1334,7 +1334,7 @@ const NAV_LINKS = `${FAVICON}${PLAUSIBLE}
   <a href="/">Planer</a>
   <a href="/pflanzen">Stauden</a>
   <a href="/ratgeber">Ratgeber</a>
-  <button id="snav-wl-btn" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;font-size:.82rem;padding:5px 12px;border-radius:20px;cursor:pointer;font-family:inherit" onclick="snavToggle()">🌿 <span id="snav-wl-n">0</span></button>
+  <button id="snav-wl-btn" style="background:rgba(255,255,255,.25);border:1.5px solid rgba(255,255,255,.6);color:#fff;font-size:.82rem;padding:5px 14px;border-radius:20px;cursor:pointer;font-family:inherit;font-weight:600" onclick="snavToggle()">🌿 <span id="snav-wl-n">0</span></button>
 </nav>
 <div id="snav-wl-dd">
   <p style="font-size:.75rem;color:#aaa;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Meine Wunschliste</p>
@@ -1354,7 +1354,7 @@ const NAV_LINKS = `${FAVICON}${PLAUSIBLE}
       return '<div class="snav-wl-item"><span>'+p.name_deutsch+'</span><button class="snav-wl-rm" onclick="snavRm(\''+p.name_botanisch.replace(/'/g,"\\\\'")+'\')" title="Entfernen">✕</button></div>';
     }).join(''):'<p style="color:#aaa;font-size:.85rem">Noch leer</p>';
   }
-  window.snavToggle=function(){var d=document.getElementById('snav-wl-dd');renderDD();d.style.display=d.style.display==='none'?'block':'none';};
+  window.snavToggle=function(){var d=document.getElementById('snav-wl-dd');renderDD();d.style.display=d.style.display==='block'?'none':'block';};
   window.snavClose=function(){document.getElementById('snav-wl-dd').style.display='none';};
   window.snavRm=function(bot){var wl=getWL().filter(function(p){return p.name_botanisch!==bot;});saveWL(wl);updateBtn();renderDD();};
   function updateBtn(){
