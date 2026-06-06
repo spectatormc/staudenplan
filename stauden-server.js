@@ -408,7 +408,7 @@ app.get('/', (req, res) => {
       </div>
     </div>
     <div class="seo-footer-bottom">
-      <p>© 2025 Staudenplan.de · Betrieben von <a href="https://www.gartenschmiede.de" style="color:rgba(255,255,255,.6)" target="_blank">Gartenschmiede GmbH</a> · <a href="/impressum" style="color:rgba(255,255,255,.6)">Impressum</a> · <a href="/datenschutz" style="color:rgba(255,255,255,.6)">Datenschutz</a></p>
+      <p>© 2025 Staudenplan.de · Betrieben von <a href="https://www.freisinger-gartenschmiede.de" style="color:rgba(255,255,255,.6)" target="_blank">Gartenschmiede GmbH</a> · <a href="/impressum" style="color:rgba(255,255,255,.6)">Impressum</a> · <a href="/datenschutz" style="color:rgba(255,255,255,.6)">Datenschutz</a></p>
     </div>
   </footer>
 </div>
@@ -1158,7 +1158,7 @@ app.get('/pflanze/:slug', (req, res) => {
           (function(){
             const KEY='staudenplan_wishlist', BOT='${pflanze.name_botanisch.replace(/'/g,"\\'")}', DE='${pflanze.name_deutsch.replace(/'/g,"\\'")}';
             function getWL(){try{return JSON.parse(localStorage.getItem(KEY)||'[]');}catch{return[];}}
-            function setAdded(){const b=document.getElementById('wl-btn');if(!b)return;b.textContent='✓ Auf Wunschliste';b.style.background='#52b788';b.style.cursor='default';b.onclick=function(){window.location='/'};}
+            function setAdded(){const b=document.getElementById('wl-btn');if(!b)return;b.textContent='✓ Auf Wunschliste';b.style.background='#52b788';b.style.cursor='default';b.onclick=function(){if(window.snavToggle)window.snavToggle();};}
             window.addToWunschliste=function(){const wl=getWL();if(!wl.find(p=>p.name_botanisch===BOT)){wl.push({name_deutsch:DE,name_botanisch:BOT});localStorage.setItem(KEY,JSON.stringify(wl));}setAdded();document.dispatchEvent(new CustomEvent('wl-changed'));};
             if(getWL().find(p=>p.name_botanisch===BOT))setAdded();
           })();
@@ -1363,8 +1363,8 @@ const NAV_LINKS = `${FAVICON}${PLAUSIBLE}
     if(n) n.textContent=wl.length;
     var btn=document.getElementById('snav-wl-btn');
     if(!btn)return;
-    if(wl.length>0){btn.style.opacity='1';btn.style.borderColor='rgba(255,255,255,.5)';}
-    else{btn.style.opacity='0.5';btn.style.borderColor='rgba(255,255,255,.2)';}
+    if(wl.length>0){btn.style.background='rgba(82,183,136,.35)';btn.style.borderColor='rgba(82,183,136,.7)';}
+    else{btn.style.background='rgba(255,255,255,.15)';btn.style.borderColor='rgba(255,255,255,.3)';}
     if(wl.length===0)document.getElementById('snav-wl-dd') && (document.getElementById('snav-wl-dd').style.display='none');
   }
   window.snavUpdateBtn = updateBtn;
@@ -1380,7 +1380,7 @@ const NAV_LINKS = `${FAVICON}${PLAUSIBLE}
 </script>`;
 
 const SITE_FOOTER = `<footer style="background:#1b4332;color:rgba(255,255,255,.7);padding:32px 24px;text-align:center;font-size:.82rem">
-  <p style="margin-bottom:8px">© 2025 Staudenplan.de · <a href="/impressum" style="color:rgba(255,255,255,.6)">Impressum</a> · <a href="/datenschutz" style="color:rgba(255,255,255,.6)">Datenschutz</a> · <a href="https://www.gartenschmiede.de" style="color:rgba(255,255,255,.6)" target="_blank">Gartenschmiede GmbH</a></p>
+  <p style="margin-bottom:8px">© 2025 Staudenplan.de · <a href="/impressum" style="color:rgba(255,255,255,.6)">Impressum</a> · <a href="/datenschutz" style="color:rgba(255,255,255,.6)">Datenschutz</a> · <a href="https://www.freisinger-gartenschmiede.de" style="color:rgba(255,255,255,.6)" target="_blank">Gartenschmiede GmbH</a></p>
   <p><a href="/" style="color:#52b788">🌿 KI-Planer</a> · <a href="/pflanzen" style="color:#52b788">Stauden-Lexikon</a> · <a href="/ratgeber" style="color:#52b788">Ratgeber</a></p>
 </footer>`;
 
