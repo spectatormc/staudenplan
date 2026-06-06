@@ -160,12 +160,16 @@ function getPflanzenkandidaten(licht, boden, stil, standortBeschr) {
   const feuchTerms  = FEUCHT_COMPAT[feuchtigkeit] || ['normal'];
   const feuchPlaceholders = feuchTerms.map(() => '?').join(',');
 
-  // Vollständiger Match mit Feuchtigkeit
-  let kandidaten = db.prepare(`
-    SELECT name_deutsch, name_botanisch, beschreibung, licht, boden, stil,
+  const COLS = `name_deutsch, name_botanisch, beschreibung, licht, boden, stil,
            bluehzeit, farbe, hoehe_cm_min, hoehe_cm_max,
            pflege_sterne, preis_stueck_eur, bienen_freundlich, heimisch,
-           feuchtigkeit, wuchs
+           feuchtigkeit, wuchs,
+           lebensbereich, breite_cm_max, rolle_empfehlung,
+           kombinationspartner, winteraspekt, trockenheitstoleranz`;
+
+  // Vollständiger Match mit Feuchtigkeit
+  let kandidaten = db.prepare(`
+    SELECT ${COLS}
     FROM pflanzen
     WHERE licht LIKE ? AND (boden LIKE ? OR boden LIKE ?) AND stil LIKE ?
       AND (feuchtigkeit IN (${feuchPlaceholders}) OR feuchtigkeit IS NULL)
@@ -175,10 +179,7 @@ function getPflanzenkandidaten(licht, boden, stil, standortBeschr) {
   // Fallback: nur Licht + Feuchtigkeit
   if (kandidaten.length < 10) {
     kandidaten = db.prepare(`
-      SELECT name_deutsch, name_botanisch, beschreibung, licht, boden, stil,
-             bluehzeit, farbe, hoehe_cm_min, hoehe_cm_max,
-             pflege_sterne, preis_stueck_eur, bienen_freundlich, heimisch,
-             feuchtigkeit, wuchs
+      SELECT ${COLS}
       FROM pflanzen
       WHERE licht LIKE ?
         AND (feuchtigkeit IN (${feuchPlaceholders}) OR feuchtigkeit IS NULL)
@@ -189,10 +190,7 @@ function getPflanzenkandidaten(licht, boden, stil, standortBeschr) {
   // Letzter Fallback: nur Licht
   if (kandidaten.length < 8) {
     kandidaten = db.prepare(`
-      SELECT name_deutsch, name_botanisch, beschreibung, licht, boden, stil,
-             bluehzeit, farbe, hoehe_cm_min, hoehe_cm_max,
-             pflege_sterne, preis_stueck_eur, bienen_freundlich, heimisch,
-             feuchtigkeit, wuchs
+      SELECT ${COLS}
       FROM pflanzen WHERE licht LIKE ? ORDER BY RANDOM() LIMIT 35
     `).all(`%${lichtTerm}%`);
   }
@@ -246,14 +244,19 @@ Du empfiehlst ausschließlich in Deutschland winterharte Pflanzen. Antworte imme
     prompt += '\n\n## VERFÜGBARE PFLANZEN (standortgeprüft):\n';
     prompt += kandidaten.map(p => {
       const hoehe = (p.hoehe_cm_min && p.hoehe_cm_max) ? `${p.hoehe_cm_min}–${p.hoehe_cm_max}cm` : '';
-      const schicht = (p.hoehe_cm_max || 50) >= 100 ? 'Leitstaude' : (p.hoehe_cm_max || 50) >= 50 ? 'Begleiter' : 'Bodendecker';
+      const breite = p.breite_cm_max ? `Ø${p.breite_cm_max}cm` : '';
+      const rolle = p.rolle_empfehlung || ((p.hoehe_cm_max || 50) >= 100 ? 'Leitstaude' : (p.hoehe_cm_max || 50) >= 50 ? 'Begleitstaude' : 'Füllstaude');
       const extras = [
-        p.bienen_freundlich ? '🐝bienenfr.' : '',
+        p.bienen_freundlich ? '🐝' : '',
         p.heimisch ? '🌿heimisch' : '',
         p.feuchtigkeit && p.feuchtigkeit !== 'normal' ? `💧${p.feuchtigkeit}` : '',
+        p.trockenheitstoleranz === 'hoch' ? '☀️trockenheitsresistent' : '',
         p.wuchs && p.wuchs !== 'horstig' ? `⚠️${p.wuchs}` : '',
+        p.winteraspekt && p.winteraspekt !== 'unauffällig' ? `❄️${p.winteraspekt}` : '',
       ].filter(Boolean).join(' ');
-      return `- [${schicht}] ${p.name_deutsch} (${p.name_botanisch}): ${p.licht} | Blüte: ${p.bluehzeit || '?'} | ${p.farbe || '?'} | ${hoehe} | ${p.preis_stueck_eur || '?'}€ | Pflege: ${'★'.repeat(p.pflege_sterne || 2)}${extras ? ' | ' + extras : ''}`;
+      const lebensb = p.lebensbereich ? ` | LB:${p.lebensbereich}` : '';
+      const kombi = p.kombinationspartner ? ` | Kombi:${p.kombinationspartner}` : '';
+      return `- [${rolle}] ${p.name_deutsch} (${p.name_botanisch}): ${p.licht} | Blüte: ${p.bluehzeit || '?'} | ${p.farbe || '?'} | ${hoehe}${breite ? ' ' + breite : ''} | ${p.preis_stueck_eur || '?'}€ | Pflege: ${'★'.repeat(p.pflege_sterne || 2)}${lebensb}${kombi}${extras ? ' | ' + extras : ''}`;
     }).join('\n');
     prompt += '\n\nKauflinks: https://www.amazon.de/s?k=BOTANISCHERNAME&tag=gartenbaukosten-21 (BOTANISCHERNAME URL-kodiert).';
   }
@@ -515,6 +518,7 @@ app.post('/api/plan', planLimiter, async (req, res) => {
 
 ${lieblingsList ? `WICHTIG ZU DEN LIEBLINGSPFLANZEN: Prüfe ob die gewünschten Pflanzen zum angegebenen Standort (${licht}, ${boden}, Feuchtigkeit: ${feuchtigkeit}) passen. Falls eine Pflanze nicht passt, weise im "tipps"-Feld explizit darauf hin und schlage eine Alternative vor. Dennoch: Baue alle Lieblingspflanzen ein, sofern irgendwie vertretbar.\n` : ''}${sichtseite && sichtseite.includes('Einseitig') ? 'ANORDNUNG: Einseitig einsehbares Beet — hohe Pflanzen (>80 cm) im Hintergrund, mittlere in der Mitte, niedrige (<40 cm) im Vordergrund. Im Feld "standort" jeder Pflanze angeben: "Hintergrund", "Mitte" oder "Vordergrund".' : ''}${sichtseite && sichtseite.includes('Rundbeet') ? 'ANORDNUNG: Rundbeet / Inselbeet — höchste Pflanzen in der Mitte, nach außen abnehmende Höhen. Im Feld "standort" angeben: "Mitte", "Mittelzone" oder "Rand".' : ''}${sichtseite && sichtseite.includes('Eckbeet') ? 'ANORDNUNG: Eckbeet — höchste Pflanzen an der Ecke/Rückwand, diagonal nach vorne-links und vorne-rechts abfallend. Im Feld "standort" angeben: "Ecke/Hintergrund", "Mitte" oder "Vordergrund".' : ''}
 Empfehle 10–15 geeignete, winterharte Stauden. Berechne Stückzahlen für ${gartenflaeche} m².
+STÜCKZAHLBERECHNUNG: Nutze das Feld "Ø[X]cm" (Ausbreitung) aus der Pflanzenliste für realistische Abstände. Formel: Stückzahl = zugewiesene Fläche / (Ø_cm/100)². Leitstauden erhalten 25–35% der Fläche geteilt durch ihre Stückzahl. Füllstauden füllen die restliche Fläche lückenlos.
 Plane IMMER auch 3–4 schnellwüchsige Füllstauden oder Bodendecker ein (z.B. Storchschnabel, Katzenminze, Frauenmantel, Elfenblume, Immergrün), die freie Flächen zwischen Hauptstauden schließen. Diese sollen einen Großteil der Fläche bedecken.
 ${lieblingsList ? 'Die genannten Lieblingspflanzen MÜSSEN im Plan enthalten sein.' : ''}${budget ? ` Halte die Gesamtkosten unter ${budget} €.` : ''}
 ${kandidaten.length > 0 ? 'Wähle primär aus der bereitgestellten Pflanzenliste.' : ''}
