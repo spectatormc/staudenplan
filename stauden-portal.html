@@ -1078,18 +1078,11 @@
       <div class="canvas-area-result" id="canvas-area-result"></div>
     </div>
     <label class="field-label" style="margin-top:20px;margin-bottom:8px;display:block">Blickrichtung aufs Beet</label>
-    <div class="option-grid" id="sichtseite-grid-pro" style="grid-template-columns:1fr 1fr 1fr;margin-bottom:0">
-      <div class="option-card" onclick="selectSichtseite('Einseitig (Beet an Mauer/Zaun)',this,'pro')">
-        <div class="oc-icon">🏠</div><div class="oc-label">Einseitig</div>
-        <div class="oc-sub">Blick von vorne, Rücken zur Wand</div>
-      </div>
-      <div class="option-card" onclick="selectSichtseite('Rundbeet (Insel, Blick von allen Seiten)',this,'pro')">
-        <div class="oc-icon">🔄</div><div class="oc-label">Rundbeet</div>
-        <div class="oc-sub">Insel, von allen Seiten sichtbar</div>
-      </div>
-      <div class="option-card" onclick="selectSichtseite('Eckbeet (Blick von zwei Seiten)',this,'pro')">
-        <div class="oc-icon">📐</div><div class="oc-label">Eckbeet</div>
-        <div class="oc-sub">Ecke, von zwei Seiten sichtbar</div>
+    <div id="sichtseite-grid-pro" style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin-bottom:0">
+      <div id="sicht-svg-wrap-pro"></div>
+      <div>
+        <div id="sicht-label-pro" style="font-size:.88rem;font-weight:600;color:var(--green-dark)">Blickrichtung wählen</div>
+        <div id="sicht-hint-pro" style="font-size:.8rem;color:#aaa;margin-top:3px">Klicke auf einen der 12 Punkte</div>
       </div>
     </div>
     <div id="pro-err-1" class="error-msg" style="display:none">Bitte Fläche eingeben und Blickrichtung wählen.</div>
@@ -3077,10 +3070,10 @@
       doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.setTextColor(27, 67, 50);
       doc.text('Pflanzkalender', MARGIN, y); y += 3;
       const kalRows = [
-        ['🌱 Frühling', (plan.pflanzkalender['Frühling'] || []).join(', ') || '–'],
-        ['☀️ Sommer',   (plan.pflanzkalender['Sommer']   || []).join(', ') || '–'],
-        ['🍂 Herbst',   (plan.pflanzkalender['Herbst']   || []).join(', ') || '–'],
-        ['❄️ Winter',   (plan.pflanzkalender['Winter']   || []).join(', ') || '–'],
+        ['Frühling', (plan.pflanzkalender['Frühling'] || []).join(', ') || '–'],
+        ['Sommer',   (plan.pflanzkalender['Sommer']   || []).join(', ') || '–'],
+        ['Herbst',   (plan.pflanzkalender['Herbst']   || []).join(', ') || '–'],
+        ['Winter',   (plan.pflanzkalender['Winter']   || []).join(', ') || '–'],
       ];
       doc.autoTable({ startY: y, head: [], body: kalRows, margin: { left: MARGIN, right: MARGIN },
         styles: { fontSize: 8.5, cellPadding: 2.5 },
