@@ -2478,6 +2478,58 @@
       if (!moved) break;
     }
 
+    // Anti-Kollinearitäts-Pass: verhindert dass Pflanzen direkt hintereinander stehen
+    // Prüft für jede Pflanze ob sie "zwischen" zwei Nachbarn liegt (Winkel > 143°) und drückt sie quer weg
+    for (let colIter = 0; colIter < 14; colIter++) {
+      for (let i = 0; i < all.length; i++) {
+        const p = all[i];
+        const near = [];
+        for (let j = 0; j < all.length; j++) {
+          if (j === i) continue;
+          const d = Math.hypot(all[j].x - p.x, all[j].y - p.y);
+          if (d < (p.r + all[j].r) * 3.8) near.push({ j, d });
+        }
+        if (near.length < 2) continue;
+        for (let a = 0; a < near.length; a++) {
+          for (let b = a + 1; b < near.length; b++) {
+            const ja = near[a].j, jb = near[b].j;
+            const ax = all[ja].x - p.x, ay = all[ja].y - p.y;
+            const bx = all[jb].x - p.x, by = all[jb].y - p.y;
+            const da = near[a].d, db = near[b].d;
+            if (da < 1 || db < 1) continue;
+            const dot = (ax * bx + ay * by) / (da * db);
+            // dot < -0.80 → Winkel zwischen den zwei Richtungen > 143° → p liegt dazwischen
+            if (dot < -0.80) {
+              const lineX = all[jb].x - all[ja].x, lineY = all[jb].y - all[ja].y;
+              const lineLen = Math.hypot(lineX, lineY);
+              if (lineLen < 1) continue;
+              const perpX = -lineY / lineLen, perpY = lineX / lineLen;
+              // Deterministisch: Index-Summe bestimmt Seite → kein Oszillieren
+              const side = (i + ja + jb) % 2 === 0 ? 1 : -1;
+              const strength = (-dot - 0.80) / 0.20;
+              p.x += perpX * side * p.r * 0.55 * strength;
+              p.y += perpY * side * p.r * 0.55 * strength;
+            }
+          }
+        }
+      }
+      all.forEach(p => { p.x = Math.max(p.r, Math.min(bedW - p.r, p.x)); p.y = Math.max(p.r, Math.min(bedH - p.r, p.y)); });
+      // Mini-Separationspass damit Abstände nach dem Querdruck wieder stimmen
+      for (let si = 0; si < 10; si++) {
+        for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) {
+          const dx = all[j].x - all[i].x, dy = all[j].y - all[i].y;
+          const d2 = dx * dx + dy * dy, md = all[i].r + all[j].r + GAP;
+          if (d2 < md * md) {
+            const d = Math.sqrt(d2) || 0.1, push = (md - d) / 2;
+            const nx = dx / d, ny = dy / d;
+            all[i].x -= nx * push * 0.5; all[i].y -= ny * push * 0.5;
+            all[j].x += nx * push * 0.5; all[j].y += ny * push * 0.5;
+          }
+        }
+        all.forEach(p => { p.x = Math.max(p.r, Math.min(bedW - p.r, p.x)); p.y = Math.max(p.r, Math.min(bedH - p.r, p.y)); });
+      }
+    }
+
     // ── 2. Füllstauden: Jitter-Grid in freie Flächen (Matrixbepflanzung) ──────
     const fuellArten = pflanzen.filter(p => getRolle(p) === 'fuell');
     if (fuellArten.length > 0) {
