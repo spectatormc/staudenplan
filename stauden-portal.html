@@ -1302,18 +1302,11 @@
       </div>
     </div>
     <label class="field-label" style="margin-top:20px;margin-bottom:8px;display:block">Blickrichtung aufs Beet</label>
-    <div class="option-grid" id="sichtseite-grid-einfach" style="grid-template-columns:1fr 1fr 1fr;margin-bottom:0">
-      <div class="option-card" onclick="selectSichtseite('Einseitig (Beet an Mauer/Zaun)',this,'einfach')">
-        <div class="oc-icon">🏠</div><div class="oc-label">Einseitig</div>
-        <div class="oc-sub">Blick von vorne, Rücken zur Wand</div>
-      </div>
-      <div class="option-card" onclick="selectSichtseite('Rundbeet (Insel, Blick von allen Seiten)',this,'einfach')">
-        <div class="oc-icon">🔄</div><div class="oc-label">Rundbeet</div>
-        <div class="oc-sub">Insel, von allen Seiten sichtbar</div>
-      </div>
-      <div class="option-card" onclick="selectSichtseite('Eckbeet (Blick von zwei Seiten)',this,'einfach')">
-        <div class="oc-icon">📐</div><div class="oc-label">Eckbeet</div>
-        <div class="oc-sub">Ecke, von zwei Seiten sichtbar</div>
+    <div id="sichtseite-grid-einfach" style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin-bottom:0">
+      <div id="sicht-svg-wrap-einfach"></div>
+      <div>
+        <div id="sicht-label-einfach" style="font-size:.88rem;font-weight:600;color:var(--green-dark)">Blickrichtung wählen</div>
+        <div id="sicht-hint-einfach" style="font-size:.8rem;color:#aaa;margin-top:3px">Klicke auf einen der 12 Punkte</div>
       </div>
     </div>
     <div id="err-1" class="error-msg" style="display:none">Bitte Fläche eingeben und Blickrichtung wählen.</div>
@@ -1750,11 +1743,13 @@
     if (modus === 'einfach') {
       show('view-fragebogen');
       updateProgress(1);
+      setTimeout(() => initSichtachse('einfach'), 50);
     } else {
       show('view-professionell');
       proUpdateProgress(1);
       loadPflanzenDB();
       initCanvas();
+      setTimeout(() => initSichtachse('pro'), 50);
     }
   }
 
@@ -1803,13 +1798,55 @@
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
+  const SICHT_DIRS = ['N','NNO','ONO','O','OSO','SSO','S','SSW','WSW','W','WNW','NNW'];
+  const SICHT_TEXT = ['von Norden','von Nordnordost','von Ostnordost','von Osten','von Ostsüdost','von Südsüdost','von Süden','von Südsüdwest','von Westsüdwest','von Westen','von Westnordwest','von Nordnordwest'];
+
+  function initSichtachse(mode) {
+    const wrap = document.getElementById('sicht-svg-wrap-' + mode);
+    if (!wrap || wrap.dataset.init) return;
+    wrap.dataset.init = '1';
+    const cx = 70, cy = 70, R = 54;
+    const dots = SICHT_DIRS.map((dir, i) => {
+      const a = (i * 30 - 90) * Math.PI / 180;
+      const x = (cx + R * Math.cos(a)).toFixed(1);
+      const y = (cy + R * Math.sin(a)).toFixed(1);
+      return `<circle class="sicht-dot" id="sicht-${mode}-${i}" cx="${x}" cy="${y}" r="7"
+        fill="#e8e4de" stroke="#c8c0b8" stroke-width="1.5" style="cursor:pointer;transition:all .15s"
+        onclick="pickSichtachse(${i},'${mode}')" title="${dir}"/>`;
+    }).join('');
+    const compassLabels = [['N',cx,16],['O',124,cy+4],['S',cx,130],['W',16,cy+4]].map(
+      ([l,x,y]) => `<text x="${x}" y="${y}" text-anchor="middle" font-size="9" fill="#ccc" font-family="system-ui" pointer-events="none">${l}</text>`
+    ).join('');
+    wrap.innerHTML = `<svg width="140" height="140" viewBox="0 0 140 140" style="overflow:visible">
+      <circle cx="${cx}" cy="${cy}" r="${R+1}" fill="none" stroke="#e8e4de" stroke-width="1" stroke-dasharray="3,4"/>
+      <rect x="47" y="52" width="46" height="36" rx="5" fill="#d4b896" stroke="#a0714f" stroke-width="1.5"/>
+      <text x="${cx}" y="${cy+4}" text-anchor="middle" font-size="8.5" fill="#7a5230" font-family="system-ui" pointer-events="none">Beet</text>
+      <g id="sicht-arrow-${mode}"></g>
+      ${dots}
+      ${compassLabels}
+    </svg>`;
+  }
+
+  function pickSichtachse(idx, mode) {
+    const cx = 70, cy = 70, R = 54;
+    document.querySelectorAll(`#sicht-svg-wrap-${mode} .sicht-dot`).forEach(d => {
+      d.setAttribute('fill', '#e8e4de'); d.setAttribute('stroke', '#c8c0b8'); d.setAttribute('r', '7');
+    });
+    const dot = document.getElementById(`sicht-${mode}-${idx}`);
+    if (dot) { dot.setAttribute('fill', '#2d6a4f'); dot.setAttribute('stroke', '#fff'); dot.setAttribute('r', '9'); }
+    const a = (idx * 30 - 90) * Math.PI / 180;
+    const dx = (cx + R * Math.cos(a)).toFixed(1), dy = (cy + R * Math.sin(a)).toFixed(1);
+    const ag = document.getElementById(`sicht-arrow-${mode}`);
+    if (ag) ag.innerHTML = `<line x1="${dx}" y1="${dy}" x2="${cx}" y2="${cy}" stroke="#2d6a4f" stroke-width="1.5" stroke-dasharray="3,2" opacity=".4"/>`;
+    document.getElementById(`sicht-label-${mode}`).textContent = 'Blickrichtung: ' + SICHT_TEXT[idx];
+    document.getElementById(`sicht-hint-${mode}`).textContent = 'Ausgewaehlt';
+    formData.sichtseite = 'Einseitig, Blick ' + SICHT_TEXT[idx];
+    if (mode === 'pro') validateProStep1(); else validateStep1();
+  }
+
   function selectSichtseite(value, el, mode) {
-    const gridId = mode === 'pro' ? 'sichtseite-grid-pro' : 'sichtseite-grid-einfach';
-    document.getElementById(gridId).querySelectorAll('.option-card').forEach(c => c.classList.remove('selected'));
-    el.classList.add('selected');
     formData.sichtseite = value;
-    if (mode === 'pro') validateProStep1();
-    else validateStep1();
+    if (mode === 'pro') validateProStep1(); else validateStep1();
   }
 
   function validateStep1() {
