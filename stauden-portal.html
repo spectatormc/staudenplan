@@ -1798,8 +1798,8 @@
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  const SICHT_DIRS = ['N','NNO','ONO','O','OSO','SSO','S','SSW','WSW','W','WNW','NNW'];
-  const SICHT_TEXT = ['von Norden','von Nordnordost','von Ostnordost','von Osten','von Ostsüdost','von Südsüdost','von Süden','von Südsüdwest','von Westsüdwest','von Westen','von Westnordwest','von Nordnordwest'];
+  const SICHT_DIRS = ['Hinten','Hinten-R','Rechts-H','Rechts','Rechts-V','Vorne-R','Vorne','Vorne-L','Links-V','Links','Links-H','Hinten-L'];
+  const SICHT_TEXT = ['von hinten','von hinten-rechts','von rechts-hinten','von rechts','von rechts-vorne','von vorne-rechts','von vorne','von vorne-links','von links-vorne','von links','von links-hinten','von hinten-links'];
 
   function initSichtachse(mode) {
     const wrap = document.getElementById('sicht-svg-wrap-' + mode);
@@ -1814,9 +1814,7 @@
         fill="#e8e4de" stroke="#c8c0b8" stroke-width="1.5" style="cursor:pointer;transition:all .15s"
         onclick="pickSichtachse(${i},'${mode}')" title="${dir}"/>`;
     }).join('');
-    const compassLabels = [['N',cx,16],['O',124,cy+4],['S',cx,130],['W',16,cy+4]].map(
-      ([l,x,y]) => `<text x="${x}" y="${y}" text-anchor="middle" font-size="9" fill="#ccc" font-family="system-ui" pointer-events="none">${l}</text>`
-    ).join('');
+    const compassLabels = '';
     wrap.innerHTML = `<svg width="140" height="140" viewBox="0 0 140 140" style="overflow:visible">
       <circle cx="${cx}" cy="${cy}" r="${R+1}" fill="none" stroke="#e8e4de" stroke-width="1" stroke-dasharray="3,4"/>
       <rect x="47" y="52" width="46" height="36" rx="5" fill="#d4b896" stroke="#a0714f" stroke-width="1.5"/>
