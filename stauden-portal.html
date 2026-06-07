@@ -2565,24 +2565,19 @@
 
     const driftPatches = Object.values(fuellGroups).map(({ pts, pflanze, pi }) => {
       const c = bloomColor(pflanze.farbe);
-      const cLight = hexLighten(c, 40);
       const num = plan.pflanzen.findIndex(pp => pp.name_botanisch === pflanze.name_botanisch) + 1;
-      const cx = pts.reduce((s,p) => s + p.x, 0) / pts.length;
-      const cy = pts.reduce((s,p) => s + p.y, 0) / pts.length;
       const inSaison = plantInSaison(pflanze.bluehzeit, saison);
-      const opa = inSaison ? '0.68' : '0.18';
-      // Radius skaliert mit Canvas-Breite (Mobile: kleinere Kreise)
-      const rScale = Math.min(1, W / 700);
-      const blobR = Math.max(8, Math.min(34 * rScale, (pflanze.hoehe_cm || 30) / 2.8));
-      const blobs = pts.map(({x,y}) =>
-        `<circle cx="${PAD+x}" cy="${PAD+y}" r="${blobR}" fill="${c}"/>`
-      ).join('');
-      return `
-        <g opacity="${opa}" filter="url(#driftBlob)">
-          ${blobs}
-        </g>
-        <text x="${PAD+cx}" y="${PAD+cy+3}" text-anchor="middle" font-size="8.5" font-weight="700"
-          fill="rgba(0,0,0,.65)" font-family="system-ui" opacity="${inSaison ? 1 : 0.3}">${num}</text>`;
+      const opa = inSaison ? 1 : 0.25;
+      // Füllstauden: einzelne Kreise mit leichtem Blur — klar sichtbar, aber weicher als Leit/Begleit
+      return pts.map(({x, y}) => {
+        const pl = sorted.find(s => s.pi === pi && Math.abs(s.x - x) < 2 && Math.abs(s.y - y) < 2);
+        const fr = pl ? pl.r : 8;
+        return `<g opacity="${opa}">
+          <circle cx="${PAD+x}" cy="${PAD+y}" r="${fr+1}" fill="rgba(0,0,0,.15)"/>
+          <circle cx="${PAD+x}" cy="${PAD+y}" r="${fr}" fill="${c}" filter="url(#fuellBlur)" stroke="rgba(255,255,255,.5)" stroke-width="1"/>
+          <text x="${PAD+x}" y="${PAD+y+3}" text-anchor="middle" font-size="${Math.max(7, fr*0.65)}px" font-weight="700" fill="rgba(0,0,0,.6)" font-family="system-ui">${num}</text>
+        </g>`;
+      }).join('');
     }).join('');
 
     // ── Leit- & Begleitstauden: Einzelkreise ────────────────────────────────
@@ -2636,10 +2631,8 @@
       <defs>
         ${gradDefs}
         <filter id="glow"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-        <filter id="driftBlob" x="-35%" y="-35%" width="170%" height="170%" color-interpolation-filters="sRGB">
-          <feGaussianBlur in="SourceGraphic" stdDeviation="${Math.max(5, Math.round(11 * Math.min(1, W / 700)))}" result="blur"/>
-          <feColorMatrix in="blur" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -7" result="goo"/>
-          <feComposite in="SourceGraphic" in2="goo" operator="in"/>
+        <filter id="fuellBlur" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="2.5"/>
         </filter>
         <linearGradient id="soilGrad" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stop-color="#7a5230"/>
@@ -2699,10 +2692,11 @@
     const gartW = Math.sqrt((formData.gartenflaeche || 15) * 3);
     const gartH = (formData.gartenflaeche || 15) / gartW;
 
-    // Adaptives H: Gartenaspektverhältnis einhalten
+    // Adaptives H: Gartenaspektverhältnis einhalten, Legendenhöhe berücksichtigen
     const idealPlotH = Math.round(plotW * gartH / gartW);
     const plotH = Math.max(80, Math.min(320, idealPlotH));
-    const H = plotH + PAD_T + PAD_B;
+    const legendNeededH = LEGEND_W > 0 ? plan.pflanzen.length * 26 + 30 : 0;
+    const H = Math.max(plotH + PAD_T + PAD_B, legendNeededH);
 
     const scaleX = plotW / gartW;
     const scaleY = plotH / gartH;
@@ -2721,9 +2715,9 @@
     }
 
     const drawnPolysForPlacement = scaledPolygonsForSVG(plotW, plotH, 0, 0);
-    const placements = calcPlacements(plan.pflanzen, plotW, plotH, drawnPolysForPlacement);
-    const circles = placements.map(({ x, y, pflanze, pi }) => {
-      const r = Math.max(8, Math.min(18, (pflanze.hoehe_cm || 50) / 6));
+    const placements = calcPlacements(plan.pflanzen, plotW, plotH, drawnPolysForPlacement, gartW);
+    const circles = placements.map(({ x, y, r: rBase, pflanze, pi }) => {
+      const r = Math.max(8, Math.min(18, rBase));
       const num = plan.pflanzen.findIndex(pp => pp.name_botanisch === pflanze.name_botanisch) + 1;
       const c = bloomColor(pflanze.farbe);
       return `<g>
