@@ -2375,7 +2375,6 @@
     const rScale = Math.min(1, (bedW + 32) / 700);
 
     function pseudoRand(seed) { return Math.abs(Math.sin(seed * 127.1 + 1.3)) % 1; }
-
     function yZone(h) {
       if (h >= 100) return { yMin: 0.00, yMax: 0.50 };
       if (h >= 60)  return { yMin: 0.10, yMax: 0.70 };
@@ -2389,45 +2388,32 @@
       return (p.hoehe_cm || 50) >= 80 ? 'leit' : (p.hoehe_cm || 50) >= 40 ? 'begleit' : 'fuell';
     }
     function getR(p) {
-      // Halbierter Pflanzabstand → Kreisradius in Pixel (maßstäblich, mit visueller Begrenzung)
       const spacing_cm = p.pflanzabstand_cm || Math.max(20, Math.min(90, (p.hoehe_cm || 50) * 0.55 + 10));
-      const actualR = (spacing_cm / 200) * pxPerM;
-      const maxR = 36 * rScale;
-      return Math.max(7, Math.min(maxR, actualR));
+      return Math.max(7, Math.min(36 * rScale, (spacing_cm / 200) * pxPerM));
     }
 
-    // Goldener-Schnitt-Sequenz für Drift-Anker: gleichmäßige Verteilung ohne Gleichabstände
+    // ── 1. Leit & Begleitstauden: Goldener-Schnitt-Platzierung ────────────────
     const PHI = 0.6180339887;
-    const speciesDrifts = pflanzen.map((p, pi) => {
-      const n = p.stueckzahl || 1;
-      const nDrifts = n <= 3 ? 1 : n <= 8 ? 2 : 3;
-      const zone = yZone(p.hoehe_cm || 50);
-      return Array.from({ length: nDrifts }, (_, di) => ({
-        xFrac: (pi * PHI + di * 0.31 + 0.05) % 1,
-        yFrac: zone.yMin + pseudoRand(pi * 53 + di * 31 + 5) * (zone.yMax - zone.yMin)
-      }));
-    });
-
     const all = [];
     pflanzen.forEach((p, pi) => {
+      if (getRolle(p) === 'fuell') return;
       const n = p.stueckzahl || 1;
       const rolle = getRolle(p);
       const zone = yZone(p.hoehe_cm || 50);
-      const drifts = speciesDrifts[pi];
-      const sX = rolle === 'leit' ? 0.09 : rolle === 'begleit' ? 0.18 : 0.22;
-      const sY = rolle === 'leit' ? 0.07 : rolle === 'begleit' ? 0.13 : 0.16;
+      const nDrifts = n <= 3 ? 1 : n <= 8 ? 2 : 3;
+      const drifts = Array.from({ length: nDrifts }, (_, di) => ({
+        xFrac: (pi * PHI + di * 0.31 + 0.05) % 1,
+        yFrac: zone.yMin + pseudoRand(pi * 53 + di * 31 + 5) * (zone.yMax - zone.yMin)
+      }));
+      const sX = rolle === 'leit' ? 0.09 : 0.18;
+      const sY = rolle === 'leit' ? 0.07 : 0.13;
       const r = getR(p);
-
       for (let i = 0; i < n; i++) {
         const seed = pi * 127 + i * 37;
         const dr = drifts[i % drifts.length];
-        let xFrac = dr.xFrac + (pseudoRand(seed) - 0.5) * 2 * sX;
-        let yFrac = dr.yFrac + (pseudoRand(seed + 13) - 0.5) * 2 * sY;
-        yFrac = Math.min(zone.yMax, Math.max(zone.yMin, yFrac));
-        xFrac = Math.min(0.96, Math.max(0.04, xFrac));
-
+        let xFrac = Math.min(0.96, Math.max(0.04, dr.xFrac + (pseudoRand(seed) - 0.5) * 2 * sX));
+        let yFrac = Math.min(zone.yMax, Math.max(zone.yMin, dr.yFrac + (pseudoRand(seed + 13) - 0.5) * 2 * sY));
         let x = xFrac * bedW, y = yFrac * bedH, placed = false;
-
         if (hasConstraint) {
           for (let att = 0; att < 60 && !placed; att++) {
             const s2 = seed + att * 17;
@@ -2435,50 +2421,78 @@
             const cy = (yFrac + (pseudoRand(s2 + 9) - 0.5) * 0.1) * bedH;
             if (pointInAnyPolygon(cx, cy, constraintPolys)) { x = cx; y = cy; placed = true; }
           }
-          if (!placed) {
-            for (let att = 0; att < 40 && !placed; att++) {
-              const cx = pseudoRand(seed + att * 53) * bedW;
-              const cy = pseudoRand(seed + att * 31) * bedH;
-              if (pointInAnyPolygon(cx, cy, constraintPolys)) { x = cx; y = cy; placed = true; }
-            }
+          if (!placed) for (let att = 0; att < 40 && !placed; att++) {
+            const cx = pseudoRand(seed + att * 53) * bedW;
+            const cy = pseudoRand(seed + att * 31) * bedH;
+            if (pointInAnyPolygon(cx, cy, constraintPolys)) { x = cx; y = cy; placed = true; }
           }
         }
-
-        all.push({
-          x: Math.max(r, Math.min(bedW - r, x)),
-          y: Math.max(r, Math.min(bedH - r, y)),
-          r, pflanze: p, pi
-        });
+        all.push({ x: Math.max(r, Math.min(bedW - r, x)), y: Math.max(r, Math.min(bedH - r, y)), r, pflanze: p, pi });
       }
     });
 
-    // Separationspass: überlappende Kreise auseinanderschieben
+    // Separationspass nur für Leit/Begleit
     const GAP = 3;
     for (let iter = 0; iter < 80; iter++) {
       let moved = false;
-      for (let i = 0; i < all.length; i++) {
-        for (let j = i + 1; j < all.length; j++) {
-          const dx = all[j].x - all[i].x;
-          const dy = all[j].y - all[i].y;
-          const dist2 = dx * dx + dy * dy;
-          const minDist = all[i].r + all[j].r + GAP;
-          if (dist2 < minDist * minDist) {
-            const dist = Math.sqrt(dist2) || 0.1;
-            const push = (minDist - dist) / 2;
-            const nx = dx / dist, ny = dy / dist;
-            all[i].x -= nx * push * 0.5;
-            all[i].y -= ny * push * 0.5;
-            all[j].x += nx * push * 0.5;
-            all[j].y += ny * push * 0.5;
-            moved = true;
+      for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) {
+        const dx = all[j].x - all[i].x, dy = all[j].y - all[i].y;
+        const dist2 = dx * dx + dy * dy, minDist = all[i].r + all[j].r + GAP;
+        if (dist2 < minDist * minDist) {
+          const dist = Math.sqrt(dist2) || 0.1, push = (minDist - dist) / 2;
+          const nx = dx / dist, ny = dy / dist;
+          all[i].x -= nx * push * 0.5; all[i].y -= ny * push * 0.5;
+          all[j].x += nx * push * 0.5; all[j].y += ny * push * 0.5;
+          moved = true;
+        }
+      }
+      all.forEach(p => { p.x = Math.max(p.r, Math.min(bedW - p.r, p.x)); p.y = Math.max(p.r, Math.min(bedH - p.r, p.y)); });
+      if (!moved) break;
+    }
+
+    // ── 2. Füllstauden: Jitter-Grid in freie Flächen (Matrixbepflanzung) ──────
+    const fuellArten = pflanzen.filter(p => getRolle(p) === 'fuell');
+    if (fuellArten.length > 0) {
+      const totalFuell = fuellArten.reduce((s, p) => s + (p.stueckzahl || 1), 0);
+      const cellSize = Math.sqrt((bedW * bedH) / Math.max(1, totalFuell)) * 0.88;
+
+      // Jitter-Grid über gesamtes Beet erzeugen
+      const candidates = [];
+      const cols = Math.ceil(bedW / cellSize), rows = Math.ceil(bedH / cellSize);
+      for (let col = 0; col < cols; col++) {
+        for (let row = 0; row < rows; row++) {
+          const seed = col * 997 + row * 31;
+          const jx = (col + 0.15 + pseudoRand(seed) * 0.7) * cellSize;
+          const jy = (row + 0.15 + pseudoRand(seed + 500) * 0.7) * cellSize;
+          if (jx < bedW * 0.97 && jy < bedH * 0.97 && jx > bedW * 0.03 && jy > bedH * 0.03) {
+            if (hasConstraint && !pointInAnyPolygon(jx, jy, constraintPolys)) continue;
+            // Leit/Begleitstauden-Zonen freihalten
+            const clearance = Math.min(...fuellArten.map(p => getR(p))) * 0.8;
+            if (!all.some(pl => Math.hypot(jx - pl.x, jy - pl.y) < pl.r + clearance)) {
+              candidates.push({ x: jx, y: jy });
+            }
           }
         }
       }
-      all.forEach(p => {
-        p.x = Math.max(p.r, Math.min(bedW - p.r, p.x));
-        p.y = Math.max(p.r, Math.min(bedH - p.r, p.y));
+
+      // Kandidaten nach X+Y diagonal sortieren → gleichmäßige Abdeckung über Beetbreite
+      candidates.sort((a, b) => a.x + a.y * 0.15 - b.x - b.y * 0.15);
+
+      // Arten Round-Robin vergeben: jede Art bekommt jeden nSpecies-ten Kandidaten
+      // → gleichmäßige Mischung über die gesamte Fläche
+      const nSpecies = fuellArten.length;
+      fuellArten.forEach((p, fi) => {
+        const pi = pflanzen.indexOf(p);
+        const r = getR(p);
+        const mine = candidates.filter((_, ci) => ci % nSpecies === fi);
+        const n = Math.min(p.stueckzahl || 1, mine.length);
+        // Gleichmäßig über die verfügbaren Kandidaten verteilt auswählen
+        for (let i = 0; i < n; i++) {
+          const idx = Math.round(i * (mine.length - 1) / Math.max(1, n - 1));
+          const c = mine[Math.min(idx, mine.length - 1)];
+          if (c) all.push({ x: c.x, y: c.y, r, pflanze: p, pi });
+        }
       });
-      if (!moved) break;
     }
 
     return all;
