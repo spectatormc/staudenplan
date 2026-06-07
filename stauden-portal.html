@@ -1666,6 +1666,16 @@
         </div>
       </div>
 
+      <!-- Höhenansicht -->
+      <div class="viz-card">
+        <div class="viz-card-title">
+          <span>🏔️ Höhenansicht — Frontalansicht vom Weg</span>
+        </div>
+        <div class="viz-card-body">
+          <div class="schematisch-wrap" id="hoehen-container"></div>
+        </div>
+      </div>
+
     </div>
   </div>
 
@@ -2542,6 +2552,11 @@
     const placementPolysEarly = scaledPolygonsForSVG(bedW, bedH, 0, 0);
     const hasDrawnEarly = !!drawnPolysEarly;
     const placements = calcPlacements(plan.pflanzen, bedW, bedH, hasDrawnEarly ? placementPolysEarly : null, parseFloat(gartW));
+    // Normalisierte Positionen speichern → werden von schematisch + Höhenansicht wiederverwendet
+    plan._normPlacements = placements.map(p => ({
+      xFrac: p.x / bedW, yFrac: p.y / bedH, rFrac: p.r / bedW,
+      pi: p.pi, pflanze: p.pflanze
+    }));
 
     // Rolle-Helfer (lokal, identisch zu calcPlacements)
     function getRolleViz(p) {
@@ -2714,10 +2729,10 @@
       if (y < Math.ceil(gartH)) grid.push(`<text x="${PAD_L-6}" y="${PAD_T + (y+0.5)*scaleY + 4}" text-anchor="end" font-size="9" fill="#999">${y+0.5}m</text>`);
     }
 
-    const drawnPolysForPlacement = scaledPolygonsForSVG(plotW, plotH, 0, 0);
-    const placements = calcPlacements(plan.pflanzen, plotW, plotH, drawnPolysForPlacement, gartW);
-    const circles = placements.map(({ x, y, r: rBase, pflanze, pi }) => {
-      const r = Math.max(8, Math.min(18, rBase));
+    const placements = plan._normPlacements
+      ? plan._normPlacements.map(p => ({ ...p, x: p.xFrac * plotW, y: p.yFrac * plotH, r: Math.max(8, Math.min(18, p.rFrac * plotW)) }))
+      : calcPlacements(plan.pflanzen, plotW, plotH, scaledPolygonsForSVG(plotW, plotH, 0, 0), gartW);
+    const circles = placements.map(({ x, y, r, pflanze, pi }) => {
       const num = plan.pflanzen.findIndex(pp => pp.name_botanisch === pflanze.name_botanisch) + 1;
       const c = bloomColor(pflanze.farbe);
       return `<g>
@@ -2814,6 +2829,85 @@
     document.getElementById('sl-total-preis').textContent = totalPreis.toFixed(2) + ' €';
   }
 
+  // ── Höhenansicht (SVG) ────────────────────────────────────────────────────
+  function renderHoehenansicht(plan, saison) {
+    const container = document.getElementById('hoehen-container');
+    if (!container) return;
+    const W = Math.min(container.clientWidth || 700, 800);
+    const PAD_L = 44, PAD_T = 16, PAD_B = 36, PAD_R = 16;
+    const plotW = W - PAD_L - PAD_R;
+    const plotH = 200;
+    const H = plotH + PAD_T + PAD_B;
+    const groundY = PAD_T + plotH;
+
+    const gartW = Math.sqrt((formData.gartenflaeche || 15) * 3);
+    const maxH = Math.max(...plan.pflanzen.map(p => p.hoehe_cm || 50), 80);
+
+    // Normalisierte Placements skalieren (xFrac = Beetbreite, yFrac = Tiefe 0=hinten,1=vorne)
+    const placements = plan._normPlacements
+      ? plan._normPlacements.map(p => ({ ...p, x: p.xFrac * plotW, depth: p.yFrac, r: Math.max(6, Math.min(22, p.rFrac * plotW)) }))
+      : calcPlacements(plan.pflanzen, plotW, plotH, null, gartW).map(p => ({ ...p, depth: p.y / plotH, r: p.r }));
+
+    // Hinten → Vorne sortieren (depth=0=hinten zuerst zeichnen, depth=1=vorne zuletzt)
+    const sorted = [...placements].sort((a, b) => a.depth - b.depth);
+
+    const plants = sorted.map(({ x, depth, r, pflanze, pi }) => {
+      const h = pflanze.hoehe_cm || 50;
+      const inSaison = plantInSaison(pflanze.bluehzeit, saison || 'alle');
+      const num = plan.pflanzen.findIndex(pp => pp.name_botanisch === pflanze.name_botanisch) + 1;
+      const c = bloomColor(pflanze.farbe);
+
+      // Tiefenstaffelung: weiter hinten = kleiner + transparenter
+      const depthScale = 0.55 + depth * 0.45;
+      const opa = (inSaison ? 1 : 0.3) * (0.5 + depth * 0.5);
+      const rVis = Math.max(5, r * depthScale);
+      const plantPxH = (h / maxH) * plotH;
+      const crownY = groundY - plantPxH;
+      const crownCY = crownY + rVis * 0.6; // Kronenellipse etwas nach unten
+
+      return `<g opacity="${opa.toFixed(2)}">
+        <line x1="${PAD_L+x}" y1="${crownCY + rVis * 0.7}" x2="${PAD_L+x}" y2="${groundY}"
+              stroke="rgba(80,50,20,.35)" stroke-width="${Math.max(1, rVis * 0.25)}"/>
+        <ellipse cx="${PAD_L+x}" cy="${crownCY}" rx="${rVis}" ry="${rVis * 0.82}"
+                 fill="${c}" stroke="rgba(255,255,255,.55)" stroke-width="1.2"
+                 ${inSaison && saison && saison !== 'alle' ? 'filter="url(#glow)"' : ''}/>
+        <text x="${PAD_L+x}" y="${crownCY+3}" text-anchor="middle"
+              font-size="${Math.max(7, rVis*0.62)}px" font-weight="800"
+              fill="rgba(0,0,0,.65)" font-family="system-ui">${num}</text>
+      </g>`;
+    }).join('');
+
+    // Höhenachse
+    const hMarks = [];
+    for (let hv = 0; hv <= maxH; hv += (maxH > 150 ? 50 : 25)) {
+      const py = groundY - (hv / maxH) * plotH;
+      hMarks.push(`<line x1="${PAD_L-4}" y1="${py}" x2="${PAD_L+plotW}" y2="${py}" stroke="#eee" stroke-width="1" stroke-dasharray="3,4"/>`);
+      hMarks.push(`<text x="${PAD_L-6}" y="${py+4}" text-anchor="end" font-size="9" fill="#aaa" font-family="system-ui">${hv}</text>`);
+    }
+
+    const svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg" style="max-width:100%;display:block">
+      <defs>
+        <filter id="glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        <linearGradient id="skyGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#e8f4ec"/>
+          <stop offset="100%" stop-color="#f8f4ef"/>
+        </linearGradient>
+      </defs>
+      <rect x="${PAD_L}" y="${PAD_T}" width="${plotW}" height="${plotH}" fill="url(#skyGrad)" rx="6"/>
+      ${hMarks.join('')}
+      <line x1="${PAD_L}" y1="${PAD_T}" x2="${PAD_L}" y2="${groundY}" stroke="#ddd" stroke-width="1"/>
+      <line x1="${PAD_L}" y1="${groundY}" x2="${PAD_L+plotW}" y2="${groundY}" stroke="#a0714f" stroke-width="2"/>
+      <rect x="${PAD_L}" y="${groundY}" width="${plotW}" height="5" fill="#c8a882" rx="2"/>
+      ${plants}
+      <text x="${PAD_L-6}" y="${PAD_T+plotH/2+4}" text-anchor="middle" font-size="9" fill="#bbb"
+            transform="rotate(-90,${PAD_L-14},${PAD_T+plotH/2})" font-family="system-ui">Höhe (cm)</text>
+      <text x="${PAD_L}" y="${H-4}" font-size="9" fill="#bbb" font-family="system-ui">← Linke Seite</text>
+      <text x="${PAD_L+plotW}" y="${H-4}" text-anchor="end" font-size="9" fill="#bbb" font-family="system-ui">Rechte Seite →</text>
+    </svg>`;
+
+    container.innerHTML = svg;
+  }
+
   // ── Tab & Saison-Steuerung ────────────────────────────────────────────────
   function switchTab(name) {
     document.querySelectorAll('.rtab').forEach(b => b.classList.remove('active'));
@@ -2821,7 +2915,7 @@
     document.querySelector(`.rtab[onclick*="${name}"]`).classList.add('active');
     document.getElementById('tab-' + name).classList.add('active');
     if (name === 'visualisierung' && currentPlan) {
-      setTimeout(() => { renderGrafisch(currentPlan, currentSaison); renderSchematisch(currentPlan); }, 50);
+      setTimeout(() => { renderGrafisch(currentPlan, currentSaison); renderSchematisch(currentPlan); renderHoehenansicht(currentPlan, currentSaison); }, 50);
     }
   }
 
@@ -2829,7 +2923,7 @@
     currentSaison = saison;
     document.querySelectorAll('.season-btn').forEach(b => b.classList.remove('active'));
     event.target.classList.add('active');
-    if (currentPlan) renderGrafisch(currentPlan, saison);
+    if (currentPlan) { renderGrafisch(currentPlan, saison); renderHoehenansicht(currentPlan, saison); }
   }
 
   // ── E-Mail-Gate ──────────────────────────────────────────────────────────────
