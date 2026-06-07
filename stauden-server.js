@@ -561,14 +561,22 @@ JSON-Format:
 
     const plan = JSON.parse(completion.choices[0].message.content);
 
-    // Bilder aus DB anreichern
+    // Bilder + Pflanzabstand aus DB anreichern
     if (Array.isArray(plan.pflanzen)) {
       plan.pflanzen = plan.pflanzen.map(p => {
         const genus = p.name_botanisch.split(' ')[0];
         const dbP = db.prepare(
-          'SELECT bild_url FROM pflanzen WHERE name_botanisch = ? OR name_botanisch LIKE ? LIMIT 1'
+          'SELECT bild_url, inhalt_lang FROM pflanzen WHERE name_botanisch = ? OR name_botanisch LIKE ? LIMIT 1'
         ).get(p.name_botanisch, `${genus}%`);
-        return { ...p, bild_url: dbP?.bild_url || null };
+        let pflanzabstand_cm = null;
+        if (dbP?.inhalt_lang) {
+          try {
+            const il = JSON.parse(dbP.inhalt_lang);
+            const m = (il.pflanzabstand || '').match(/(\d+)\s*[–\-]\s*(\d+)?\s*cm/i);
+            if (m) pflanzabstand_cm = m[2] ? Math.round((parseInt(m[1]) + parseInt(m[2])) / 2) : parseInt(m[1]);
+          } catch {}
+        }
+        return { ...p, bild_url: dbP?.bild_url || null, pflanzabstand_cm };
       });
     }
 
