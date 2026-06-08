@@ -483,7 +483,7 @@ app.get('/', (req, res) => {
 
 app.post('/api/plan', planLimiter, async (req, res) => {
   const { gartenflaeche, licht, boden, standort_beschreibung, stil, sichtseite, farbe, saison,
-          lieblingspflanzen, budget, nutzung, pflegezeit } = req.body;
+          lieblingspflanzen, budget, nutzung, pflegezeit, vielfalt } = req.body;
 
   if (!gartenflaeche || !licht || !boden || !stil) {
     return res.status(400).json({ error: 'Bitte alle Pflichtfelder ausfüllen.' });
@@ -507,6 +507,12 @@ app.post('/api/plan', planLimiter, async (req, res) => {
     ? nutzung.join(', ')
     : null;
 
+  const vielfaltAnweisung = (() => {
+    if (vielfalt === 'wenig') return `Empfehle exakt 3–4 geeignete, winterharte Stauden. Setze auf wenige, klar strukturierte Arten mit hoher Wiederholung — ruhige, schlichte Beetwirkung.`;
+    if (vielfalt === 'viel') return `Empfehle mindestens 8 verschiedene, winterharte Stauden — bei Flächen über 20 m² gerne bis zu 20 Arten. Maximale Artenvielfalt, kleine Gruppen je Art, hohe Biodiversität.`;
+    return `Empfehle 5–8 geeignete, winterharte Stauden.`;
+  })();
+
   const userPrompt = `Erstelle einen Bepflanzungsplan für einen Privatgarten:
 - Fläche: ${gartenflaeche} m²
 - Standort: ${standort_beschreibung || `${licht}, ${boden}`}
@@ -518,7 +524,7 @@ app.post('/api/plan', planLimiter, async (req, res) => {
 - Blühsaison-Priorität: ${saison || 'ganzjährig'}${lieblingsList ? `\n- Lieblingspflanzen (unbedingt einplanen): ${lieblingsList}` : ''}${budget ? `\n- Budget: maximal ${budget} € Gesamtkosten` : ''}${nutzungList ? `\n- Gartennutzung/Schwerpunkt: ${nutzungList}` : ''}${pflegezeit ? `\n- Gewünschte Pflegeintensität: ${pflegezeit}` : ''}
 
 ${lieblingsList ? `WICHTIG ZU DEN LIEBLINGSPFLANZEN: Prüfe ob die gewünschten Pflanzen zum angegebenen Standort (${licht}, ${boden}, Feuchtigkeit: ${feuchtigkeit}) passen. Falls eine Pflanze nicht passt, weise im "tipps"-Feld explizit darauf hin und schlage eine Alternative vor. Dennoch: Baue alle Lieblingspflanzen ein, sofern irgendwie vertretbar.\n` : ''}${sichtseite && sichtseite.includes('Einseitig') ? 'ANORDNUNG: Einseitig einsehbares Beet — hohe Pflanzen (>80 cm) im Hintergrund, mittlere in der Mitte, niedrige (<40 cm) im Vordergrund. Im Feld "standort" jeder Pflanze angeben: "Hintergrund", "Mitte" oder "Vordergrund".' : ''}${sichtseite && sichtseite.includes('Rundbeet') ? 'ANORDNUNG: Rundbeet / Inselbeet — höchste Pflanzen in der Mitte, nach außen abnehmende Höhen. Im Feld "standort" angeben: "Mitte", "Mittelzone" oder "Rand".' : ''}${sichtseite && sichtseite.includes('Eckbeet') ? 'ANORDNUNG: Eckbeet — höchste Pflanzen an der Ecke/Rückwand, diagonal nach vorne-links und vorne-rechts abfallend. Im Feld "standort" angeben: "Ecke/Hintergrund", "Mitte" oder "Vordergrund".' : ''}
-Empfehle 10–15 geeignete, winterharte Stauden. Berechne Stückzahlen für ${gartenflaeche} m².
+${vielfaltAnweisung} Berechne Stückzahlen für ${gartenflaeche} m².
 STÜCKZAHLBERECHNUNG: Nutze das Feld "Ø[X]cm" (Ausbreitung) aus der Pflanzenliste für realistische Abstände. Formel: Stückzahl = zugewiesene Fläche / (Ø_cm/100)². Leitstauden erhalten 25–35% der Fläche geteilt durch ihre Stückzahl. Füllstauden füllen die restliche Fläche lückenlos.
 Plane IMMER auch 3–4 schnellwüchsige Füllstauden oder Bodendecker ein (z.B. Storchschnabel, Katzenminze, Frauenmantel, Elfenblume, Immergrün), die freie Flächen zwischen Hauptstauden schließen. Diese sollen einen Großteil der Fläche bedecken.
 ${lieblingsList ? 'Die genannten Lieblingspflanzen MÜSSEN im Plan enthalten sein.' : ''}${budget ? ` Halte die Gesamtkosten unter ${budget} €.` : ''}

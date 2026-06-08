@@ -841,6 +841,11 @@
     .pz-card .pz-label { font-size: .78rem; font-weight: 700; color: var(--green-dark); }
     .pz-card .pz-sub { font-size: .7rem; color: var(--text-light); margin-top: 2px; }
 
+    /* L×B Maßeingabe */
+    .lxb-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+    .lxb-times { font-size: 1.2rem; color: var(--text-light); font-weight: 700; }
+    .lxb-eq { font-size: .9rem; color: var(--green-dark); font-weight: 600; white-space: nowrap; }
+
     /* Lieblingstauden Suche */
     .pflanzsuche-wrap { margin-bottom: 24px; }
     .pflanzsuche-input-wrap { position: relative; margin-bottom: 10px; }
@@ -982,11 +987,24 @@
     </div>
     <!-- Manuell -->
     <div id="flaeche-manuell">
-      <div class="form-group">
+      <div class="flaeche-toggle" style="margin-bottom:16px">
+        <button class="ftog-btn active" id="dim-qm-btn-p" onclick="setDimMode('qm','p')">m² direkt</button>
+        <button class="ftog-btn" id="dim-lxb-btn-p" onclick="setDimMode('lxb','p')">Länge × Breite</button>
+      </div>
+      <div id="dim-qm-p" class="form-group">
         <label class="field-label">Fläche in m²</label>
         <div class="input-unit">
           <input type="number" id="pro-gartenflaeche" min="1" max="5000" placeholder="z.B. 12" oninput="validateProStep1()">
           <span>m²</span>
+        </div>
+      </div>
+      <div id="dim-lxb-p" style="display:none">
+        <label class="field-label">Maße eingeben</label>
+        <div class="lxb-row">
+          <div class="input-unit"><input type="number" id="laenge-p" min="0.1" max="500" step="0.1" placeholder="Länge" oninput="calcLxB('p')"><span>m</span></div>
+          <span class="lxb-times">×</span>
+          <div class="input-unit"><input type="number" id="breite-p" min="0.1" max="500" step="0.1" placeholder="Breite" oninput="calcLxB('p')"><span>m</span></div>
+          <span class="lxb-eq" id="lxb-result-p">= — m²</span>
         </div>
       </div>
     </div>
@@ -1193,6 +1211,14 @@
         <option value="Langer Blühzeitraum">Langer Blühzeitraum</option>
       </select>
     </div>
+    <div class="form-group">
+      <label class="field-label">Artenvielfalt <span class="optional-tag">(optional)</span></label>
+      <div class="pflegezeit-grid vielfalt-grid-p">
+        <div class="pz-card" onclick="selectVielfalt('wenig',this,'.vielfalt-grid-p')"><div class="pz-icon">🌱</div><div class="pz-label">Schlicht</div><div class="pz-sub">3–4 Arten</div></div>
+        <div class="pz-card selected" onclick="selectVielfalt('ausgewogen',this,'.vielfalt-grid-p')"><div class="pz-icon">🌿</div><div class="pz-label">Ausgewogen</div><div class="pz-sub">5–8 Arten</div></div>
+        <div class="pz-card" onclick="selectVielfalt('viel',this,'.vielfalt-grid-p')"><div class="pz-icon">🌸</div><div class="pz-label">Üppig</div><div class="pz-sub">8+ Arten</div></div>
+      </div>
+    </div>
 
     <div class="btn-row">
       <button class="btn-back" onclick="proGoStep(5)">← Zurück</button>
@@ -1212,11 +1238,24 @@
   <div class="step active" id="step-1">
     <h2>📐 Wie groß ist die Fläche?</h2>
     <p class="hint">Schätze die Fläche, die du bepflanzen möchtest — nicht den ganzen Garten.</p>
-    <div class="form-group">
+    <div class="flaeche-toggle" style="margin-bottom:16px">
+      <button class="ftog-btn active" id="dim-qm-btn-s" onclick="setDimMode('qm','s')">m² direkt</button>
+      <button class="ftog-btn" id="dim-lxb-btn-s" onclick="setDimMode('lxb','s')">Länge × Breite</button>
+    </div>
+    <div id="dim-qm-s" class="form-group">
       <label class="field-label">Fläche in m²</label>
       <div class="input-unit">
         <input type="number" id="gartenflaeche" min="1" max="5000" placeholder="z.B. 12" oninput="validateStep1()">
         <span>m²</span>
+      </div>
+    </div>
+    <div id="dim-lxb-s" style="display:none">
+      <label class="field-label">Maße eingeben</label>
+      <div class="lxb-row">
+        <div class="input-unit"><input type="number" id="laenge-s" min="0.1" max="500" step="0.1" placeholder="Länge" oninput="calcLxB('s')"><span>m</span></div>
+        <span class="lxb-times">×</span>
+        <div class="input-unit"><input type="number" id="breite-s" min="0.1" max="500" step="0.1" placeholder="Breite" oninput="calcLxB('s')"><span>m</span></div>
+        <span class="lxb-eq" id="lxb-result-s">= — m²</span>
       </div>
     </div>
     <div id="err-1" class="error-msg" style="display:none">Bitte eine Fläche eingeben (min. 1 m²).</div>
@@ -1374,7 +1413,7 @@
     </div>
   </div>
 
-  <!-- Step 5: Farbe + Saison -->
+  <!-- Step 5: Farbe + Saison + Vielfalt -->
   <div class="step" id="step-5">
     <h2>🌺 Farbe & Blühsaison</h2>
     <p class="hint">Diese Angaben sind optional — aber helfen der KI bei der Auswahl.</p>
@@ -1401,6 +1440,14 @@
         <option value="Spätsommer / Herbst">Spätsommer / Herbst</option>
         <option value="Langer Blühzeitraum">Langer Blühzeitraum</option>
       </select>
+    </div>
+    <div class="form-group">
+      <label class="field-label">Artenvielfalt <span class="optional-tag">(optional)</span></label>
+      <div class="pflegezeit-grid vielfalt-grid-s">
+        <div class="pz-card" onclick="selectVielfalt('wenig',this,'.vielfalt-grid-s')"><div class="pz-icon">🌱</div><div class="pz-label">Schlicht</div><div class="pz-sub">3–4 Arten</div></div>
+        <div class="pz-card selected" onclick="selectVielfalt('ausgewogen',this,'.vielfalt-grid-s')"><div class="pz-icon">🌿</div><div class="pz-label">Ausgewogen</div><div class="pz-sub">5–8 Arten</div></div>
+        <div class="pz-card" onclick="selectVielfalt('viel',this,'.vielfalt-grid-s')"><div class="pz-icon">🌸</div><div class="pz-label">Üppig</div><div class="pz-sub">8+ Arten</div></div>
+      </div>
     </div>
     <div class="btn-row">
       <button class="btn-back" onclick="goStep(4)">← Zurück</button>
@@ -1575,7 +1622,8 @@
   let formData = {
     gartenflaeche: null, licht: '', boden: '', stil: '', farbe: '', saison: '',
     modus: 'einfach',
-    lieblingspflanzen: [], budget: null, nutzung: [], pflegezeit: ''
+    lieblingspflanzen: [], budget: null, nutzung: [], pflegezeit: '',
+    vielfalt: 'ausgewogen'
   };
   let currentPlan = null;
   let currentStep = 1;
@@ -1698,9 +1746,50 @@
   }
 
   function selectPflegezeit(val, el) {
-    document.querySelectorAll('.pz-card').forEach(c => c.classList.remove('selected'));
+    el.closest('.pflegezeit-grid').querySelectorAll('.pz-card').forEach(c => c.classList.remove('selected'));
     el.classList.add('selected');
     formData.pflegezeit = val;
+  }
+
+  function selectVielfalt(val, el, gridSel) {
+    document.querySelector(gridSel).querySelectorAll('.pz-card').forEach(c => c.classList.remove('selected'));
+    el.classList.add('selected');
+    formData.vielfalt = val;
+  }
+
+  function setDimMode(mode, scope) {
+    document.getElementById(`dim-qm-btn-${scope}`).classList.toggle('active', mode === 'qm');
+    document.getElementById(`dim-lxb-btn-${scope}`).classList.toggle('active', mode === 'lxb');
+    document.getElementById(`dim-qm-${scope}`).style.display = mode === 'qm' ? '' : 'none';
+    document.getElementById(`dim-lxb-${scope}`).style.display = mode === 'lxb' ? '' : 'none';
+    if (scope === 's') validateStep1();
+    else validateProStep1();
+  }
+
+  function calcLxB(scope) {
+    const l = parseFloat(document.getElementById(`laenge-${scope}`).value);
+    const b = parseFloat(document.getElementById(`breite-${scope}`).value);
+    const resultEl = document.getElementById(`lxb-result-${scope}`);
+    if (l > 0 && b > 0) {
+      const area = Math.round(l * b * 100) / 100;
+      resultEl.textContent = `= ${area.toFixed(2).replace('.', ',')} m²`;
+      if (scope === 's') {
+        document.getElementById('gartenflaeche').value = area;
+        validateStep1();
+      } else {
+        document.getElementById('pro-gartenflaeche').value = area;
+        validateProStep1();
+      }
+    } else {
+      resultEl.textContent = '= — m²';
+      if (scope === 's') {
+        document.getElementById('gartenflaeche').value = '';
+        validateStep1();
+      } else {
+        document.getElementById('pro-gartenflaeche').value = '';
+        validateProStep1();
+      }
+    }
   }
 
   function updateBudget(val) {
@@ -2011,7 +2100,8 @@
         lieblingspflanzen: formData.lieblingspflanzen,
         budget: formData.budget,
         nutzung: formData.nutzung,
-        pflegezeit: formData.pflegezeit
+        pflegezeit: formData.pflegezeit,
+        vielfalt: formData.vielfalt || 'ausgewogen'
       };
       const res = await fetch('/api/plan', {
         method: 'POST',
@@ -2222,8 +2312,8 @@
       <g clip-path="url(#bedClip)">${soilDots}${gridLines.join('')}</g>
       <!-- Beetrahmen -->
       ${bedOutline}
-      <!-- Pflanzen (geclippt) -->
-      <g clip-path="url(#bedClip)">${circles}</g>
+      <!-- Pflanzen: im Freihandmodus unclipped, damit Kreise an unregelmäßigen Kanten vollständig sichtbar -->
+      <g${hasDrawn ? '' : ' clip-path="url(#bedClip)"'}>${circles}</g>
       <!-- Beschriftung -->
       ${!hasDrawn ? `<text x="${W/2}" y="${PAD - 4}" text-anchor="middle" font-size="10" fill="#888" font-family="system-ui">↑ Hinten (${gartW} m)</text>
       <text x="8" y="${PAD + bedH/2}" text-anchor="middle" font-size="10" fill="#888" font-family="system-ui" transform="rotate(-90,8,${PAD+bedH/2})">${gartH} m</text>` : ''}
@@ -2515,7 +2605,8 @@
   function neustart() {
     formData = {
       gartenflaeche: null, licht: '', boden: '', stil: '', farbe: '', saison: '',
-      modus: 'einfach', lieblingspflanzen: [], budget: null, nutzung: [], pflegezeit: ''
+      modus: 'einfach', lieblingspflanzen: [], budget: null, nutzung: [], pflegezeit: '',
+      vielfalt: 'ausgewogen'
     };
     currentPlan = null; wishlist = []; polygons = []; currentPoints = [];
     // Reset einfach form
@@ -2528,6 +2619,8 @@
     // Reset professionell form
     document.querySelectorAll('.nutzung-card').forEach(c => c.classList.remove('selected'));
     document.querySelectorAll('.pz-card').forEach(c => c.classList.remove('selected'));
+    // Restore default vielfalt selection (Ausgewogen = middle card in each vielfalt grid)
+    document.querySelectorAll('.vielfalt-grid-s .pz-card:nth-child(2), .vielfalt-grid-p .pz-card:nth-child(2)').forEach(c => c.classList.add('selected'));
     try { document.getElementById('budget-slider').value = 0; document.getElementById('budget-display').textContent = 'Kein Limit'; } catch {}
     try { document.getElementById('wishlist-chips').innerHTML = ''; document.getElementById('wishlist-label').style.display='none'; } catch {}
     try { document.getElementById('pflanzsuche-results').innerHTML = ''; document.getElementById('pflanz-search').value = ''; } catch {}
