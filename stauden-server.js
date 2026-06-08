@@ -532,6 +532,8 @@ ${kandidaten.length > 0 ? 'Wähle primär aus der bereitgestellten Pflanzenliste
 
 Vergib jeder Pflanze eine Rolle nach Hansen & Stahl: "Leitstaude" (1–3 auffällige Strukturpflanzen, max. 3 Arten), "Begleitstaude" (rahmt Leitstauden ein, 3–5 Arten), "Füllstaude" (Bodendecker/Lückenfüller, Rest). Leitstauden sind die visuellen Ankerpunkte des Beetes.
 
+PFLANZKALENDER-HINWEIS: Im Feld "pflanzkalender" stehen nicht nur Blühzeiten, sondern auch Winterschmuck-Pflanzen. Im Abschnitt "Winter" alle Pflanzen aus dem Plan auflisten, die im Winter Zierwert haben: Gräser mit dekorativen Samenständen (z.B. Miscanthus, Pennisetum, Panicum, Calamagrostis), Stauden mit stehenbleibenden Fruchtständen oder markanter Silhouette (z.B. Rudbeckia, Echinacea, Sedum/Hylotelephium, Eryngium) sowie wintergrüne Bodendecker. Auch wenn keine Pflanze blüht — die Winter-Liste soll immer mindestens 2–3 Einträge haben, sofern solche Pflanzen im Plan enthalten sind.
+
 JSON-Format:
 {
   "pflanzen": [{

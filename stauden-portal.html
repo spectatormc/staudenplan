@@ -3364,10 +3364,12 @@
 
     // Kalender
     const jez = { 'Frühling': '🌱', 'Sommer': '☀️', 'Herbst': '🍂', 'Winter': '❄️' };
+    const winterHint = '<p style="font-size:.75rem;color:#aaa;margin:0 0 6px">Winterschmuck / Struktur</p>';
     document.getElementById('kalender-grid').innerHTML = Object.entries(plan.pflanzkalender || {}).map(([jz, items]) => `
       <div class="kalender-card">
         <h4>${jez[jz] || '📅'} ${jz}</h4>
-        <ul>${(items||[]).map(item => `<li>${item}</li>`).join('')}</ul>
+        ${jz === 'Winter' && (items||[]).length > 0 ? winterHint : ''}
+        <ul>${(items||[]).length > 0 ? (items||[]).map(item => `<li>${item}</li>`).join('') : '<li style="color:#ccc">–</li>'}</ul>
       </div>`).join('');
 
     // Tipps
