@@ -1751,7 +1751,8 @@
 <script>
   // ── State ──────────────────────────────────────────────────────────────────
   let formData = {
-    gartenflaeche: null, licht: '', boden: '', stil: '', sichtseite: '', farbe: '', saison: '',
+    gartenflaeche: null, beetLaenge: null, beetBreite: null,
+    licht: '', boden: '', stil: '', sichtseite: '', farbe: '', saison: '',
     modus: 'einfach',
     lieblingspflanzen: [], budget: null, nutzung: [], pflegezeit: '',
     vielfalt: 'ausgewogen'
@@ -1966,6 +1967,7 @@
     document.getElementById(`dim-lxb-btn-${scope}`).classList.toggle('active', mode === 'lxb');
     document.getElementById(`dim-qm-${scope}`).style.display = mode === 'qm' ? '' : 'none';
     document.getElementById(`dim-lxb-${scope}`).style.display = mode === 'lxb' ? '' : 'none';
+    if (mode === 'qm') { formData.beetLaenge = null; formData.beetBreite = null; }
     if (scope === 's') validateStep1();
     else validateProStep1();
   }
@@ -1977,6 +1979,8 @@
     if (l > 0 && b > 0) {
       const area = Math.round(l * b * 100) / 100;
       resultEl.textContent = `= ${area.toFixed(2).replace('.', ',')} m²`;
+      formData.beetLaenge = l;
+      formData.beetBreite = b;
       if (scope === 's') {
         document.getElementById('gartenflaeche').value = area;
         validateStep1();
@@ -1986,6 +1990,8 @@
       }
     } else {
       resultEl.textContent = '= — m²';
+      formData.beetLaenge = null;
+      formData.beetBreite = null;
       if (scope === 's') {
         document.getElementById('gartenflaeche').value = '';
         validateStep1();
@@ -2699,12 +2705,13 @@
     const container = document.getElementById('grafisch-container');
     const containerW = container.clientWidth || 720;
     const W = Math.min(containerW, 800);
-    const H = Math.round(W * 0.48);
     const PAD = 16;
     const bedW = W - PAD * 2;
-    const bedH = H - PAD * 2;
-    const gartW = Math.sqrt((formData.gartenflaeche || 15) * 3).toFixed(1);
-    const gartH = ((formData.gartenflaeche || 15) / gartW).toFixed(1);
+    const gartW = (formData.beetLaenge || Math.sqrt((formData.gartenflaeche || 15) * 3)).toFixed(1);
+    const gartH = (formData.beetBreite || (formData.gartenflaeche || 15) / parseFloat(gartW)).toFixed(1);
+    const aspect = Math.max(0.18, Math.min(1.2, parseFloat(gartH) / parseFloat(gartW)));
+    const bedH = Math.round(bedW * aspect);
+    const H = bedH + PAD * 2;
 
     // Defs (gradients + filters)
     const gradDefs = plan.pflanzen.map((p, pi) => {
@@ -2889,8 +2896,8 @@
     const PAD_L = 44, PAD_T = 32, PAD_B = 40, PAD_R = LEGEND_W > 0 ? LEGEND_W + 16 : 16;
     const plotW = SVG_W - PAD_L - PAD_R;
 
-    const gartW = Math.sqrt((formData.gartenflaeche || 15) * 3);
-    const gartH = (formData.gartenflaeche || 15) / gartW;
+    const gartW = formData.beetLaenge || Math.sqrt((formData.gartenflaeche || 15) * 3);
+    const gartH = formData.beetBreite || (formData.gartenflaeche || 15) / gartW;
 
     // Adaptives H: Gartenaspektverhältnis einhalten, Legendenhöhe berücksichtigen
     const idealPlotH = Math.round(plotW * gartH / gartW);
@@ -3025,7 +3032,7 @@
     const H = plotH + PAD_T + PAD_B;
     const groundY = PAD_T + plotH;
 
-    const gartW = Math.sqrt((formData.gartenflaeche || 15) * 3);
+    const gartW = formData.beetLaenge || Math.sqrt((formData.gartenflaeche || 15) * 3);
     const maxH = Math.max(...plan.pflanzen.map(p => p.hoehe_cm || 50), 80);
 
     // Normalisierte Placements skalieren (xFrac = Beetbreite, yFrac = Tiefe 0=hinten,1=vorne)
@@ -3453,7 +3460,8 @@
 
   function neustart() {
     formData = {
-      gartenflaeche: null, licht: '', boden: '', stil: '', farbe: '', saison: '',
+      gartenflaeche: null, beetLaenge: null, beetBreite: null,
+      licht: '', boden: '', stil: '', farbe: '', saison: '',
       modus: 'einfach', lieblingspflanzen: [], budget: null, nutzung: [], pflegezeit: '',
       vielfalt: 'ausgewogen'
     };
