@@ -1302,6 +1302,14 @@
         <div class="pz-card" onclick="selectVielfalt('viel',this,'.vielfalt-grid-p')"><div class="pz-icon">🌸</div><div class="pz-label">Üppig</div><div class="pz-sub">8+ Arten</div></div>
       </div>
     </div>
+    <div class="form-group">
+      <label class="field-label">Pflanzdichte <span class="optional-tag">(optional)</span></label>
+      <div class="pflegezeit-grid dichte-grid-p">
+        <div class="pz-card" onclick="selectDichte('locker',this,'.dichte-grid-p')"><div class="pz-icon">🌾</div><div class="pz-label">Locker</div><div class="pz-sub">~1 Pfl./m²</div></div>
+        <div class="pz-card selected" onclick="selectDichte('normal',this,'.dichte-grid-p')"><div class="pz-icon">🌿</div><div class="pz-label">Normal</div><div class="pz-sub">~2 Pfl./m²</div></div>
+        <div class="pz-card" onclick="selectDichte('dicht',this,'.dichte-grid-p')"><div class="pz-icon">🌼</div><div class="pz-label">Dicht</div><div class="pz-sub">~3 Pfl./m²</div></div>
+      </div>
+    </div>
 
     <div class="btn-row">
       <button class="btn-back" onclick="proGoStep(5)">← Zurück</button>
@@ -1560,6 +1568,14 @@
         <div class="pz-card" onclick="selectVielfalt('viel',this,'.vielfalt-grid-s')"><div class="pz-icon">🌸</div><div class="pz-label">Üppig</div><div class="pz-sub">8+ Arten</div></div>
       </div>
     </div>
+    <div class="form-group">
+      <label class="field-label">Pflanzdichte <span class="optional-tag">(optional)</span></label>
+      <div class="pflegezeit-grid dichte-grid-s">
+        <div class="pz-card" onclick="selectDichte('locker',this,'.dichte-grid-s')"><div class="pz-icon">🌾</div><div class="pz-label">Locker</div><div class="pz-sub">~1 Pfl./m²</div></div>
+        <div class="pz-card selected" onclick="selectDichte('normal',this,'.dichte-grid-s')"><div class="pz-icon">🌿</div><div class="pz-label">Normal</div><div class="pz-sub">~2 Pfl./m²</div></div>
+        <div class="pz-card" onclick="selectDichte('dicht',this,'.dichte-grid-s')"><div class="pz-icon">🌼</div><div class="pz-label">Dicht</div><div class="pz-sub">~3 Pfl./m²</div></div>
+      </div>
+    </div>
     <div class="btn-row">
       <button class="btn-back" onclick="goStep(4)">← Zurück</button>
       <button class="btn-next" onclick="planErstellen()">🌿 Plan erstellen</button>
@@ -1755,7 +1771,7 @@
     licht: '', boden: '', stil: '', sichtseite: '', farbe: '', saison: '',
     modus: 'einfach',
     lieblingspflanzen: [], budget: null, nutzung: [], pflegezeit: '',
-    vielfalt: 'ausgewogen'
+    vielfalt: 'ausgewogen', dichte: 'normal'
   };
   let currentPlan = null;
   let currentStep = 1;
@@ -1960,6 +1976,12 @@
     document.querySelector(gridSel).querySelectorAll('.pz-card').forEach(c => c.classList.remove('selected'));
     el.classList.add('selected');
     formData.vielfalt = val;
+  }
+
+  function selectDichte(val, el, gridSel) {
+    document.querySelector(gridSel).querySelectorAll('.pz-card').forEach(c => c.classList.remove('selected'));
+    el.classList.add('selected');
+    formData.dichte = val;
   }
 
   function setDimMode(mode, scope) {
@@ -2417,7 +2439,8 @@
         budget: formData.budget,
         nutzung: formData.nutzung,
         pflegezeit: formData.pflegezeit,
-        vielfalt: formData.vielfalt || 'ausgewogen'
+        vielfalt: formData.vielfalt || 'ausgewogen',
+        dichte: formData.dichte || 'normal'
       };
       const res = await fetch('/api/plan', {
         method: 'POST',
@@ -2564,12 +2587,12 @@
             const s2 = seed + att * 17;
             const cx = (xFrac + (pseudoRand(s2 + 5) - 0.5) * 0.2) * bedW;
             const cy = (yFrac + (pseudoRand(s2 + 9) - 0.5) * 0.1) * bedH;
-            if (pointInAnyPolygonWithMargin(cx, cy, constraintPolys, r)) { x = cx; y = cy; placed = true; }
+            if (pointInAnyPolygonWithMargin(cx, cy, constraintPolys, r * 0.5)) { x = cx; y = cy; placed = true; }
           }
           if (!placed) for (let att = 0; att < 40 && !placed; att++) {
             const cx = pseudoRand(seed + att * 53) * bedW;
             const cy = pseudoRand(seed + att * 31) * bedH;
-            if (pointInAnyPolygonWithMargin(cx, cy, constraintPolys, r)) { x = cx; y = cy; placed = true; }
+            if (pointInAnyPolygonWithMargin(cx, cy, constraintPolys, r * 0.5)) { x = cx; y = cy; placed = true; }
           }
           // Fallback ohne Margin falls Polygon sehr schmal
           if (!placed) for (let att = 0; att < 20 && !placed; att++) {
@@ -2656,7 +2679,10 @@
     // ── 2. Füllstauden: Jitter-Grid in freie Flächen (Matrixbepflanzung) ──────
     const fuellArten = pflanzen.filter(p => getRolle(p) === 'fuell');
     if (fuellArten.length > 0) {
-      const totalFuell = fuellArten.reduce((s, p) => s + (p.stueckzahl || 1), 0);
+      const plantsPerM2 = formData.dichte === 'locker' ? 0.8 : formData.dichte === 'dicht' ? 2.5 : 1.5;
+      const aiTotal = fuellArten.reduce((s, p) => s + (p.stueckzahl || 1), 0);
+      const minByDichte = Math.round((formData.gartenflaeche || 10) * plantsPerM2) - all.length;
+      const totalFuell = Math.max(aiTotal, Math.max(0, minByDichte));
       const cellSize = Math.sqrt((bedW * bedH) / Math.max(1, totalFuell)) * 0.88;
 
       // Jitter-Grid über gesamtes Beet erzeugen
@@ -2684,11 +2710,14 @@
       // Arten Round-Robin vergeben: jede Art bekommt jeden nSpecies-ten Kandidaten
       // → gleichmäßige Mischung über die gesamte Fläche
       const nSpecies = fuellArten.length;
+      // Wenn dichte mehr Pflanzen verlangt als KI vorschlägt, Stückzahlen proportional hochskalieren
+      const aiTotalCheck = fuellArten.reduce((s, p) => s + (p.stueckzahl || 1), 0);
+      const scale = aiTotalCheck > 0 ? totalFuell / aiTotalCheck : 1;
       fuellArten.forEach((p, fi) => {
         const pi = pflanzen.indexOf(p);
         const r = getR(p);
         const mine = candidates.filter((_, ci) => ci % nSpecies === fi);
-        const n = Math.min(p.stueckzahl || 1, mine.length);
+        const n = Math.min(Math.round((p.stueckzahl || 1) * scale), mine.length);
         // Gleichmäßig über die verfügbaren Kandidaten verteilt auswählen
         for (let i = 0; i < n; i++) {
           const idx = Math.round(i * (mine.length - 1) / Math.max(1, n - 1));
@@ -3489,7 +3518,7 @@
       gartenflaeche: null, beetLaenge: null, beetBreite: null,
       licht: '', boden: '', stil: '', farbe: '', saison: '',
       modus: 'einfach', lieblingspflanzen: [], budget: null, nutzung: [], pflegezeit: '',
-      vielfalt: 'ausgewogen'
+      vielfalt: 'ausgewogen', dichte: 'normal'
     };
     currentPlan = null; polygons = []; currentPoints = [];
     updateHeroWishlistCTA();
@@ -3503,7 +3532,7 @@
     // Reset professionell form
     document.querySelectorAll('.nutzung-card').forEach(c => c.classList.remove('selected'));
     document.querySelectorAll('.pz-card').forEach(c => c.classList.remove('selected'));
-    document.querySelectorAll('.vielfalt-grid-s .pz-card:nth-child(2), .vielfalt-grid-p .pz-card:nth-child(2)').forEach(c => c.classList.add('selected'));
+    document.querySelectorAll('.vielfalt-grid-s .pz-card:nth-child(2), .vielfalt-grid-p .pz-card:nth-child(2), .dichte-grid-s .pz-card:nth-child(2), .dichte-grid-p .pz-card:nth-child(2)').forEach(c => c.classList.add('selected'));
     try { document.getElementById('budget-slider').value = 0; document.getElementById('budget-display').textContent = 'Kein Limit'; } catch {}
     try { document.getElementById('wishlist-chips').innerHTML = ''; document.getElementById('wishlist-label').style.display='none'; } catch {}
     try { document.getElementById('pflanzsuche-results').innerHTML = ''; document.getElementById('pflanz-search').value = ''; } catch {}
