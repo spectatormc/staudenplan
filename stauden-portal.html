@@ -2490,8 +2490,28 @@
     return inside;
   }
 
+  function distToSegment(px, py, ax, ay, bx, by) {
+    const dx = bx - ax, dy = by - ay, len2 = dx*dx + dy*dy;
+    if (len2 === 0) return Math.hypot(px - ax, py - ay);
+    const t = Math.max(0, Math.min(1, ((px-ax)*dx + (py-ay)*dy) / len2));
+    return Math.hypot(px - (ax + t*dx), py - (ay + t*dy));
+  }
+
+  function pointInPolygonWithMargin(x, y, poly, margin) {
+    if (!pointInPolygon(x, y, poly)) return false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const [xi, yi] = poly[i], [xj, yj] = poly[j];
+      if (distToSegment(x, y, xi, yi, xj, yj) < margin) return false;
+    }
+    return true;
+  }
+
   function pointInAnyPolygon(x, y, polys) {
     return polys.some(p => pointInPolygon(x, y, p.svgPoints));
+  }
+
+  function pointInAnyPolygonWithMargin(x, y, polys, margin) {
+    return polys.some(p => pointInPolygonWithMargin(x, y, p.svgPoints, margin));
   }
 
   function calcPlacements(pflanzen, bedW, bedH, constraintPolys, gartW_m) {
@@ -2544,11 +2564,17 @@
             const s2 = seed + att * 17;
             const cx = (xFrac + (pseudoRand(s2 + 5) - 0.5) * 0.2) * bedW;
             const cy = (yFrac + (pseudoRand(s2 + 9) - 0.5) * 0.1) * bedH;
-            if (pointInAnyPolygon(cx, cy, constraintPolys)) { x = cx; y = cy; placed = true; }
+            if (pointInAnyPolygonWithMargin(cx, cy, constraintPolys, r)) { x = cx; y = cy; placed = true; }
           }
           if (!placed) for (let att = 0; att < 40 && !placed; att++) {
             const cx = pseudoRand(seed + att * 53) * bedW;
             const cy = pseudoRand(seed + att * 31) * bedH;
+            if (pointInAnyPolygonWithMargin(cx, cy, constraintPolys, r)) { x = cx; y = cy; placed = true; }
+          }
+          // Fallback ohne Margin falls Polygon sehr schmal
+          if (!placed) for (let att = 0; att < 20 && !placed; att++) {
+            const cx = pseudoRand(seed + att * 71) * bedW;
+            const cy = pseudoRand(seed + att * 43) * bedH;
             if (pointInAnyPolygon(cx, cy, constraintPolys)) { x = cx; y = cy; placed = true; }
           }
         }
@@ -2642,7 +2668,7 @@
           const jx = (col + 0.15 + pseudoRand(seed) * 0.7) * cellSize;
           const jy = (row + 0.15 + pseudoRand(seed + 500) * 0.7) * cellSize;
           if (jx < bedW * 0.97 && jy < bedH * 0.97 && jx > bedW * 0.03 && jy > bedH * 0.03) {
-            if (hasConstraint && !pointInAnyPolygon(jx, jy, constraintPolys)) continue;
+            if (hasConstraint && !pointInAnyPolygonWithMargin(jx, jy, constraintPolys, cellSize * 0.3)) continue;
             // Leit/Begleitstauden-Zonen freihalten
             const clearance = Math.min(...fuellArten.map(p => getR(p))) * 0.8;
             if (!all.some(pl => Math.hypot(jx - pl.x, jy - pl.y) < pl.r + clearance)) {
