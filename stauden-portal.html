@@ -2835,16 +2835,6 @@
       });
     }
 
-    // Blickrichtungs-Rotation: Placements im kanonischen System → in tatsächliche Blickrichtung drehen
-    if (Math.abs((rotAngle % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2)) > 0.01) {
-      all.forEach(p => {
-        const rot = rotateAroundCenter(p.x, p.y, rotAngle);
-        p.x = Math.max(p.r, Math.min(bedW - p.r, rot.x));
-        p.y = Math.max(p.r, Math.min(bedH - p.r, rot.y));
-        if (hasConstraint) snapInsidePolygon(p, constraintPolys);
-      });
-    }
-
     return all;
   }
 
@@ -2988,6 +2978,15 @@
     const drawnPolys = drawnPolysEarly;
     const hasDrawn = hasDrawnEarly;
 
+    const blickText = (() => {
+      const s = formData.sichtseite || '';
+      if (s.includes('Blick ')) return s.replace(/.*Blick /, 'Blick ');
+      if (s.includes('Rundbeet')) return 'Rundbeet';
+      if (s.includes('Eckbeet')) return 'Eckbeet';
+      return 'Blick von vorne';
+    })();
+    const blickLabel = `<text x="${W/2}" y="${scaleY+14}" text-anchor="middle" font-size="10" fill="#aaa" font-family="system-ui">&#128065; ${blickText} · ↓ Vordergrund</text>`;
+
     let bedShape, bedClipContent, bedOutline, bedLabel;
     if (hasDrawn) {
       bedShape = drawnPolys.map((p, i) =>
@@ -2999,12 +2998,12 @@
       bedOutline = drawnPolys.map(p =>
         `<polygon points="${polyPointsAttr(p.svgPoints)}" fill="none" stroke="#a0714f" stroke-width="2.5" stroke-linejoin="round"/>`
       ).join('');
-      bedLabel = `<text x="${W/2}" y="${scaleY+14}" text-anchor="middle" font-size="10" fill="#aaa" font-family="system-ui">Freihandfläche · ${(formData.gartenflaeche||0).toFixed(1)} m²</text>`;
+      bedLabel = `<text x="${W/2}" y="${scaleY+26}" text-anchor="middle" font-size="10" fill="#aaa" font-family="system-ui">Freihandfläche · ${(formData.gartenflaeche||0).toFixed(1)} m²</text>`;
     } else {
       bedShape = `<rect x="${PAD}" y="${PAD}" width="${bedW}" height="${bedH}" rx="8" fill="url(#soilGrad)"/>`;
       bedClipContent = `<rect x="${PAD}" y="${PAD}" width="${bedW}" height="${bedH}" rx="8"/>`;
       bedOutline = `<rect x="${PAD}" y="${PAD}" width="${bedW}" height="${bedH}" rx="8" fill="none" stroke="#a0714f" stroke-width="2.5"/>`;
-      bedLabel = `<text x="${W/2}" y="${scaleY+14}" text-anchor="middle" font-size="10" fill="#aaa" font-family="system-ui">Vorne (${gartW} m)</text>`;
+      bedLabel = ``;
     }
 
     const svg = `<svg width="${W}" height="${H + 24}" xmlns="http://www.w3.org/2000/svg" id="grafisch-svg" style="max-width:100%;border-radius:12px;display:block">
@@ -3035,6 +3034,7 @@
       <!-- Maßstab -->
       <rect x="${PAD+10}" y="${scaleY}" width="${scaleBarW}" height="5" rx="2" fill="#666"/>
       <text x="${PAD+10}" y="${scaleY+14}" font-size="10" fill="#888" font-family="system-ui">1 m</text>
+      ${blickLabel}
       ${bedLabel}
     </svg>`;
 
