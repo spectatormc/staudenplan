@@ -2569,10 +2569,10 @@
       if (st.includes('hintergrund') || st === 'ecke/hintergrund') return { yMin: 0.00, yMax: 0.36 };
       if (st === 'mitte' || st === 'mittelzone')                   return { yMin: 0.28, yMax: 0.62 };
       if (st.includes('vordergrund'))                              return { yMin: 0.56, yMax: 1.00 };
-      if (h >= 100) return { yMin: 0.00, yMax: 0.36 };
-      if (h >= 70)  return { yMin: 0.10, yMax: 0.52 };
-      if (h >= 40)  return { yMin: 0.38, yMax: 0.76 };
-      return              { yMin: 0.58, yMax: 1.00 };
+      if (h >= 100) return { yMin: 0.00, yMax: 0.45 };
+      if (h >= 70)  return { yMin: 0.08, yMax: 0.62 };
+      if (h >= 40)  return { yMin: 0.32, yMax: 0.82 };
+      return              { yMin: 0.55, yMax: 1.00 };
     }
 
     // Radiale Zone für Rundbeet: rFrac=0 Mitte, rFrac=1 Rand
@@ -2701,7 +2701,7 @@
           moved = true;
         }
       }
-      applyZoneForce(0.035);
+      applyZoneForce(0.022);
       all.forEach(p => { p.x = Math.max(p.r, Math.min(bedW - p.r, p.x)); p.y = Math.max(p.r, Math.min(bedH - p.r, p.y)); if (hasConstraint) snapInsidePolygon(p, constraintPolys); });
       if (!moved) break;
     }
@@ -2758,15 +2758,6 @@
       }
     }
 
-    // Finaler Zonen-Clamp: garantiert strikte Höhenstaffelung nach allen Passes
-    if (!isRund) {
-      all.forEach(pl => {
-        const zone = yZone(pl.pflanze);
-        const yHardMin = zone.yMin * bedH + pl.r;
-        const yHardMax = zone.yMax * bedH - pl.r;
-        if (yHardMax > yHardMin) pl.y = Math.max(yHardMin, Math.min(yHardMax, pl.y));
-      });
-    }
 
     // ── 2. Füllstauden: Jitter-Grid in freie Flächen (Matrixbepflanzung) ──────
     const fuellArten = pflanzen.filter(p => getRolle(p) === 'fuell');
