@@ -3039,14 +3039,24 @@
     const LEGEND_W = isMobile ? 0 : 180;
     const SVG_W = W;
     const PAD_L = 44, PAD_T = 32, PAD_B = 40, PAD_R = LEGEND_W > 0 ? LEGEND_W + 16 : 16;
-    const plotW = SVG_W - PAD_L - PAD_R;
+    let plotW = SVG_W - PAD_L - PAD_R;
 
     const gartW = formData.beetLaenge || Math.sqrt((formData.gartenflaeche || 15) * 3);
     const gartH = formData.beetBreite || (formData.gartenflaeche || 15) / gartW;
 
-    // Adaptives H: Gartenaspektverhältnis einhalten, Legendenhöhe berücksichtigen
-    const idealPlotH = Math.round(plotW * gartH / gartW);
-    const plotH = Math.max(80, Math.min(320, idealPlotH));
+    // Seitenverhältnis korrekt: plotW und plotH gemeinsam skalieren
+    const MAX_PLOT_H = 480;
+    const MAX_PLOT_W = plotW;
+    const rawAspect = gartH / gartW;
+    let plotH;
+    if (rawAspect > 1) {
+      // Hochformat: plotH auf Maximum, plotW proportional kleiner
+      plotH = Math.min(MAX_PLOT_H, Math.round(MAX_PLOT_W * rawAspect));
+      plotW = Math.round(plotH / rawAspect);
+    } else {
+      // Querformat: plotW bleibt, plotH ergibt sich
+      plotH = Math.max(80, Math.min(MAX_PLOT_H, Math.round(plotW * rawAspect)));
+    }
     const legendNeededH = LEGEND_W > 0 ? plan.pflanzen.length * 26 + 30 : 0;
     const H = Math.max(plotH + PAD_T + PAD_B, legendNeededH);
 
@@ -3113,7 +3123,8 @@
       <text x="${PAD_L + plotW + 14}" y="${PAD_T + 14}" font-size="10" font-weight="700" fill="#444" font-family="system-ui">Legende</text>
       <g transform="translate(${PAD_L + plotW + 10},${PAD_T + 22})">${legItems}</g>` : '';
 
-    const svg = `<svg width="${SVG_W}" height="${H}" xmlns="http://www.w3.org/2000/svg" style="max-width:100%;display:block">
+    const svgTotalW = PAD_L + plotW + PAD_R;
+    const svg = `<svg width="${svgTotalW}" height="${H}" xmlns="http://www.w3.org/2000/svg" style="max-width:100%;display:block">
       <defs>${schemClip}</defs>
       ${schemBed}
       <g clip-path="url(#schemClip)">${grid.join('')}</g>
