@@ -2644,22 +2644,29 @@
           yFrac = Math.min(zone.yMax, Math.max(zone.yMin, dr.yFrac + (pseudoRand(seed + 13) - 0.5) * 2 * sY));
         }
         let x = xFrac * bedW, y = yFrac * bedH, placed = false;
+        const pZone = isRund ? null : dr.zone;
         if (hasConstraint) {
+          // Pass 1: in der Nähe des Zieldrift-Punkts suchen (zonengebunden)
           for (let att = 0; att < 60 && !placed; att++) {
             const s2 = seed + att * 17;
-            const cx = (xFrac + (pseudoRand(s2 + 5) - 0.5) * 0.2) * bedW;
-            const cy = (yFrac + (pseudoRand(s2 + 9) - 0.5) * 0.1) * bedH;
+            const cx = (xFrac + (pseudoRand(s2 + 5) - 0.5) * 0.5) * bedW;
+            const cy = pZone
+              ? (pZone.yMin + pseudoRand(s2 + 9) * (pZone.yMax - pZone.yMin)) * bedH
+              : (yFrac + (pseudoRand(s2 + 9) - 0.5) * 0.2) * bedH;
             if (pointInAnyPolygonWithMargin(cx, cy, constraintPolys, r * 0.5)) { x = cx; y = cy; placed = true; }
           }
-          if (!placed) for (let att = 0; att < 40 && !placed; att++) {
-            const cx = pseudoRand(seed + att * 53) * bedW;
-            const cy = pseudoRand(seed + att * 31) * bedH;
+          // Pass 2: ganze Breite, aber Zone in y behalten
+          if (!placed) for (let att = 0; att < 60 && !placed; att++) {
+            const cx = pseudoRand(seed + att * 53 + 300) * bedW;
+            const cy = pZone
+              ? (pZone.yMin + pseudoRand(seed + att * 31 + 300) * (pZone.yMax - pZone.yMin)) * bedH
+              : pseudoRand(seed + att * 31) * bedH;
             if (pointInAnyPolygonWithMargin(cx, cy, constraintPolys, r * 0.5)) { x = cx; y = cy; placed = true; }
           }
-          // Fallback ohne Margin falls Polygon sehr schmal
+          // Pass 3: letzter Ausweg — irgendwo im Polygon (sehr schmale Polygone)
           if (!placed) for (let att = 0; att < 20 && !placed; att++) {
-            const cx = pseudoRand(seed + att * 71) * bedW;
-            const cy = pseudoRand(seed + att * 43) * bedH;
+            const cx = pseudoRand(seed + att * 71 + 600) * bedW;
+            const cy = pseudoRand(seed + att * 43 + 600) * bedH;
             if (pointInAnyPolygon(cx, cy, constraintPolys)) { x = cx; y = cy; placed = true; }
           }
         }
