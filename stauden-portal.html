@@ -2556,12 +2556,36 @@
     const pxPerM = bedW / Math.max(0.5, gartW_m || 4);
     const rScale = Math.min(1, (bedW + 32) / 700);
 
+    const isRund = /rundbeet|inselbeet/i.test(formData.sichtseite || '');
+    const cxBed = bedW / 2, cyBed = bedH / 2;
+
     function pseudoRand(seed) { return Math.abs(Math.sin(seed * 127.1 + 1.3)) % 1; }
-    function yZone(h) {
-      if (h >= 100) return { yMin: 0.00, yMax: 0.50 };
-      if (h >= 60)  return { yMin: 0.10, yMax: 0.70 };
-      if (h >= 30)  return { yMin: 0.40, yMax: 0.92 };
-      return              { yMin: 0.55, yMax: 1.00 };
+
+    // y-Tiefenzone: yFrac=0 oben=hinten, yFrac=1 unten=vorne
+    // AI-standort hat Priorität, sonst engere Höhen-Zonen ohne Überlappung
+    function yZone(p) {
+      const h = p.hoehe_cm || 50;
+      const st = (p.standort || '').toLowerCase().trim();
+      if (st.includes('hintergrund') || st === 'ecke/hintergrund') return { yMin: 0.00, yMax: 0.36 };
+      if (st === 'mitte' || st === 'mittelzone')                   return { yMin: 0.28, yMax: 0.62 };
+      if (st.includes('vordergrund'))                              return { yMin: 0.56, yMax: 1.00 };
+      if (h >= 100) return { yMin: 0.00, yMax: 0.36 };
+      if (h >= 70)  return { yMin: 0.10, yMax: 0.52 };
+      if (h >= 40)  return { yMin: 0.38, yMax: 0.76 };
+      return              { yMin: 0.58, yMax: 1.00 };
+    }
+
+    // Radiale Zone für Rundbeet: rFrac=0 Mitte, rFrac=1 Rand
+    function rZone(p) {
+      const h = p.hoehe_cm || 50;
+      const st = (p.standort || '').toLowerCase().trim();
+      if (st === 'mitte')      return { rMin: 0.00, rMax: 0.36 };
+      if (st === 'mittelzone') return { rMin: 0.25, rMax: 0.62 };
+      if (st === 'rand')       return { rMin: 0.55, rMax: 1.00 };
+      if (h >= 100) return { rMin: 0.00, rMax: 0.36 };
+      if (h >= 70)  return { rMin: 0.18, rMax: 0.55 };
+      if (h >= 40)  return { rMin: 0.40, rMax: 0.76 };
+      return              { rMin: 0.60, rMax: 1.00 };
     }
     function getRolle(p) {
       if (p.rolle === 'Leitstaude') return 'leit';
@@ -2581,20 +2605,44 @@
       if (getRolle(p) === 'fuell') return;
       const n = p.stueckzahl || 1;
       const rolle = getRolle(p);
-      const zone = yZone(p.hoehe_cm || 50);
       const nDrifts = n <= 3 ? 1 : n <= 8 ? 2 : 3;
-      const drifts = Array.from({ length: nDrifts }, (_, di) => ({
-        xFrac: (pi * PHI + di * 0.31 + 0.05) % 1,
-        yFrac: zone.yMin + pseudoRand(pi * 53 + di * 31 + 5) * (zone.yMax - zone.yMin)
-      }));
       const sX = rolle === 'leit' ? 0.09 : 0.18;
       const sY = rolle === 'leit' ? 0.07 : 0.13;
       const r = getR(p);
+
+      let drifts;
+      if (isRund) {
+        const maxRad = Math.min(bedW, bedH) * 0.48;
+        const zone = rZone(p);
+        drifts = Array.from({ length: nDrifts }, (_, di) => {
+          const angle = (pi * PHI + di * 0.31) * Math.PI * 2;
+          const rFrac = zone.rMin + pseudoRand(pi * 53 + di * 31 + 5) * (zone.rMax - zone.rMin);
+          return {
+            xFrac: 0.5 + Math.cos(angle) * rFrac * (maxRad / bedW) * 1.8,
+            yFrac: 0.5 + Math.sin(angle) * rFrac * (maxRad / bedH) * 1.8,
+            rFrac, angle, zone
+          };
+        });
+      } else {
+        const zone = yZone(p);
+        drifts = Array.from({ length: nDrifts }, (_, di) => ({
+          xFrac: (pi * PHI + di * 0.31 + 0.05) % 1,
+          yFrac: zone.yMin + pseudoRand(pi * 53 + di * 31 + 5) * (zone.yMax - zone.yMin),
+          zone
+        }));
+      }
+
       for (let i = 0; i < n; i++) {
         const seed = pi * 127 + i * 37;
         const dr = drifts[i % drifts.length];
         let xFrac = Math.min(0.96, Math.max(0.04, dr.xFrac + (pseudoRand(seed) - 0.5) * 2 * sX));
-        let yFrac = Math.min(zone.yMax, Math.max(zone.yMin, dr.yFrac + (pseudoRand(seed + 13) - 0.5) * 2 * sY));
+        let yFrac;
+        if (isRund) {
+          yFrac = Math.min(0.96, Math.max(0.04, dr.yFrac + (pseudoRand(seed + 13) - 0.5) * 2 * sY));
+        } else {
+          const zone = dr.zone;
+          yFrac = Math.min(zone.yMax, Math.max(zone.yMin, dr.yFrac + (pseudoRand(seed + 13) - 0.5) * 2 * sY));
+        }
         let x = xFrac * bedW, y = yFrac * bedH, placed = false;
         if (hasConstraint) {
           for (let att = 0; att < 60 && !placed; att++) {
@@ -2619,7 +2667,26 @@
       }
     });
 
-    // Separationspass nur für Leit/Begleit
+    // Zone-Rückzugskraft: hält Pflanzen in ihrer Höhenzone
+    function applyZoneForce(strength) {
+      const maxRad = Math.min(bedW, bedH) * 0.48;
+      all.forEach(pl => {
+        if (isRund) {
+          const zone = rZone(pl.pflanze);
+          const targetR = (zone.rMin + zone.rMax) / 2 * maxRad;
+          const dx = pl.x - cxBed, dy = pl.y - cyBed;
+          const currR = Math.hypot(dx, dy) || 0.1;
+          const pull = (targetR - currR) * strength;
+          pl.x += (dx / currR) * pull; pl.y += (dy / currR) * pull;
+        } else {
+          const zone = yZone(pl.pflanze);
+          const targetY = (zone.yMin + zone.yMax) / 2 * bedH;
+          pl.y += (targetY - pl.y) * strength;
+        }
+      });
+    }
+
+    // Separationspass mit Zone-Rückzugskraft
     const GAP = 3;
     for (let iter = 0; iter < 80; iter++) {
       let moved = false;
@@ -2634,6 +2701,7 @@
           moved = true;
         }
       }
+      applyZoneForce(0.035);
       all.forEach(p => { p.x = Math.max(p.r, Math.min(bedW - p.r, p.x)); p.y = Math.max(p.r, Math.min(bedH - p.r, p.y)); if (hasConstraint) snapInsidePolygon(p, constraintPolys); });
       if (!moved) break;
     }
@@ -2688,6 +2756,16 @@
         }
         all.forEach(p => { p.x = Math.max(p.r, Math.min(bedW - p.r, p.x)); p.y = Math.max(p.r, Math.min(bedH - p.r, p.y)); if (hasConstraint) snapInsidePolygon(p, constraintPolys); });
       }
+    }
+
+    // Finaler Zonen-Clamp: garantiert strikte Höhenstaffelung nach allen Passes
+    if (!isRund) {
+      all.forEach(pl => {
+        const zone = yZone(pl.pflanze);
+        const yHardMin = zone.yMin * bedH + pl.r;
+        const yHardMax = zone.yMax * bedH - pl.r;
+        if (yHardMax > yHardMin) pl.y = Math.max(yHardMin, Math.min(yHardMax, pl.y));
+      });
     }
 
     // ── 2. Füllstauden: Jitter-Grid in freie Flächen (Matrixbepflanzung) ──────
