@@ -1305,9 +1305,9 @@
     <div class="form-group">
       <label class="field-label">Pflanzdichte <span class="optional-tag">(optional)</span></label>
       <div class="pflegezeit-grid dichte-grid-p">
-        <div class="pz-card" onclick="selectDichte('locker',this,'.dichte-grid-p')"><div class="pz-icon">🌾</div><div class="pz-label">Locker</div><div class="pz-sub">~1 Pfl./m²</div></div>
-        <div class="pz-card selected" onclick="selectDichte('normal',this,'.dichte-grid-p')"><div class="pz-icon">🌿</div><div class="pz-label">Normal</div><div class="pz-sub">~2 Pfl./m²</div></div>
-        <div class="pz-card" onclick="selectDichte('dicht',this,'.dichte-grid-p')"><div class="pz-icon">🌼</div><div class="pz-label">Dicht</div><div class="pz-sub">~3 Pfl./m²</div></div>
+        <div class="pz-card" onclick="selectDichte('locker',this,'.dichte-grid-p')"><div class="pz-icon">🌾</div><div class="pz-label">Locker</div><div class="pz-sub">2–3 Pfl./m²</div></div>
+        <div class="pz-card selected" onclick="selectDichte('normal',this,'.dichte-grid-p')"><div class="pz-icon">🌿</div><div class="pz-label">Normal</div><div class="pz-sub">3–5 Pfl./m²</div></div>
+        <div class="pz-card" onclick="selectDichte('dicht',this,'.dichte-grid-p')"><div class="pz-icon">🌼</div><div class="pz-label">Dicht</div><div class="pz-sub">6–8 Pfl./m²</div></div>
       </div>
     </div>
 
@@ -1571,9 +1571,9 @@
     <div class="form-group">
       <label class="field-label">Pflanzdichte <span class="optional-tag">(optional)</span></label>
       <div class="pflegezeit-grid dichte-grid-s">
-        <div class="pz-card" onclick="selectDichte('locker',this,'.dichte-grid-s')"><div class="pz-icon">🌾</div><div class="pz-label">Locker</div><div class="pz-sub">~1 Pfl./m²</div></div>
-        <div class="pz-card selected" onclick="selectDichte('normal',this,'.dichte-grid-s')"><div class="pz-icon">🌿</div><div class="pz-label">Normal</div><div class="pz-sub">~2 Pfl./m²</div></div>
-        <div class="pz-card" onclick="selectDichte('dicht',this,'.dichte-grid-s')"><div class="pz-icon">🌼</div><div class="pz-label">Dicht</div><div class="pz-sub">~3 Pfl./m²</div></div>
+        <div class="pz-card" onclick="selectDichte('locker',this,'.dichte-grid-s')"><div class="pz-icon">🌾</div><div class="pz-label">Locker</div><div class="pz-sub">2–3 Pfl./m²</div></div>
+        <div class="pz-card selected" onclick="selectDichte('normal',this,'.dichte-grid-s')"><div class="pz-icon">🌿</div><div class="pz-label">Normal</div><div class="pz-sub">3–5 Pfl./m²</div></div>
+        <div class="pz-card" onclick="selectDichte('dicht',this,'.dichte-grid-s')"><div class="pz-icon">🌼</div><div class="pz-label">Dicht</div><div class="pz-sub">6–8 Pfl./m²</div></div>
       </div>
     </div>
     <div class="btn-row">
@@ -2537,6 +2537,20 @@
     return polys.some(p => pointInPolygonWithMargin(x, y, p.svgPoints, margin));
   }
 
+  function snapInsidePolygon(plant, constraintPolys) {
+    if (pointInAnyPolygon(plant.x, plant.y, constraintPolys)) return;
+    // Centroid of all polygon vertices
+    let cx = 0, cy = 0, n = 0;
+    constraintPolys.forEach(p => p.svgPoints.forEach(([x, y]) => { cx += x; cy += y; n++; }));
+    cx /= n; cy /= n;
+    // Iteratively move towards centroid until inside
+    for (let s = 0; s < 60; s++) {
+      plant.x += (cx - plant.x) * 0.12;
+      plant.y += (cy - plant.y) * 0.12;
+      if (pointInAnyPolygon(plant.x, plant.y, constraintPolys)) return;
+    }
+  }
+
   function calcPlacements(pflanzen, bedW, bedH, constraintPolys, gartW_m) {
     const hasConstraint = constraintPolys && constraintPolys.length > 0;
     const pxPerM = bedW / Math.max(0.5, gartW_m || 4);
@@ -2620,7 +2634,7 @@
           moved = true;
         }
       }
-      all.forEach(p => { p.x = Math.max(p.r, Math.min(bedW - p.r, p.x)); p.y = Math.max(p.r, Math.min(bedH - p.r, p.y)); });
+      all.forEach(p => { p.x = Math.max(p.r, Math.min(bedW - p.r, p.x)); p.y = Math.max(p.r, Math.min(bedH - p.r, p.y)); if (hasConstraint) snapInsidePolygon(p, constraintPolys); });
       if (!moved) break;
     }
 
@@ -2659,7 +2673,7 @@
           }
         }
       }
-      all.forEach(p => { p.x = Math.max(p.r, Math.min(bedW - p.r, p.x)); p.y = Math.max(p.r, Math.min(bedH - p.r, p.y)); });
+      all.forEach(p => { p.x = Math.max(p.r, Math.min(bedW - p.r, p.x)); p.y = Math.max(p.r, Math.min(bedH - p.r, p.y)); if (hasConstraint) snapInsidePolygon(p, constraintPolys); });
       // Mini-Separationspass damit Abstände nach dem Querdruck wieder stimmen
       for (let si = 0; si < 10; si++) {
         for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) {
@@ -2672,14 +2686,14 @@
             all[j].x += nx * push * 0.5; all[j].y += ny * push * 0.5;
           }
         }
-        all.forEach(p => { p.x = Math.max(p.r, Math.min(bedW - p.r, p.x)); p.y = Math.max(p.r, Math.min(bedH - p.r, p.y)); });
+        all.forEach(p => { p.x = Math.max(p.r, Math.min(bedW - p.r, p.x)); p.y = Math.max(p.r, Math.min(bedH - p.r, p.y)); if (hasConstraint) snapInsidePolygon(p, constraintPolys); });
       }
     }
 
     // ── 2. Füllstauden: Jitter-Grid in freie Flächen (Matrixbepflanzung) ──────
     const fuellArten = pflanzen.filter(p => getRolle(p) === 'fuell');
     if (fuellArten.length > 0) {
-      const plantsPerM2 = formData.dichte === 'locker' ? 0.8 : formData.dichte === 'dicht' ? 2.5 : 1.5;
+      const plantsPerM2 = formData.dichte === 'locker' ? 2.5 : formData.dichte === 'dicht' ? 7 : 4;
       const aiTotal = fuellArten.reduce((s, p) => s + (p.stueckzahl || 1), 0);
       const minByDichte = Math.round((formData.gartenflaeche || 10) * plantsPerM2) - all.length;
       const totalFuell = Math.max(aiTotal, Math.max(0, minByDichte));

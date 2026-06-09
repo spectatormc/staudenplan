@@ -514,11 +514,11 @@ app.post('/api/plan', planLimiter, async (req, res) => {
   })();
 
   const dichteAnweisung = (() => {
-    const ppm2 = dichte === 'locker' ? 1 : dichte === 'dicht' ? 3 : 2;
+    const ppm2 = dichte === 'locker' ? 2.5 : dichte === 'dicht' ? 7 : 4;
     const ziel = Math.round(gartenflaeche * ppm2);
-    if (dichte === 'locker') return `Pflanzdichte: locker (~1 Pflanze/m²). Gesamtziel ca. ${ziel} Pflanzen für ${gartenflaeche} m². Großzügige Abstände, offener Boden zwischen den Pflanzen.`;
-    if (dichte === 'dicht') return `Pflanzdichte: dicht (~3 Pflanzen/m²). Gesamtziel ca. ${ziel} Pflanzen für ${gartenflaeche} m². Kein freier Boden, lückenlose Flächendeckung.`;
-    return `Pflanzdichte: normal (~2 Pflanzen/m²). Gesamtziel ca. ${ziel} Pflanzen für ${gartenflaeche} m².`;
+    if (dichte === 'locker') return `Pflanzdichte: locker (2–3 Pflanzen/m²). Gesamtziel ca. ${ziel} Pflanzen für ${gartenflaeche} m². Großzügige Abstände, etwas offener Boden sichtbar.`;
+    if (dichte === 'dicht') return `Pflanzdichte: dicht (6–8 Pflanzen/m²). Gesamtziel ca. ${ziel} Pflanzen für ${gartenflaeche} m². Lückenlose Flächendeckung, kein freier Boden.`;
+    return `Pflanzdichte: normal (3–5 Pflanzen/m²). Gesamtziel ca. ${ziel} Pflanzen für ${gartenflaeche} m². Gute Flächendeckung mit natürlicher Wirkung.`;
   })();
 
   const userPrompt = `Erstelle einen Bepflanzungsplan für einen Privatgarten:
