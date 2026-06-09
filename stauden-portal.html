@@ -2559,6 +2559,24 @@
     const isRund = /rundbeet|inselbeet/i.test(formData.sichtseite || '');
     const cxBed = bedW / 2, cyBed = bedH / 2;
 
+    // Blickrichtungs-Index aus Sichtachse (0–11, 0=von hinten, 6=von vorne=Standard)
+    const SICHT_TEXTS = ['von hinten','von hinten-rechts','von rechts-hinten','von rechts','von rechts-vorne','von vorne-rechts','von vorne','von vorne-links','von links-vorne','von links','von links-hinten','von hinten-links'];
+    const sichtIdx = (() => {
+      if (isRund || !formData.sichtseite) return 6;
+      const found = SICHT_TEXTS.findIndex(t => formData.sichtseite.includes(t));
+      return found >= 0 ? found : 6;
+    })();
+    // rotAngle=0 für idx=6 (von vorne), π für idx=0 (von hinten), π/2 für idx=9 (von links)
+    const rotAngle = sichtIdx / 12 * 2 * Math.PI - Math.PI;
+
+    function rotateAroundCenter(x, y, angle) {
+      const dx = x - bedW / 2, dy = y - bedH / 2;
+      return {
+        x: bedW / 2 + dx * Math.cos(angle) - dy * Math.sin(angle),
+        y: bedH / 2 + dx * Math.sin(angle) + dy * Math.cos(angle)
+      };
+    }
+
     function pseudoRand(seed) { return Math.abs(Math.sin(seed * 127.1 + 1.3)) % 1; }
 
     // y-Tiefenzone: yFrac=0 oben=hinten, yFrac=1 unten=vorne
@@ -2814,6 +2832,16 @@
           const c = mine[Math.min(idx, mine.length - 1)];
           if (c) all.push({ x: c.x, y: c.y, r, pflanze: p, pi });
         }
+      });
+    }
+
+    // Blickrichtungs-Rotation: Placements im kanonischen System → in tatsächliche Blickrichtung drehen
+    if (Math.abs((rotAngle % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2)) > 0.01) {
+      all.forEach(p => {
+        const rot = rotateAroundCenter(p.x, p.y, rotAngle);
+        p.x = Math.max(p.r, Math.min(bedW - p.r, rot.x));
+        p.y = Math.max(p.r, Math.min(bedH - p.r, rot.y));
+        if (hasConstraint) snapInsidePolygon(p, constraintPolys);
       });
     }
 
