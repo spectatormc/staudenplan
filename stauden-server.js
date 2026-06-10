@@ -173,6 +173,7 @@ function getPflanzenkandidaten(licht, boden, stil, standortBeschr) {
     FROM pflanzen
     WHERE licht LIKE ? AND (boden LIKE ? OR boden LIKE ?) AND stil LIKE ?
       AND (feuchtigkeit IN (${feuchPlaceholders}) OR feuchtigkeit IS NULL)
+      AND (wuchs IS NULL OR wuchs != 'invasiv')
     ORDER BY RANDOM() LIMIT 35
   `).all(`%${lichtTerm}%`, `%${bodenTerm}%`, '%normal%', `%${stilTerm}%`, ...feuchTerms);
 
@@ -183,6 +184,7 @@ function getPflanzenkandidaten(licht, boden, stil, standortBeschr) {
       FROM pflanzen
       WHERE licht LIKE ?
         AND (feuchtigkeit IN (${feuchPlaceholders}) OR feuchtigkeit IS NULL)
+        AND (wuchs IS NULL OR wuchs != 'invasiv')
       ORDER BY RANDOM() LIMIT 35
     `).all(`%${lichtTerm}%`, ...feuchTerms);
   }
@@ -191,7 +193,9 @@ function getPflanzenkandidaten(licht, boden, stil, standortBeschr) {
   if (kandidaten.length < 8) {
     kandidaten = db.prepare(`
       SELECT ${COLS}
-      FROM pflanzen WHERE licht LIKE ? ORDER BY RANDOM() LIMIT 35
+      FROM pflanzen WHERE licht LIKE ?
+        AND (wuchs IS NULL OR wuchs != 'invasiv')
+      ORDER BY RANDOM() LIMIT 35
     `).all(`%${lichtTerm}%`);
   }
 
