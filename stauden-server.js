@@ -331,7 +331,7 @@ app.get('/', (req, res) => {
   <!-- Intro Text -->
   <section class="seo-intro">
     <div class="seo-intro-inner">
-      <h2>Bepflanzungsplan kostenlos erstellen — KI-gestützt & individuell</h2>
+      <h2>Bepflanzungsplan online kostenlos erstellen — KI-gestützt & individuell</h2>
       <p>Ein professioneller <strong>Bepflanzungsplan</strong> ist die Grundlage für ein schönes, pflegeleichtes Staudenbeet. Unser KI-Gartenplaner erstellt dir in wenigen Minuten einen maßgeschneiderten Plan — abgestimmt auf Standort, Bodentyp, Gartenstil und deine persönlichen Wünsche. Mit über <strong>${pflanzenCount} geprüften, winterharten Stauden</strong> für deutsche Gärten.</p>
       <p>Anders als generische KI-Tools nutzt unser Planer eine kuratierte Pflanzendatenbank mit echten Staudenexperten-Wissen: Lebensbereiche nach Hansen &amp; Stahl, ökologisch wertvolle Heimische, bewährte Pflanzenkombinationen. Das Ergebnis ist ein <strong>Bepflanzungsplan der wirklich funktioniert</strong> — mit Stückliste, grafischem Plan und direkter Bestellmöglichkeit.</p>
     </div>
