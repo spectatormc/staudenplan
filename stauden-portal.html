@@ -1751,6 +1751,16 @@
         </div>
       </div>
 
+      <!-- 3D Isometrische Ansicht -->
+      <div class="viz-card">
+        <div class="viz-card-title">
+          <span>🧊 3D-Ansicht — Isometrische Perspektive</span>
+        </div>
+        <div class="viz-card-body">
+          <div class="schematisch-wrap" id="iso-container"></div>
+        </div>
+      </div>
+
     </div>
   </div>
 
@@ -3339,6 +3349,137 @@
     container.innerHTML = svg;
   }
 
+  // ── 3D Isometrische Ansicht (SVG) ─────────────────────────────────────────
+  function renderIsometrie(plan, saison) {
+    const container = document.getElementById('iso-container');
+    if (!container || !plan._normPlacements || !plan._normPlacements.length) return;
+
+    const W = Math.min(container.clientWidth || 700, 720);
+    const H = 460;
+
+    const bedW = parseFloat(formData.beetLaenge) || parseFloat(Math.sqrt((formData.gartenflaeche || 15) * 3).toFixed(1));
+    const bedD = parseFloat(formData.beetBreite) || parseFloat(Math.sqrt((formData.gartenflaeche || 15) / 3).toFixed(1));
+    const maxH_cm = Math.max(...plan.pflanzen.map(p => p.hoehe_cm || 50), 80);
+
+    const maxBed = Math.max(bedW, bedD, 1);
+    const ISO_X = Math.min(88, W * 0.36 / maxBed);
+    const ISO_Y = ISO_X * 0.52;
+    const ISO_Z = Math.min(148, H * 0.42 / (maxH_cm / 100));
+    const WALL = 0.22;
+
+    // Back-left corner origin — adjusted so tallest plant stays on canvas
+    const originX = W / 2 + (bedD - bedW) * ISO_X / 2;
+    const originY = H * 0.18 + WALL * ISO_Z + (maxH_cm / 100) * ISO_Z * 0.85;
+
+    const proj = (wx, wd, wz) => ({
+      x: originX + (wx - wd) * ISO_X,
+      y: originY + (wx + wd) * ISO_Y - wz * ISO_Z
+    });
+
+    // Bed corners at ground and rim
+    const BR = proj(bedW, 0, 0), FR = proj(bedW, bedD, 0), FL = proj(0, bedD, 0);
+    const BLt = proj(0, 0, WALL), BRt = proj(bedW, 0, WALL);
+    const FRt = proj(bedW, bedD, WALL), FLt = proj(0, bedD, WALL);
+
+    // Visible walls: right face (wx=bedW) + front face (wd=bedD)
+    const rightWall = `<polygon points="${BRt.x.toFixed(1)},${BRt.y.toFixed(1)} ${FRt.x.toFixed(1)},${FRt.y.toFixed(1)} ${FR.x.toFixed(1)},${FR.y.toFixed(1)} ${BR.x.toFixed(1)},${BR.y.toFixed(1)}" fill="#7a4f2e" stroke="#5a3015" stroke-width="1"/>`;
+    const frontWall = `<polygon points="${FLt.x.toFixed(1)},${FLt.y.toFixed(1)} ${FRt.x.toFixed(1)},${FRt.y.toFixed(1)} ${FR.x.toFixed(1)},${FR.y.toFixed(1)} ${FL.x.toFixed(1)},${FL.y.toFixed(1)}" fill="#9a6040" stroke="#5a3015" stroke-width="1"/>`;
+    const topFace = `<polygon points="${BLt.x.toFixed(1)},${BLt.y.toFixed(1)} ${BRt.x.toFixed(1)},${BRt.y.toFixed(1)} ${FRt.x.toFixed(1)},${FRt.y.toFixed(1)} ${FLt.x.toFixed(1)},${FLt.y.toFixed(1)}" fill="#c8a882" stroke="#9a7052" stroke-width="1.5"/>`;
+
+    // Grid lines on top face
+    const gridLines = [];
+    for (let gx = 1; gx < Math.ceil(bedW); gx++) {
+      const p1 = proj(gx, 0, WALL), p2 = proj(gx, bedD, WALL);
+      gridLines.push(`<line x1="${p1.x.toFixed(1)}" y1="${p1.y.toFixed(1)}" x2="${p2.x.toFixed(1)}" y2="${p2.y.toFixed(1)}" stroke="rgba(80,50,20,.18)" stroke-width="0.8" stroke-dasharray="3,4"/>`);
+    }
+    for (let gd = 1; gd < Math.ceil(bedD); gd++) {
+      const p1 = proj(0, gd, WALL), p2 = proj(bedW, gd, WALL);
+      gridLines.push(`<line x1="${p1.x.toFixed(1)}" y1="${p1.y.toFixed(1)}" x2="${p2.x.toFixed(1)}" y2="${p2.y.toFixed(1)}" stroke="rgba(80,50,20,.18)" stroke-width="0.8" stroke-dasharray="3,4"/>`);
+    }
+
+    // Soil texture dots on top face
+    function pr(s) { return Math.abs(Math.sin(s * 127.1 + 1.3)) % 1; }
+    const soilDots = Array.from({ length: 55 }, (_, i) => {
+      const pt = proj(pr(i * 7 + 1) * bedW, pr(i * 13 + 3) * bedD, WALL);
+      return `<circle cx="${pt.x.toFixed(1)}" cy="${pt.y.toFixed(1)}" r="1.5" fill="rgba(90,55,20,.22)"/>`;
+    }).join('');
+
+    // Rolle helper
+    function isoRolle(p) {
+      if (p.rolle === 'Leitstaude') return 'leit';
+      if (p.rolle === 'Begleitstaude') return 'begleit';
+      if (p.rolle === 'Füllstaude') return 'fuell';
+      return (p.hoehe_cm || 50) >= 80 ? 'leit' : (p.hoehe_cm || 50) >= 40 ? 'begleit' : 'fuell';
+    }
+
+    // Plants: painter's algorithm — back-left first, front-right last
+    const sorted = [...plan._normPlacements].sort((a, b) =>
+      (a.xFrac * bedW + a.yFrac * bedD) - (b.xFrac * bedW + b.yFrac * bedD)
+    );
+
+    const plantSVGs = sorted.map(({ xFrac, yFrac, rFrac, pflanze }) => {
+      const wx = xFrac * bedW, wd = yFrac * bedD;
+      const h_m = (pflanze.hoehe_cm || 50) / 100;
+      const inSaison = plantInSaison(pflanze.bluehzeit, saison || 'alle');
+      const num = plan.pflanzen.findIndex(pp => pp.name_botanisch === pflanze.name_botanisch) + 1;
+      const c = bloomColor(pflanze.farbe);
+      const rolle = isoRolle(pflanze);
+      const isFuell = rolle === 'fuell';
+
+      const groundPt = proj(wx, wd, WALL);
+      const crownPt  = proj(wx, wd, WALL + h_m);
+
+      const crownRx = Math.max(7, rFrac * bedW * ISO_X * 1.1);
+      const crownRy = crownRx * 0.6;
+      const stemW   = Math.max(1.2, crownRx * 0.18);
+      const opa     = inSaison ? 1 : 0.28;
+      const glowA   = (inSaison && saison && saison !== 'alle') ? 'filter="url(#glow)"' : '';
+
+      const shadow = `<ellipse cx="${groundPt.x.toFixed(1)}" cy="${groundPt.y.toFixed(1)}" rx="${(crownRx * 0.7).toFixed(1)}" ry="${(crownRx * 0.28).toFixed(1)}" fill="rgba(0,0,0,.14)"/>`;
+      const stem   = `<line x1="${groundPt.x.toFixed(1)}" y1="${groundPt.y.toFixed(1)}" x2="${crownPt.x.toFixed(1)}" y2="${crownPt.y.toFixed(1)}" stroke="#5a7a3a" stroke-width="${stemW.toFixed(1)}"/>`;
+
+      let crown, label = '';
+      if (isFuell) {
+        crown = `<ellipse cx="${crownPt.x.toFixed(1)}" cy="${crownPt.y.toFixed(1)}" rx="${(crownRx * 0.85).toFixed(1)}" ry="${(crownRy * 0.85).toFixed(1)}" fill="${c}" opacity="${(opa * 0.62).toFixed(2)}" filter="url(#isoBlur)"/>`;
+      } else {
+        crown = `<ellipse cx="${crownPt.x.toFixed(1)}" cy="${crownPt.y.toFixed(1)}" rx="${crownRx.toFixed(1)}" ry="${crownRy.toFixed(1)}" fill="${c}" opacity="${opa}" stroke="rgba(255,255,255,.5)" stroke-width="1.2" ${glowA}/>`;
+        const fs = Math.max(7, crownRx * 0.58);
+        label = `<text x="${crownPt.x.toFixed(1)}" y="${(crownPt.y + fs * 0.4).toFixed(1)}" text-anchor="middle" font-size="${fs.toFixed(0)}px" font-weight="800" fill="rgba(0,0,0,.65)" font-family="system-ui">${num}</text>`;
+      }
+
+      return `<g>${shadow}${stem}${crown}${label}</g>`;
+    }).join('');
+
+    // Dimension labels
+    const backMid  = proj(bedW / 2, 0, WALL);
+    const frontMid = proj(bedW / 2, bedD, WALL);
+    const leftMid  = proj(0, bedD / 2, WALL);
+    const rightMid = proj(bedW, bedD / 2, WALL);
+
+    const svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg" style="max-width:100%;display:block;border-radius:10px">
+      <defs>
+        <filter id="glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        <filter id="isoBlur" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="3.5"/></filter>
+        <linearGradient id="isoBg" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#e8f0e9"/>
+          <stop offset="100%" stop-color="#f4f0ea"/>
+        </linearGradient>
+      </defs>
+      <rect width="${W}" height="${H}" fill="url(#isoBg)" rx="10"/>
+      ${rightWall}${frontWall}
+      ${topFace}
+      ${soilDots}
+      ${gridLines.join('')}
+      ${plantSVGs}
+      <text x="${backMid.x.toFixed(0)}" y="${(backMid.y - 9).toFixed(0)}" text-anchor="middle" font-size="9" fill="#999" font-family="system-ui">↑ Hinten</text>
+      <text x="${frontMid.x.toFixed(0)}" y="${(frontMid.y + 17).toFixed(0)}" text-anchor="middle" font-size="9" fill="#999" font-family="system-ui">↓ Vordergrund</text>
+      <text x="${(leftMid.x - 10).toFixed(0)}" y="${(leftMid.y + 3).toFixed(0)}" text-anchor="end" font-size="9" fill="#bbb" font-family="system-ui">${bedD.toFixed(1)} m</text>
+      <text x="${(rightMid.x + 6).toFixed(0)}" y="${(rightMid.y + 3).toFixed(0)}" font-size="9" fill="#bbb" font-family="system-ui">${bedW.toFixed(1)} m</text>
+    </svg>`;
+
+    container.innerHTML = svg;
+  }
+
   // ── Tab & Saison-Steuerung ────────────────────────────────────────────────
   function switchTab(name) {
     document.querySelectorAll('.rtab').forEach(b => b.classList.remove('active'));
@@ -3346,7 +3487,7 @@
     document.querySelector(`.rtab[onclick*="${name}"]`).classList.add('active');
     document.getElementById('tab-' + name).classList.add('active');
     if (name === 'visualisierung' && currentPlan) {
-      setTimeout(() => { renderGrafisch(currentPlan, currentSaison); renderSchematisch(currentPlan); renderHoehenansicht(currentPlan, currentSaison); }, 50);
+      setTimeout(() => { renderGrafisch(currentPlan, currentSaison); renderSchematisch(currentPlan); renderHoehenansicht(currentPlan, currentSaison); renderIsometrie(currentPlan, currentSaison); }, 50);
     }
   }
 
@@ -3354,7 +3495,7 @@
     currentSaison = saison;
     document.querySelectorAll('.season-btn').forEach(b => b.classList.remove('active'));
     event.target.classList.add('active');
-    if (currentPlan) { renderGrafisch(currentPlan, saison); renderHoehenansicht(currentPlan, saison); }
+    if (currentPlan) { renderGrafisch(currentPlan, saison); renderHoehenansicht(currentPlan, saison); renderIsometrie(currentPlan, saison); }
   }
 
   // ── E-Mail-Gate ──────────────────────────────────────────────────────────────
