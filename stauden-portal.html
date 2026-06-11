@@ -374,6 +374,11 @@
     }
     .btn-alt:hover { background: var(--green-pale); }
     .btn-alt:disabled { opacity: 0.5; cursor: wait; }
+    .pflanze-fehler { margin-top: 8px; border-top: 1px solid #f3f4f6; padding-top: 6px; }
+    .pflanze-fehler summary { cursor: pointer; font-size: .8rem; font-weight: 600; color: #92400e; padding: 2px 0; user-select: none; }
+    .pflanze-fehler ul { list-style: none; padding: 6px 0 0; margin: 0; }
+    .pflanze-fehler ul li { font-size: .78rem; color: #78350f; padding: 2px 0 2px 12px; position: relative; line-height: 1.4; }
+    .pflanze-fehler ul li::before { content: '·'; position: absolute; left: 3px; }
 
     /* Blühkalender Timeline */
     .bk-wrap { margin-bottom: 32px; overflow-x: auto; }
@@ -3639,6 +3644,7 @@
           </div>
           <a class="btn-kaufen" href="${p.kauflink}" target="_blank" rel="noopener">Kaufen →</a>
           <button class="btn-alt" data-idx="${i}" onclick="alternativVorschlagen(${i})">🔄 Alternative vorschlagen</button>
+          ${p.fehler && p.fehler.length ? `<details class="pflanze-fehler"><summary>⚠️ Häufige Fehler (${p.fehler.length})</summary><ul>${p.fehler.map(f=>`<li>${f}</li>`).join('')}</ul></details>` : ''}
         </div>
       </div>`;
     }).join('');

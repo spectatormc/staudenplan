@@ -607,15 +607,16 @@ JSON-Format:
         const dbP = db.prepare(
           'SELECT bild_url, inhalt_lang FROM pflanzen WHERE name_botanisch = ? OR name_botanisch LIKE ? LIMIT 1'
         ).get(p.name_botanisch, `${genus}%`);
-        let pflanzabstand_cm = null;
+        let pflanzabstand_cm = null, fehler = null;
         if (dbP?.inhalt_lang) {
           try {
             const il = JSON.parse(dbP.inhalt_lang);
             const m = (il.pflanzabstand || '').match(/(\d+)\s*[–\-]\s*(\d+)?\s*cm/i);
             if (m) pflanzabstand_cm = m[2] ? Math.round((parseInt(m[1]) + parseInt(m[2])) / 2) : parseInt(m[1]);
+            if (Array.isArray(il.fehler) && il.fehler.length) fehler = il.fehler;
           } catch {}
         }
-        return { ...p, bild_url: dbP?.bild_url || null, pflanzabstand_cm };
+        return { ...p, bild_url: dbP?.bild_url || null, pflanzabstand_cm, fehler };
       });
     }
 
@@ -640,7 +641,7 @@ app.post('/api/alternativ', alternativLimiter, (req, res) => {
   const COLS = `name_deutsch, name_botanisch, beschreibung, licht, boden, stil,
     bluehzeit, farbe, hoehe_cm_min, hoehe_cm_max, pflege_sterne, preis_stueck_eur,
     bienen_freundlich, heimisch, feuchtigkeit, wuchs, lebensbereich, breite_cm_max,
-    rolle_empfehlung, kombinationspartner, winteraspekt, trockenheitstoleranz, bild_url`;
+    rolle_empfehlung, kombinationspartner, winteraspekt, trockenheitstoleranz, bild_url, inhalt_lang`;
 
   let pflanze = null;
 
@@ -665,11 +666,17 @@ app.post('/api/alternativ', alternativLimiter, (req, res) => {
   const hoehe_cm = pflanze.hoehe_cm_max
     ? Math.round(((pflanze.hoehe_cm_min || 0) + pflanze.hoehe_cm_max) / 2) : 50;
 
+  let fehler = null;
+  if (pflanze.inhalt_lang) {
+    try { const il = JSON.parse(pflanze.inhalt_lang); if (Array.isArray(il.fehler)) fehler = il.fehler; } catch {}
+  }
+  const { inhalt_lang: _, ...pflanzeOhneInhalt } = pflanze;
+
   res.json({
     success: true,
     pflanze: {
-      ...pflanze,
-      hoehe_cm,
+      ...pflanzeOhneInhalt,
+      hoehe_cm, fehler,
       kauflink: `https://www.amazon.de/s?k=${encodeURIComponent(pflanze.name_botanisch)}&tag=gartenbaukosten-21`,
       rolle: rolle || (hoehe_cm >= 80 ? 'Leitstaude' : hoehe_cm >= 40 ? 'Begleitstaude' : 'Füllstaude'),
     }
