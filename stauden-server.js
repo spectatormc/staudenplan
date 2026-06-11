@@ -1342,10 +1342,12 @@ app.get('/auswahl-pflanzen', (req, res) => {
         body: JSON.stringify({ url })
       });
       if (r.ok) {
-        document.getElementById(\`plant-\${id}\`).classList.add('saved');
+        const card = document.getElementById(\`plant-\${id}\`);
+        card.classList.add('saved');
         document.getElementById(\`done-\${id}\`).style.display = 'inline';
         const akt = document.querySelector(\`#plant-\${id} .akt-img\`);
         if (akt) akt.src = url;
+        setTimeout(() => { card.style.display = 'none'; }, 1200);
       }
     }
     async function alleFalsch(id, btn) {
