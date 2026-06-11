@@ -1043,14 +1043,25 @@ app.get('/vorschau/pflanzen', (req, res) => {
           body: JSON.stringify({ ids })
         });
         const data = await r.json();
-        if (r.ok) {
-          msg.textContent = '✓ ' + data.message + ' — Seite lädt in 5s neu…';
-          setTimeout(() => location.reload(), 5000);
-        } else {
+        if (!r.ok) {
           msg.textContent = '✗ Fehler: ' + (data.error || 'unbekannt');
           btn.disabled = false;
           btn.textContent = '🔍 Prüfung beauftragen';
+          return;
         }
+        // Polling bis alle geprüft
+        const poll = setInterval(async () => {
+          try {
+            const s = await fetch('/api/recheck-status?ids=' + ids.join(','));
+            const st = await s.json();
+            msg.textContent = '🔍 GPT-4o prüft… ' + st.done + ' / ' + st.total + ' fertig';
+            if (st.fertig) {
+              clearInterval(poll);
+              msg.textContent = '✅ Alle ' + st.total + ' Pflanzen geprüft — Seite wird neu geladen…';
+              setTimeout(() => location.reload(), 1500);
+            }
+          } catch {}
+        }, 3000);
       }
     </script>
   </body></html>`);
@@ -1190,11 +1201,11 @@ app.post('/api/recheck-pflanzen', (req, res) => {
   const ids = (req.body.ids || []).map(Number).filter(n => n > 0 && Number.isInteger(n));
   if (!ids.length) return res.status(400).json({ error: 'Keine gültigen IDs' });
 
-  // Sofort als "wird geprüft" vormerken — Seite lädt nach 5s neu
-  db.prepare(`UPDATE pflanzen SET bild_geprueft = 1 WHERE id IN (${ids.map(() => '?').join(',')})`)
+  // bild_geprueft auf 0 zurücksetzen — wird erst vom Script auf 1 gesetzt wenn fertig
+  db.prepare(`UPDATE pflanzen SET bild_geprueft = 0 WHERE id IN (${ids.map(() => '?').join(',')})`)
     .run(...ids);
 
-  // Prüfskript im Hintergrund starten (--fix ersetzt schlechte Bilder direkt)
+  // Prüfskript im Hintergrund starten
   const { spawn } = require('child_process');
   const child = spawn(process.execPath, [
     path.join(__dirname, 'scripts', 'check-plant-images.js'),
@@ -1203,7 +1214,17 @@ app.post('/api/recheck-pflanzen', (req, res) => {
   ], { cwd: __dirname, detached: true, stdio: 'ignore' });
   child.unref();
 
-  res.json({ ok: true, count: ids.length, message: `Prüfung für ${ids.length} Pflanzen gestartet` });
+  res.json({ ok: true, count: ids.length, ids });
+});
+
+// Polling-Endpoint: wie viele der angefragten IDs sind bereits fertig geprüft?
+app.get('/api/recheck-status', (req, res) => {
+  const ids = (req.query.ids || '').split(',').map(Number).filter(n => n > 0);
+  if (!ids.length) return res.status(400).json({ error: 'Keine IDs' });
+  const done = db.prepare(
+    `SELECT COUNT(*) as n FROM pflanzen WHERE bild_geprueft = 1 AND id IN (${ids.map(() => '?').join(',')})`
+  ).get(...ids).n;
+  res.json({ done, total: ids.length, fertig: done === ids.length });
 });
 
 // ─── Pflanzenseiten (SEO) ─────────────────────────────────────────────────────
