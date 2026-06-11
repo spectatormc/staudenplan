@@ -107,6 +107,10 @@ const anfrageLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, max: 5,
   message: { error: 'Zu viele Anfragen, bitte versuche es später erneut.' }
 });
+const alternativLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000, max: 30,
+  message: { error: 'Zu viele Anfragen.' }
+});
 
 // ─── RAG-Hilfsfunktionen ──────────────────────────────────────────────────────
 
@@ -619,6 +623,56 @@ JSON-Format:
     console.error('OpenAI Fehler:', err.message);
     res.status(500).json({ error: 'Fehler bei der KI-Planung. Bitte versuche es erneut.' });
   }
+});
+
+app.post('/api/alternativ', alternativLimiter, (req, res) => {
+  const { licht, boden, stil, rolle, ausschliessen } = req.body;
+  if (!licht) return res.status(400).json({ error: 'licht erforderlich' });
+
+  const lichtTerm = LICHT_MAP[licht] || (licht.includes('Vollsonne') ? 'Sonne' : licht.includes('Halbschatten') ? 'Halbschatten' : 'Schatten');
+  const bodenTerm = boden && (boden.toLowerCase().includes('sandig')) ? 'Sandig'
+    : boden && (boden.toLowerCase().includes('lehmig')) ? 'Lehmig' : 'Normal';
+  const stilTerm = (stil || '').split(' ')[0] || '';
+  const exclude = Array.isArray(ausschliessen) && ausschliessen.length ? ausschliessen : null;
+  const exClause = exclude ? `AND name_botanisch NOT IN (${exclude.map(() => '?').join(',')})` : '';
+
+  const COLS = `name_deutsch, name_botanisch, beschreibung, licht, boden, stil,
+    bluehzeit, farbe, hoehe_cm_min, hoehe_cm_max, pflege_sterne, preis_stueck_eur,
+    bienen_freundlich, heimisch, feuchtigkeit, wuchs, lebensbereich, breite_cm_max,
+    rolle_empfehlung, kombinationspartner, winteraspekt, trockenheitstoleranz, bild_url`;
+
+  let pflanze = null;
+
+  if (!pflanze) {
+    const rows = db.prepare(`SELECT ${COLS} FROM pflanzen
+      WHERE licht LIKE ? AND (boden LIKE ? OR boden LIKE ?) AND stil LIKE ?
+        AND (wuchs IS NULL OR wuchs != 'invasiv') ${exClause}
+      ORDER BY RANDOM() LIMIT 1`)
+      .all(`%${lichtTerm}%`, `%${bodenTerm}%`, '%normal%', `%${stilTerm}%`, ...(exclude || []));
+    if (rows.length) pflanze = rows[0];
+  }
+  if (!pflanze) {
+    const rows = db.prepare(`SELECT ${COLS} FROM pflanzen
+      WHERE licht LIKE ? AND (wuchs IS NULL OR wuchs != 'invasiv') ${exClause}
+      ORDER BY RANDOM() LIMIT 1`)
+      .all(`%${lichtTerm}%`, ...(exclude || []));
+    if (rows.length) pflanze = rows[0];
+  }
+
+  if (!pflanze) return res.status(404).json({ error: 'Keine Alternative gefunden.' });
+
+  const hoehe_cm = pflanze.hoehe_cm_max
+    ? Math.round(((pflanze.hoehe_cm_min || 0) + pflanze.hoehe_cm_max) / 2) : 50;
+
+  res.json({
+    success: true,
+    pflanze: {
+      ...pflanze,
+      hoehe_cm,
+      kauflink: `https://www.amazon.de/s?k=${encodeURIComponent(pflanze.name_botanisch)}&tag=gartenbaukosten-21`,
+      rolle: rolle || (hoehe_cm >= 80 ? 'Leitstaude' : hoehe_cm >= 40 ? 'Begleitstaude' : 'Füllstaude'),
+    }
+  });
 });
 
 app.post('/api/email-gate', rateLimit({ windowMs: 60*60*1000, max: 10, message: { error: 'Zu viele Anfragen.' } }), (req, res) => {

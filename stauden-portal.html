@@ -366,6 +366,14 @@
       transition: background 0.15s;
     }
     .btn-kaufen:hover { background: var(--green-dark); }
+    .btn-alt {
+      display: block; width: 100%; background: transparent;
+      color: var(--green-mid); border: 1px solid var(--green-light);
+      border-radius: 8px; padding: 7px; font-size: 0.82rem; font-weight: 500;
+      text-align: center; cursor: pointer; transition: background 0.15s; margin-top: 6px;
+    }
+    .btn-alt:hover { background: var(--green-pale); }
+    .btn-alt:disabled { opacity: 0.5; cursor: wait; }
 
     /* Jahreskalender */
     .kalender-grid {
@@ -3592,6 +3600,7 @@
             <strong id="preis-${i}">${((p.preis_stueck_eur||0) * (p.stueckzahl||1)).toFixed(2)} €</strong>
           </div>
           <a class="btn-kaufen" href="${p.kauflink}" target="_blank" rel="noopener">Kaufen →</a>
+          <button class="btn-alt" data-idx="${i}" onclick="alternativVorschlagen(${i})">🔄 Alternative vorschlagen</button>
         </div>
       </div>`;
     }).join('');
@@ -3637,6 +3646,37 @@
 
     show('view-ergebnis');
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  async function alternativVorschlagen(idx) {
+    const btn = document.querySelector(`.btn-alt[data-idx="${idx}"]`);
+    const origText = btn.textContent;
+    btn.textContent = '⏳ Suche…';
+    btn.disabled = true;
+    try {
+      const p = currentPlan.pflanzen[idx];
+      const res = await fetch('/api/alternativ', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          licht: formData.licht, boden: formData.boden, stil: formData.stil,
+          rolle: p.rolle,
+          ausschliessen: currentPlan.pflanzen.map(pp => pp.name_botanisch)
+        })
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      data.pflanze.stueckzahl = p.stueckzahl;
+      data.pflanze.standort = p.standort;
+      if (data.pflanze.rolle === 'Leitstaude' && (data.pflanze.stueckzahl || 1) < 3) data.pflanze.stueckzahl = 3;
+      currentPlan.pflanzen[idx] = data.pflanze;
+      currentPlan.gesamtkosten_geschaetzt = currentPlan.pflanzen.reduce((s, pp) => s + (pp.preis_stueck_eur || 0) * (pp.stueckzahl || 1), 0);
+      renderErgebnis(currentPlan);
+    } catch (e) {
+      btn.textContent = origText;
+      btn.disabled = false;
+      alert('Keine Alternative gefunden.');
+    }
   }
 
   function openModal() {
