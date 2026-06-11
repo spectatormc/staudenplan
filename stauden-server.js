@@ -1339,7 +1339,7 @@ app.get('/auswahl-pflanzen', (req, res) => {
   <script>
     async function waehle(id, url, idx) {
       document.querySelectorAll(\`#plant-\${id} .kand-card\`).forEach(c => c.classList.remove('selected'));
-      document.getElementById(\`kand-\${id}-\${idx}\`).classList.add('selected');
+      if (idx >= 0) document.getElementById(\`kand-\${id}-\${idx}\`).classList.add('selected');
       const r = await fetch(\`/api/bild-waehlen/\${id}\`, {
         method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ url })
