@@ -178,6 +178,7 @@ function getPflanzenkandidaten(licht, boden, stil, standortBeschr) {
     WHERE licht LIKE ? AND (boden LIKE ? OR boden LIKE ?) AND stil LIKE ?
       AND (feuchtigkeit IN (${feuchPlaceholders}) OR feuchtigkeit IS NULL)
       AND (wuchs IS NULL OR wuchs != 'invasiv')
+      AND (status IS NULL OR status = 'live')
     ORDER BY RANDOM() LIMIT 35
   `).all(`%${lichtTerm}%`, `%${bodenTerm}%`, '%normal%', `%${stilTerm}%`, ...feuchTerms);
 
@@ -189,6 +190,7 @@ function getPflanzenkandidaten(licht, boden, stil, standortBeschr) {
       WHERE licht LIKE ?
         AND (feuchtigkeit IN (${feuchPlaceholders}) OR feuchtigkeit IS NULL)
         AND (wuchs IS NULL OR wuchs != 'invasiv')
+        AND (status IS NULL OR status = 'live')
       ORDER BY RANDOM() LIMIT 35
     `).all(`%${lichtTerm}%`, ...feuchTerms);
   }
@@ -199,6 +201,7 @@ function getPflanzenkandidaten(licht, boden, stil, standortBeschr) {
       SELECT ${COLS}
       FROM pflanzen WHERE licht LIKE ?
         AND (wuchs IS NULL OR wuchs != 'invasiv')
+        AND (status IS NULL OR status = 'live')
       ORDER BY RANDOM() LIMIT 35
     `).all(`%${lichtTerm}%`);
   }
@@ -648,14 +651,16 @@ app.post('/api/alternativ', alternativLimiter, (req, res) => {
   if (!pflanze) {
     const rows = db.prepare(`SELECT ${COLS} FROM pflanzen
       WHERE licht LIKE ? AND (boden LIKE ? OR boden LIKE ?) AND stil LIKE ?
-        AND (wuchs IS NULL OR wuchs != 'invasiv') ${exClause}
+        AND (wuchs IS NULL OR wuchs != 'invasiv')
+        AND (status IS NULL OR status = 'live') ${exClause}
       ORDER BY RANDOM() LIMIT 1`)
       .all(`%${lichtTerm}%`, `%${bodenTerm}%`, '%normal%', `%${stilTerm}%`, ...(exclude || []));
     if (rows.length) pflanze = rows[0];
   }
   if (!pflanze) {
     const rows = db.prepare(`SELECT ${COLS} FROM pflanzen
-      WHERE licht LIKE ? AND (wuchs IS NULL OR wuchs != 'invasiv') ${exClause}
+      WHERE licht LIKE ? AND (wuchs IS NULL OR wuchs != 'invasiv')
+        AND (status IS NULL OR status = 'live') ${exClause}
       ORDER BY RANDOM() LIMIT 1`)
       .all(`%${lichtTerm}%`, ...(exclude || []));
     if (rows.length) pflanze = rows[0];
@@ -909,6 +914,76 @@ app.get('/datenschutz', (req, res) => {
     <p style="margin-top:24px;color:#aaa;font-size:.83rem">Stand: ${new Date().toLocaleDateString('de-DE', {month:'long',year:'numeric'})}</p>
   </main>
   ${LEGAL_FOOTER}
+  </body></html>`);
+});
+
+// ─── Staging-Vorschau (intern) ────────────────────────────────────────────────
+// URL: /vorschau/pflanzen?key=preview2026
+
+app.get('/vorschau/pflanzen', (req, res) => {
+  if (req.query.key !== 'preview2026') {
+    return res.status(403).send('<h2>403 — Vorschau-Key fehlt</h2><p>?key=preview2026</p>');
+  }
+  const pflanzen = db.prepare(`
+    SELECT id, name_deutsch, name_botanisch, licht, boden, feuchtigkeit, bluehzeit, farbe,
+           hoehe_cm_min, hoehe_cm_max, pflege_sterne, rolle_empfehlung, bild_url,
+           wuchs, trockenheitstoleranz, bienen_freundlich, heimisch, stil
+    FROM pflanzen WHERE status = 'staging' ORDER BY name_deutsch
+  `).all();
+  const total    = pflanzen.length;
+  const ohneBild = pflanzen.filter(p => !p.bild_url).length;
+
+  const rows = pflanzen.map(p => {
+    const img    = p.bild_url ? `<img src="${p.bild_url}" style="width:60px;height:60px;object-fit:cover;border-radius:6px">` : `<span style="display:inline-block;width:60px;height:60px;background:#f0ede8;border-radius:6px;text-align:center;line-height:60px;font-size:1.4rem">🌿</span>`;
+    const bienen = p.bienen_freundlich ? '🐝' : '';
+    const heimisch = p.heimisch ? '🏡' : '';
+    return `<tr>
+      <td style="padding:8px 6px;text-align:center">${img}</td>
+      <td style="padding:8px 6px"><strong>${p.name_deutsch}</strong><br><small style="color:#888">${p.name_botanisch}</small></td>
+      <td style="padding:8px 6px">${p.licht || '–'}</td>
+      <td style="padding:8px 6px">${p.bluehzeit || '–'}</td>
+      <td style="padding:8px 6px">${p.farbe || '–'}</td>
+      <td style="padding:8px 6px">${p.hoehe_cm_min || '?'}–${p.hoehe_cm_max || '?'} cm</td>
+      <td style="padding:8px 6px">${p.rolle_empfehlung || '–'}</td>
+      <td style="padding:8px 6px">${bienen}${heimisch}</td>
+      <td style="padding:8px 6px"><a href="/pflanze/${encodeURIComponent((p.name_botanisch||'').toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,''))}" target="_blank" style="color:#4a8c5c;font-size:.8rem">→ Seite</a></td>
+    </tr>`;
+  }).join('');
+
+  res.send(`<!DOCTYPE html><html lang="de"><head>
+    <meta charset="UTF-8"><title>Staging-Vorschau — ${total} Pflanzen</title>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 1100px; margin: 0 auto; padding: 24px; background: #f8f6f0 }
+      h1 { color: #2d5a3d; margin-bottom: 4px }
+      .meta { color: #888; margin-bottom: 20px; font-size: .9rem }
+      .warn { background: #fff3cd; border: 1px solid #f0c040; border-radius: 8px; padding: 12px 16px; margin-bottom: 20px; font-size: .9rem }
+      .approve-box { background: #e8f5e9; border: 1px solid #81c784; border-radius: 8px; padding: 14px 18px; margin-bottom: 24px; font-family: monospace; font-size: .85rem; color: #1b5e20 }
+      table { width: 100%; border-collapse: collapse; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.08) }
+      th { background: #2d5a3d; color: white; padding: 10px 6px; text-align: left; font-size: .82rem }
+      tr:nth-child(even) { background: #f9f7f3 }
+      input[type=search] { padding: 8px 14px; border: 1px solid #ddd; border-radius: 8px; width: 300px; font-size: .9rem; margin-bottom: 16px }
+    </style>
+  </head><body>
+    <h1>🌿 Staging-Vorschau</h1>
+    <p class="meta">${total} Pflanzen im Staging · ${ohneBild} ohne Bild · Nur intern sichtbar · Nicht in Planung oder Suche</p>
+    ${ohneBild > 0 ? `<div class="warn">⚠️ <strong>${ohneBild} Pflanzen haben noch kein Bild.</strong> Bitte zuerst <code>node scripts/fetch-plant-images.js</code> ausführen.</div>` : ''}
+    <div class="approve-box">
+      Freischalten wenn bereit:<br>
+      <strong>node scripts/approve-staging.js</strong><br>
+      oder einzeln: <strong>node scripts/approve-staging.js --id=123</strong>
+    </div>
+    <input type="search" id="q" placeholder="Filtern…" oninput="filterTable(this.value)">
+    <table id="t">
+      <thead><tr><th>Bild</th><th>Name</th><th>Licht</th><th>Blühzeit</th><th>Farbe</th><th>Höhe</th><th>Rolle</th><th></th><th></th></tr></thead>
+      <tbody id="tb">${rows}</tbody>
+    </table>
+    <script>
+      function filterTable(q) {
+        const rows = document.querySelectorAll('#tb tr');
+        const lq = q.toLowerCase();
+        rows.forEach(r => r.style.display = r.textContent.toLowerCase().includes(lq) ? '' : 'none');
+      }
+    </script>
   </body></html>`);
 });
 
