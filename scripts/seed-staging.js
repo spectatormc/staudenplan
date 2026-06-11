@@ -269,7 +269,7 @@ const PFLANZEN = [
   { de: 'Blaue Blaustern-Staude',        bot: 'Amsonia hubrichtii',                   kat: 'Sonne' },
   { de: 'Weidenblättrige Amsonie',       bot: 'Amsonia tabernaemontana',              kat: 'Sonne' },
   // Baptisia
-  { de: 'Dreifarbiger Falscher Indigo',  bot: 'Baptisia 'Twilite Prairieblues'',      kat: 'Sonne' },
+  { de: 'Dreifarbiger Falscher Indigo',  bot: "Baptisia 'Twilite Prairieblues'",      kat: 'Sonne' },
   // Verbascum
   { de: 'Olympische Königskerze',        bot: 'Verbascum olympicum',                  kat: 'Sonne' },
   { de: 'Hybride Königskerze Chaixii',   bot: 'Verbascum chaixii Album',              kat: 'Sonne' },
