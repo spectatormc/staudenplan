@@ -1232,25 +1232,25 @@ app.get('/api/recheck-status', (req, res) => {
 app.get('/auswahl-pflanzen', (req, res) => {
   if (req.query.key !== 'preview2026') return res.status(403).send('<h2>403</h2>');
 
-  const pflanzen = db.prepare(`
+  const offene = db.prepare(`
     SELECT id, name_deutsch, name_botanisch, bild_url, bild_kandidaten
     FROM pflanzen WHERE bild_kandidaten IS NOT NULL AND bild_kandidaten != '[]'
+      AND (bild_gesperrt IS NULL OR bild_gesperrt = 0)
     ORDER BY name_deutsch
   `).all();
 
-  if (!pflanzen.length) {
-    return res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Bildauswahl</title>
-    <style>body{font-family:system-ui;max-width:900px;margin:0 auto;padding:40px;background:#f8f6f0}
-    h1{color:#2d5a3d}.info{background:#e8f5e9;border-radius:10px;padding:20px;margin-top:20px;font-family:monospace;font-size:.9rem}</style>
-    </head><body><h1>🖼 Bildauswahl</h1>
-    <p>Noch keine Kandidaten geladen.</p>
-    <div class="info">node scripts/fetch-bild-kandidaten.js</div></body></html>`);
-  }
+  const gesperrte = db.prepare(`
+    SELECT id, name_deutsch, name_botanisch, bild_url
+    FROM pflanzen WHERE bild_gesperrt = 1 AND status = 'staging'
+    ORDER BY name_deutsch
+  `).all();
 
-  const cards = pflanzen.map(p => {
+  const makeCard = p => {
     let kandidaten = [];
     try { kandidaten = JSON.parse(p.bild_kandidaten || '[]'); } catch {}
-    const aktImg = p.bild_url ? `<img src="${p.bild_url}" class="akt-img"><div class="lbl">Aktuell</div>` : `<div class="no-img">🌿</div><div class="lbl">Kein Bild</div>`;
+    const aktImg = p.bild_url
+      ? `<img src="${p.bild_url}" class="akt-img"><div class="lbl">Aktuell</div>`
+      : `<div class="no-img">🌿</div><div class="lbl">Kein Bild</div>`;
     const kandCards = kandidaten.map((url, i) => `
       <div class="kand-card" id="kand-${p.id}-${i}" onclick="waehle(${p.id},'${url}',${i})">
         <img src="${url}" onerror="this.parentElement.classList.add('broken')">
@@ -1261,6 +1261,7 @@ app.get('/auswahl-pflanzen', (req, res) => {
         <strong>${p.name_deutsch}</strong>
         <span class="bot">${p.name_botanisch}</span>
         <span class="done-badge" id="done-${p.id}" style="display:none">✓ Gespeichert</span>
+        <button class="btn-falsch" onclick="alleFalsch(${p.id},this)">Alle falsch</button>
       </div>
       <div class="imgs-row">
         <div class="akt-wrap">${aktImg}</div>
@@ -1268,22 +1269,38 @@ app.get('/auswahl-pflanzen', (req, res) => {
         <div class="kand-row">${kandCards}</div>
       </div>
     </div>`;
-  }).join('');
+  };
+
+  const cards = offene.map(makeCard).join('') || '<p style="color:#999">Alle bearbeitet.</p>';
+
+  const gesperrtRows = gesperrte.map(p => `
+    <div class="gesperrt-row" id="plant-g-${p.id}">
+      ${p.bild_url ? `<img src="${p.bild_url}" class="g-img">` : `<div class="g-img no-img-sm">🌿</div>`}
+      <div class="g-info">
+        <strong>${p.name_deutsch}</strong>
+        <span class="bot">${p.name_botanisch}</span>
+      </div>
+      <button class="btn-entsperren" onclick="entsperre(${p.id},this)">↩ Entsperren</button>
+    </div>`).join('') || '<p style="color:#999;font-size:.88rem">Keine gesperrten Pflanzen.</p>';
 
   res.send(`<!DOCTYPE html><html lang="de"><head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Bildauswahl — ${pflanzen.length} Pflanzen</title>
+  <title>Bildauswahl</title>
   <style>
     *{box-sizing:border-box}
     body{font-family:system-ui,sans-serif;max-width:1100px;margin:0 auto;padding:24px;background:#f8f6f0}
     h1{color:#2d5a3d;margin-bottom:4px}
+    h2{color:#555;font-size:1rem;margin:32px 0 12px;border-top:1px solid #e0dbd4;padding-top:24px}
     .meta{color:#888;font-size:.88rem;margin-bottom:24px}
     .plant-card{background:#fff;border-radius:12px;padding:16px 18px;margin-bottom:16px;box-shadow:0 1px 5px rgba(0,0,0,.09);transition:opacity .3s}
-    .plant-card.saved{opacity:.45}
+    .plant-card.saved{opacity:.45;pointer-events:none}
+    .plant-card.gesperrt-lokal{opacity:.35;pointer-events:none}
     .plant-head{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
     .plant-head strong{font-size:1rem;color:#1b4332}
     .bot{font-size:.78rem;color:#999}
     .done-badge{font-size:.78rem;background:#d4edda;color:#155724;padding:3px 10px;border-radius:20px;font-weight:600}
+    .btn-falsch{margin-left:auto;background:#fff3cd;border:1px solid #e0b84a;color:#856404;font-size:.78rem;font-weight:600;padding:4px 12px;border-radius:20px;cursor:pointer}
+    .btn-falsch:hover{background:#ffeaa0}
     .imgs-row{display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap}
     .akt-wrap{text-align:center;min-width:110px}
     .akt-img{width:110px;height:110px;object-fit:cover;border-radius:8px;border:2px solid #ddd;display:block}
@@ -1296,28 +1313,59 @@ app.get('/auswahl-pflanzen', (req, res) => {
     .kand-card:hover{border-color:#2d6a4f;transform:scale(1.03)}
     .kand-card.selected{border-color:#2d6a4f;box-shadow:0 0 0 3px rgba(45,106,79,.2)}
     .kand-card.broken{opacity:.3;pointer-events:none}
-    .kand-card.broken::after{content:'✗';display:block;font-size:1.5rem;padding:30px}
+    .kand-card.broken img{display:none}
+    .kand-card.broken::after{content:'✗ Bild fehlt';display:block;font-size:.75rem;padding:42px 8px;color:#bbb}
+    /* Gesperrt-Sektion */
+    .gesperrt-box{background:#fff8f0;border:1px solid #f0d090;border-radius:10px;padding:14px 16px}
+    .gesperrt-row{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #f0e8d0}
+    .gesperrt-row:last-child{border-bottom:none}
+    .g-img{width:56px;height:56px;object-fit:cover;border-radius:6px;flex-shrink:0}
+    .no-img-sm{width:56px;height:56px;background:#f0ede8;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:1.2rem;flex-shrink:0}
+    .g-info{flex:1;min-width:0}
+    .g-info strong{display:block;font-size:.9rem;color:#1b4332}
+    .btn-entsperren{background:#fff;border:1px solid #ccc;color:#666;font-size:.75rem;padding:4px 10px;border-radius:16px;cursor:pointer;white-space:nowrap}
+    .btn-entsperren:hover{background:#f5f5f5}
+    .sperr-badge{font-size:.75rem;background:#fff3cd;color:#856404;padding:3px 10px;border-radius:20px;font-weight:600;display:none}
   </style>
 </head><body>
-  <h1>🖼 Bildauswahl</h1>
-  <p class="meta">${pflanzen.length} Pflanzen · Klicke auf ein Bild um es zu übernehmen — wird sofort gespeichert</p>
+  <h1>Bildauswahl</h1>
+  <p class="meta">${offene.length} offen · ${gesperrte.length} gesperrt · Klick auf Bild = sofort übernehmen · "Alle falsch" = für Live gesperrt</p>
   ${cards}
+  <h2>Gesperrt — kein passendes Bild (${gesperrte.length})</h2>
+  <div class="gesperrt-box">${gesperrtRows}</div>
   <script>
     async function waehle(id, url, idx) {
-      // Visuelles Feedback
       document.querySelectorAll(\`#plant-\${id} .kand-card\`).forEach(c => c.classList.remove('selected'));
       document.getElementById(\`kand-\${id}-\${idx}\`).classList.add('selected');
       const r = await fetch(\`/api/bild-waehlen/\${id}\`, {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
+        method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ url })
       });
       if (r.ok) {
         document.getElementById(\`plant-\${id}\`).classList.add('saved');
         document.getElementById(\`done-\${id}\`).style.display = 'inline';
-        // Aktuelles Bild aktualisieren
         const akt = document.querySelector(\`#plant-\${id} .akt-img\`);
         if (akt) akt.src = url;
+      }
+    }
+    async function alleFalsch(id, btn) {
+      if (!confirm('Pflanze sperren? Sie kann dann nicht live geschaltet werden bis du sie entsperrst.')) return;
+      const r = await fetch(\`/api/bild-ablehnen/\${id}\`, { method: 'POST' });
+      if (r.ok) {
+        const card = document.getElementById(\`plant-\${id}\`);
+        card.classList.add('gesperrt-lokal');
+        btn.textContent = '🚫 Gesperrt';
+        btn.disabled = true;
+        // Nach kurzer Pause ausblenden
+        setTimeout(() => { card.style.display = 'none'; }, 1200);
+      }
+    }
+    async function entsperre(id, btn) {
+      const r = await fetch(\`/api/bild-entsperren/\${id}\`, { method: 'POST' });
+      if (r.ok) {
+        const row = document.getElementById(\`plant-g-\${id}\`);
+        btn.textContent = '✓';
+        setTimeout(() => { row.style.display = 'none'; }, 800);
       }
     }
   </script>
@@ -1328,7 +1376,21 @@ app.post('/api/bild-waehlen/:id', (req, res) => {
   const id  = parseInt(req.params.id);
   const url = req.body.url;
   if (!id || !url) return res.status(400).json({ error: 'id oder url fehlt' });
-  db.prepare('UPDATE pflanzen SET bild_url = ?, bild_kandidaten = NULL WHERE id = ?').run(url, id);
+  db.prepare('UPDATE pflanzen SET bild_url = ?, bild_kandidaten = NULL, bild_gesperrt = 0 WHERE id = ?').run(url, id);
+  res.json({ ok: true });
+});
+
+app.post('/api/bild-ablehnen/:id', (req, res) => {
+  const id = parseInt(req.params.id);
+  if (!id) return res.status(400).json({ error: 'id fehlt' });
+  db.prepare('UPDATE pflanzen SET bild_gesperrt = 1, bild_kandidaten = NULL WHERE id = ?').run(id);
+  res.json({ ok: true });
+});
+
+app.post('/api/bild-entsperren/:id', (req, res) => {
+  const id = parseInt(req.params.id);
+  if (!id) return res.status(400).json({ error: 'id fehlt' });
+  db.prepare('UPDATE pflanzen SET bild_gesperrt = 0 WHERE id = ?').run(id);
   res.json({ ok: true });
 });
 

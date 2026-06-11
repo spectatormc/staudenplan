@@ -15,10 +15,10 @@ const ID       = (() => { const i = args.find(a => a.startsWith('--id=')); retur
 
 const db = new Database(path.join(__dirname, '..', 'stauden.db'));
 
-// Staging-Übersicht
+// Staging-Übersicht (gesperrte Pflanzen werden nie freigeschaltet)
 const staging = db.prepare(`
   SELECT id, name_deutsch, name_botanisch, licht, boden, hoehe_cm_min, hoehe_cm_max,
-         bild_url, bluehzeit, farbe, rolle_empfehlung
+         bild_url, bluehzeit, farbe, rolle_empfehlung, bild_gesperrt
   FROM pflanzen WHERE status = 'staging' ORDER BY name_deutsch
 `).all();
 
@@ -28,8 +28,16 @@ if (staging.length === 0) {
   process.exit(0);
 }
 
-console.log(`\n=== Staging-Übersicht: ${staging.length} Pflanzen ===\n`);
-const ohneBild = staging.filter(p => !p.bild_url);
+const gesperrt = staging.filter(p => p.bild_gesperrt);
+const freigabe = staging.filter(p => !p.bild_gesperrt);
+
+console.log(`\n=== Staging-Übersicht: ${staging.length} Pflanzen (${gesperrt.length} gesperrt, werden übersprungen) ===\n`);
+if (gesperrt.length > 0) {
+  console.log('GESPERRT (kein passendes Bild gefunden):');
+  gesperrt.forEach(p => console.log(`  🚫 [${p.id}] ${p.name_deutsch}`));
+  console.log('');
+}
+const ohneBild = freigabe.filter(p => !p.bild_url);
 
 staging.slice(0, 30).forEach(p => {
   const bild = p.bild_url ? '✓' : '✗ KEIN BILD';
@@ -65,7 +73,7 @@ if (ID) {
     console.log(`\n⚠️  ${ohneBild.length} Pflanzen haben noch kein Bild. Trotzdem freischalten? [Enter = ja, Ctrl+C = Abbruch]`);
     // In Non-TTY einfach fortfahren
   }
-  stmt = db.prepare(`UPDATE pflanzen SET status = 'live' WHERE status = 'staging'`);
+  stmt = db.prepare(`UPDATE pflanzen SET status = 'live' WHERE status = 'staging' AND (bild_gesperrt IS NULL OR bild_gesperrt = 0)`);
   result = stmt.run();
 }
 
