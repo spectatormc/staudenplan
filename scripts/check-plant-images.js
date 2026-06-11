@@ -24,6 +24,7 @@ const fs   = require('fs');
 const args        = process.argv.slice(2);
 const DRY_RUN     = args.includes('--dry-run');
 const FIX         = args.includes('--fix') && !args.includes('--dry-run');
+const PROPOSE     = args.includes('--propose') && !FIX && !DRY_RUN;
 const STAGING_ONLY= args.includes('--staging');
 const LIVE_ONLY   = args.includes('--live');
 const ONLY_BAD    = args.includes('--only-bad');
@@ -41,7 +42,8 @@ const log = (...msgs) => {
   try { fs.appendFileSync(LOG_FILE, line + '\n'); } catch {}
 };
 
-const UPDATE_BILD = db.prepare('UPDATE pflanzen SET bild_url = ?, bild_lizenz = ? WHERE id = ?');
+const UPDATE_BILD      = db.prepare('UPDATE pflanzen SET bild_url = ?, bild_lizenz = ? WHERE id = ?');
+const UPDATE_VORSCHLAG = db.prepare('UPDATE pflanzen SET bild_vorschlag = ?, bild_check_info = ? WHERE id = ?');
 
 // ── Pflanzenliste aufbauen ─────────────────────────────────────────────────────
 let where = "bild_url IS NOT NULL AND name_deutsch != 'Test-Pflanze'";
@@ -149,7 +151,7 @@ async function fetchReplacement(nameDeutsch, nameBotanisch) {
 async function main() {
   try { fs.writeFileSync(LOG_FILE, ''); } catch {} // Log leeren
 
-  const modus = DRY_RUN ? '[DRY RUN]' : FIX ? '[FIX-MODUS]' : '[NUR PRÜFEN]';
+  const modus = DRY_RUN ? '[DRY RUN]' : FIX ? '[FIX-MODUS]' : PROPOSE ? '[VORSCHLAG-MODUS]' : '[NUR PRÜFEN]';
   log(`\n=== Bildprüfung mit GPT-4o Vision ${modus} ===`);
   log(`Pflanzen: ${pflanzen.length} | Min-Konfidenz: ${MIN_KONF} | ${STAGING_ONLY ? 'Nur Staging' : LIVE_ONLY ? 'Nur Live' : 'Alle'}`);
   log(`Geschätzte Kosten: ~${(pflanzen.length * 0.003).toFixed(2)} € (${pflanzen.length} × 0.003 €)\n`);
@@ -194,6 +196,16 @@ async function main() {
           log(`   ✗ Kein Ersatz auf Pixabay gefunden`);
         }
         await new Promise(r => setTimeout(r, 400));
+      } else if (PROPOSE) {
+        process.stdout.write(`   🔍 Suche Vorschlag auf Pixabay…`);
+        const newUrl = await fetchReplacement(p.name_deutsch, p.name_botanisch);
+        if (newUrl) {
+          UPDATE_VORSCHLAG.run(newUrl, JSON.stringify({ konfidenz, was_gezeigt, grund }), p.id);
+          log(`   📌 Vorschlag gespeichert: ${newUrl.slice(0, 80)}`);
+        } else {
+          log(`   ✗ Kein Vorschlag auf Pixabay gefunden`);
+        }
+        await new Promise(r => setTimeout(r, 400));
       }
     } else {
       ergebnisse.ok.push({ ...p, result });
@@ -220,14 +232,19 @@ async function main() {
     ergebnisse.fehler.forEach(p => log(`  ⚠️  [${p.id}] ${p.name_deutsch} — ${p.fehler}`));
   }
 
-  if (!FIX && ergebnisse.schlecht.length > 0 && !DRY_RUN) {
-    log(`\nTipp: Mit --fix automatisch Pixabay-Ersatz suchen:`);
-    log(`  node scripts/check-plant-images.js --fix${STAGING_ONLY ? ' --staging' : LIVE_ONLY ? ' --live' : ''}`);
+  if (!FIX && !PROPOSE && ergebnisse.schlecht.length > 0 && !DRY_RUN) {
+    log(`\nTipp: Pixabay-Vorschläge speichern (manuelle Freigabe unter /checking):`);
+    log(`  node scripts/check-plant-images.js --propose${STAGING_ONLY ? ' --staging' : LIVE_ONLY ? ' --live' : ''}`);
+    log(`  oder direkt ersetzen mit --fix`);
   }
 
   if (FIX && ergebnisse.schlecht.length > 0) {
     log(`\nErsetzte Bilder sind sofort aktiv. Erneute Prüfung empfohlen:`);
     log(`  node scripts/check-plant-images.js${STAGING_ONLY ? ' --staging' : LIVE_ONLY ? ' --live' : ''}`);
+  }
+
+  if (PROPOSE && ergebnisse.schlecht.length > 0) {
+    log(`\nVorschläge gespeichert → zur Freigabe: https://staudenplan.de/checking?key=preview2026`);
   }
 
   log(`\nVollständiges Log: ${LOG_FILE}`);

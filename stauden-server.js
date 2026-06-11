@@ -987,6 +987,136 @@ app.get('/vorschau/pflanzen', (req, res) => {
   </body></html>`);
 });
 
+// ─── Bildprüfung: Vorschläge manuell freigeben ────────────────────────────────
+
+app.get('/checking', (req, res) => {
+  if (req.query.key !== 'preview2026') return res.status(403).send('<h2>403 — Key fehlt</h2><p>?key=preview2026</p>');
+
+  const pflanzen = db.prepare(`
+    SELECT id, name_deutsch, name_botanisch, bild_url, bild_vorschlag, bild_check_info, status
+    FROM pflanzen WHERE bild_vorschlag IS NOT NULL AND bild_vorschlag != ''
+    ORDER BY status DESC, name_deutsch
+  `).all();
+
+  const cards = pflanzen.map(p => {
+    let info = {};
+    try { info = JSON.parse(p.bild_check_info || '{}'); } catch {}
+    const konfStr = info.konfidenz != null ? `${(info.konfidenz * 100).toFixed(0)}% Konfidenz` : '';
+    const altImg = p.bild_url
+      ? `<img src="${p.bild_url}" onerror="this.parentElement.innerHTML='<div class=no-img>🌿 kein Bild</div>'">`
+      : `<div class="no-img">🌿 kein Bild</div>`;
+    return `<div class="card" id="card-${p.id}">
+      <div class="card-head">
+        <strong>${p.name_deutsch}</strong>
+        <span class="tag ${p.status === 'staging' ? 'tag-staging' : 'tag-live'}">${p.status}</span>
+      </div>
+      <div class="bot">${p.name_botanisch}</div>
+      <div class="imgs">
+        <div class="img-box">${altImg}<div class="lbl">⚠ Aktuell (falsch)</div></div>
+        <div class="img-box"><img src="${p.bild_vorschlag}" onerror="this.style.opacity='.3'"><div class="lbl">✦ Vorschlag Pixabay</div></div>
+      </div>
+      ${info.was_gezeigt ? `<div class="verdict">GPT-4o erkannte: <em>${info.was_gezeigt}</em>${konfStr ? ' · ' + konfStr : ''}${info.grund ? '<br><small>' + info.grund + '</small>' : ''}</div>` : ''}
+      <div class="btns">
+        <button class="btn-ok" onclick="approve(${p.id},this)">✓ Übernehmen</button>
+        <button class="btn-no" onclick="reject(${p.id},this)">✗ Behalten</button>
+      </div>
+    </div>`;
+  }).join('') || '<p style="color:#888;padding:20px">Keine Vorschläge vorhanden — zuerst <code>check-plant-images.js --live --propose</code> ausführen.</p>';
+
+  res.send(`<!DOCTYPE html><html lang="de"><head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Bildprüfung — Vorschläge freigeben</title>
+  <style>
+    *{box-sizing:border-box}
+    body{font-family:system-ui,sans-serif;max-width:1280px;margin:0 auto;padding:24px;background:#f8f6f0}
+    h1{color:#2d5a3d;margin-bottom:4px}
+    .meta{color:#888;margin-bottom:20px;font-size:.9rem}
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:18px}
+    .card{background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 6px rgba(0,0,0,.1);transition:opacity .3s}
+    .card.done{opacity:.35;pointer-events:none}
+    .card-head{display:flex;align-items:center;gap:8px;margin-bottom:2px}
+    .card-head strong{font-size:.97rem;color:#1b4332}
+    .bot{font-size:.76rem;color:#999;margin-bottom:12px}
+    .tag{font-size:.68rem;font-weight:700;padding:2px 7px;border-radius:20px;white-space:nowrap}
+    .tag-staging{background:#fff3cd;color:#856404}
+    .tag-live{background:#d1ecf1;color:#0c5460}
+    .imgs{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+    .img-box img{width:100%;height:140px;object-fit:cover;border-radius:8px;border:2px solid #e8e4de;display:block}
+    .no-img{width:100%;height:140px;background:#f0ede8;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1.4rem;color:#aaa}
+    .lbl{font-size:.7rem;color:#888;margin-top:4px;text-align:center}
+    .verdict{background:#fff8e1;border-radius:6px;padding:8px 10px;font-size:.78rem;color:#5d4037;margin-bottom:10px;line-height:1.4}
+    .btns{display:flex;gap:8px}
+    .btn-ok{flex:1;background:#2d6a4f;color:#fff;border:none;border-radius:8px;padding:10px;cursor:pointer;font-weight:600;font-size:.9rem}
+    .btn-ok:hover{background:#1b5e20}
+    .btn-no{flex:1;background:#f5f5f5;color:#555;border:1px solid #ddd;border-radius:8px;padding:10px;cursor:pointer;font-size:.9rem}
+    .btn-no:hover{background:#eee}
+    #counter{font-weight:600;color:#2d5a3d}
+    .all-btns{display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap}
+    .btn-all{padding:9px 18px;border-radius:8px;border:none;cursor:pointer;font-size:.88rem;font-weight:600}
+    .btn-all-ok{background:#2d6a4f;color:#fff}
+    .btn-all-no{background:#f5f5f5;color:#555;border:1px solid #ddd}
+  </style>
+</head><body>
+  <h1>🔍 Bildprüfung — Vorschläge freigeben</h1>
+  <p class="meta"><span id="counter">${pflanzen.length}</span> Vorschläge warten · Klicke pro Pflanze: ✓ Vorschlag übernehmen oder ✗ aktuelles Bild behalten</p>
+  <div class="all-btns">
+    <button class="btn-all btn-all-ok" onclick="approveAll()">✓ Alle übernehmen</button>
+    <button class="btn-all btn-all-no" onclick="rejectAll()">✗ Alle behalten</button>
+  </div>
+  <div class="grid" id="grid">${cards}</div>
+  <script>
+    function updateCounter(){
+      document.getElementById('counter').textContent=document.querySelectorAll('.card:not(.done)').length;
+    }
+    async function approve(id,btn){
+      const orig=btn.textContent; btn.textContent='⏳'; btn.disabled=true;
+      const r=await fetch('/api/bild-approve/'+id,{method:'POST'});
+      if(r.ok){document.getElementById('card-'+id).classList.add('done');updateCounter();}
+      else{btn.textContent=orig;btn.disabled=false;alert('Fehler');}
+    }
+    async function reject(id,btn){
+      const orig=btn.textContent; btn.textContent='⏳'; btn.disabled=true;
+      const r=await fetch('/api/bild-reject/'+id,{method:'POST'});
+      if(r.ok){document.getElementById('card-'+id).classList.add('done');updateCounter();}
+      else{btn.textContent=orig;btn.disabled=false;alert('Fehler');}
+    }
+    async function approveAll(){
+      if(!confirm('Alle '+document.querySelectorAll('.card:not(.done)').length+' Vorschläge übernehmen?'))return;
+      for(const c of document.querySelectorAll('.card:not(.done)')){
+        const id=c.id.replace('card-','');
+        const btn=c.querySelector('.btn-ok');
+        await approve(parseInt(id),btn);
+        await new Promise(r=>setTimeout(r,80));
+      }
+    }
+    async function rejectAll(){
+      if(!confirm('Alle Vorschläge ablehnen (aktuelle Bilder behalten)?'))return;
+      for(const c of document.querySelectorAll('.card:not(.done)')){
+        const id=c.id.replace('card-','');
+        const btn=c.querySelector('.btn-no');
+        await reject(parseInt(id),btn);
+        await new Promise(r=>setTimeout(r,80));
+      }
+    }
+  </script>
+</body></html>`);
+});
+
+app.post('/api/bild-approve/:id', (req, res) => {
+  const id = parseInt(req.params.id);
+  const p = db.prepare('SELECT bild_vorschlag FROM pflanzen WHERE id = ?').get(id);
+  if (!p?.bild_vorschlag) return res.status(404).json({ error: 'Kein Vorschlag' });
+  db.prepare("UPDATE pflanzen SET bild_url = ?, bild_lizenz = 'Pixabay License', bild_vorschlag = NULL, bild_check_info = NULL WHERE id = ?")
+    .run(p.bild_vorschlag, id);
+  res.json({ ok: true });
+});
+
+app.post('/api/bild-reject/:id', (req, res) => {
+  const id = parseInt(req.params.id);
+  db.prepare('UPDATE pflanzen SET bild_vorschlag = NULL, bild_check_info = NULL WHERE id = ?').run(id);
+  res.json({ ok: true });
+});
+
 // ─── Pflanzenseiten (SEO) ─────────────────────────────────────────────────────
 
 app.get('/pflanzen', (req, res) => {
