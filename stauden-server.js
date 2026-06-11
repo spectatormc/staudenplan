@@ -580,6 +580,7 @@ JSON-Format:
     "preis_stueck_eur": 0.00,
     "kauflink": "https://www.amazon.de/s?k=...&tag=gartenbaukosten-21"
   }],
+  "beetbeschreibung": "2–3 Sätze die den Charakter und die Gesamtwirkung des Beetes beschreiben — Stil, Farbstimmung, saisonale Höhepunkte, Atmosphäre. Formuliere so, als würdest du einem Gartenbesucher das Konzept erklären.",
   "gesamtkosten_geschaetzt": "...",
   "pflanzabstand_hinweis": "...",
   "pflanzkalender": { "Frühling": [], "Sommer": [], "Herbst": [], "Winter": [] },
