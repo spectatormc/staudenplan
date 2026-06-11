@@ -1261,6 +1261,7 @@ app.get('/auswahl-pflanzen', (req, res) => {
         <strong>${p.name_deutsch}</strong>
         <span class="bot">${p.name_botanisch}</span>
         <span class="done-badge" id="done-${p.id}" style="display:none">✓ Gespeichert</span>
+        ${p.bild_url ? `<button class="btn-behalten" onclick="waehle(${p.id},'${p.bild_url}',-1)">Bestand behalten</button>` : ''}
         <button class="btn-falsch" onclick="alleFalsch(${p.id},this)">Alle falsch</button>
       </div>
       <div class="imgs-row">
@@ -1299,6 +1300,8 @@ app.get('/auswahl-pflanzen', (req, res) => {
     .plant-head strong{font-size:1rem;color:#1b4332}
     .bot{font-size:.78rem;color:#999}
     .done-badge{font-size:.78rem;background:#d4edda;color:#155724;padding:3px 10px;border-radius:20px;font-weight:600}
+    .btn-behalten{background:#e8f5e9;border:1px solid #81c784;color:#2d5a3d;font-size:.78rem;font-weight:600;padding:4px 12px;border-radius:20px;cursor:pointer}
+    .btn-behalten:hover{background:#c8e6c9}
     .btn-falsch{margin-left:auto;background:#fff3cd;border:1px solid #e0b84a;color:#856404;font-size:.78rem;font-weight:600;padding:4px 12px;border-radius:20px;cursor:pointer}
     .btn-falsch:hover{background:#ffeaa0}
     .imgs-row{display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap}
