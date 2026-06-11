@@ -1095,6 +1095,12 @@
       <div class="poly-list" id="poly-list"></div>
       <div class="canvas-area-result" id="canvas-area-result"></div>
     </div>
+    <div class="form-group" style="margin-top:16px">
+      <label class="field-label">Postleitzahl <span style="font-weight:400;color:#aaa">(optional — für regionale Empfehlungen)</span></label>
+      <div class="input-unit" style="max-width:140px">
+        <input type="text" id="plz-input-p" maxlength="5" placeholder="z.B. 80331" pattern="[0-9]{5}" oninput="formData.plz=this.value.trim()">
+      </div>
+    </div>
     <label class="field-label" style="margin-top:20px;margin-bottom:8px;display:block">Blickrichtung aufs Beet</label>
     <div id="sichtseite-grid-pro" style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin-bottom:0">
       <div id="sicht-svg-wrap-pro"></div>
@@ -1347,6 +1353,12 @@
         <span class="lxb-times">×</span>
         <div class="input-unit"><input type="number" id="breite-s" min="0.1" max="500" step="0.1" placeholder="Breite" oninput="calcLxB('s')"><span>m</span></div>
         <span class="lxb-eq" id="lxb-result-s">= — m²</span>
+      </div>
+    </div>
+    <div class="form-group" style="margin-top:16px">
+      <label class="field-label">Postleitzahl <span style="font-weight:400;color:#aaa">(optional — für regionale Empfehlungen)</span></label>
+      <div class="input-unit" style="max-width:140px">
+        <input type="text" id="plz-input-s" maxlength="5" placeholder="z.B. 80331" pattern="[0-9]{5}" oninput="formData.plz=this.value.trim()">
       </div>
     </div>
     <label class="field-label" style="margin-top:20px;margin-bottom:8px;display:block">Blickrichtung aufs Beet</label>
@@ -2441,7 +2453,8 @@
         nutzung: formData.nutzung,
         pflegezeit: formData.pflegezeit,
         vielfalt: formData.vielfalt || 'ausgewogen',
-        dichte: formData.dichte || 'normal'
+        dichte: formData.dichte || 'normal',
+        plz: formData.plz || null
       };
       const res = await fetch('/api/plan', {
         method: 'POST',

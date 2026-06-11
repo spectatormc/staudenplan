@@ -486,9 +486,20 @@ app.get('/', (req, res) => {
   }
 });
 
+function getKlimaregion(plz) {
+  if (!plz || plz.length < 2) return null;
+  const n = parseInt(plz.substring(0, 2));
+  if (n <= 19) return 'Ostdeutschland (kontinental: trockene, heiße Sommer, kalte Winter — trockenheitstolerante und frostharte Arten bevorzugen)';
+  if (n <= 39) return 'Norddeutschland/Küste (maritim: mild, feucht, Spätfrost selten — feuchtigkeitsverträgliche und windrobuste Arten bevorzugen)';
+  if (n <= 59) return null; // NRW/Mitte — Standardklima, kein besonderer Hinweis nötig
+  if (n <= 69) return 'Rheintal/Rhein-Main (warm, relativ trocken, lange Vegetationsperiode — wärmeliebende und trockenheitstolerante Arten gut geeignet, mediterrane Stauden möglich)';
+  if (n <= 79) return 'Baden-Württemberg (gemäßigt bis kühl in Höhenlagen — auf Lage im Tal vs. Höhenlage achten, hohe Niederschläge im Schwarzwald)';
+  return 'Bayern/Alpenvorland (kontinental: heiße Sommer, kalte Winter, Spätfrost bis Mai möglich, oft Kalkboden — frostharte und kalkverträgliche Arten bevorzugen, Trockenheitstoleranz wichtig)';
+}
+
 app.post('/api/plan', planLimiter, async (req, res) => {
   const { gartenflaeche, licht, boden, standort_beschreibung, stil, sichtseite, farbe, saison,
-          lieblingspflanzen, budget, nutzung, pflegezeit, vielfalt, dichte } = req.body;
+          lieblingspflanzen, budget, nutzung, pflegezeit, vielfalt, dichte, plz } = req.body;
 
   if (!gartenflaeche || !licht || !boden || !stil) {
     return res.status(400).json({ error: 'Bitte alle Pflichtfelder ausfüllen.' });
@@ -526,6 +537,8 @@ app.post('/api/plan', planLimiter, async (req, res) => {
     return `Pflanzdichte: normal (3–5 Pflanzen/m²). Gesamtziel ca. ${ziel} Pflanzen für ${gartenflaeche} m². Gute Flächendeckung mit natürlicher Wirkung.`;
   })();
 
+  const klimaregion = getKlimaregion(plz);
+
   const userPrompt = `Erstelle einen Bepflanzungsplan für einen Privatgarten:
 - Fläche: ${gartenflaeche} m²
 - Standort: ${standort_beschreibung || `${licht}, ${boden}`}
@@ -534,7 +547,7 @@ app.post('/api/plan', planLimiter, async (req, res) => {
 - Gartenstil: ${stil}
 - Beettyp / Sichtseite: ${sichtseite || 'einseitig'}
 - Farbwunsch: ${farbe || 'keine Präferenz'}
-- Blühsaison-Priorität: ${saison || 'ganzjährig'}${lieblingsList ? `\n- Lieblingspflanzen (unbedingt einplanen): ${lieblingsList}` : ''}${budget ? `\n- Budget: maximal ${budget} € Gesamtkosten` : ''}${nutzungList ? `\n- Gartennutzung/Schwerpunkt: ${nutzungList}` : ''}${pflegezeit ? `\n- Gewünschte Pflegeintensität: ${pflegezeit}` : ''}
+- Blühsaison-Priorität: ${saison || 'ganzjährig'}${plz ? `\n- Region (PLZ ${plz}): ${klimaregion || 'Mitteleuropa, gemäßigtes Klima'}` : ''}${lieblingsList ? `\n- Lieblingspflanzen (unbedingt einplanen): ${lieblingsList}` : ''}${budget ? `\n- Budget: maximal ${budget} € Gesamtkosten` : ''}${nutzungList ? `\n- Gartennutzung/Schwerpunkt: ${nutzungList}` : ''}${pflegezeit ? `\n- Gewünschte Pflegeintensität: ${pflegezeit}` : ''}
 
 ${lieblingsList ? `WICHTIG ZU DEN LIEBLINGSPFLANZEN: Prüfe ob die gewünschten Pflanzen zum angegebenen Standort (${licht}, ${boden}, Feuchtigkeit: ${feuchtigkeit}) passen. Falls eine Pflanze nicht passt, weise im "tipps"-Feld explizit darauf hin und schlage eine Alternative vor. Dennoch: Baue alle Lieblingspflanzen ein, sofern irgendwie vertretbar.\n` : ''}${sichtseite && sichtseite.includes('Einseitig') ? 'ANORDNUNG: Einseitig einsehbares Beet — hohe Pflanzen (>80 cm) im Hintergrund, mittlere in der Mitte, niedrige (<40 cm) im Vordergrund. Im Feld "standort" jeder Pflanze angeben: "Hintergrund", "Mitte" oder "Vordergrund".' : ''}${sichtseite && sichtseite.includes('Rundbeet') ? 'ANORDNUNG: Rundbeet / Inselbeet — höchste Pflanzen in der Mitte, nach außen abnehmende Höhen. Im Feld "standort" angeben: "Mitte", "Mittelzone" oder "Rand".' : ''}${sichtseite && sichtseite.includes('Eckbeet') ? 'ANORDNUNG: Eckbeet — höchste Pflanzen an der Ecke/Rückwand, diagonal nach vorne-links und vorne-rechts abfallend. Im Feld "standort" angeben: "Ecke/Hintergrund", "Mitte" oder "Vordergrund".' : ''}
 ${vielfaltAnweisung} ${dichteAnweisung} Berechne Stückzahlen für ${gartenflaeche} m².
