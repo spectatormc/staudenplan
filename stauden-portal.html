@@ -375,23 +375,18 @@
     .btn-alt:hover { background: var(--green-pale); }
     .btn-alt:disabled { opacity: 0.5; cursor: wait; }
 
-    /* Jahreskalender */
-    .kalender-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-      gap: 12px;
-      margin-bottom: 36px;
-    }
-    .kalender-card {
-      background: #fff;
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      padding: 16px;
-    }
-    .kalender-card h4 { font-size: 0.95rem; color: var(--green-dark); margin-bottom: 10px; }
-    .kalender-card ul { list-style: none; padding: 0; }
-    .kalender-card ul li { font-size: 0.83rem; color: var(--text-light); padding: 3px 0; display: flex; gap: 6px; }
-    .kalender-card ul li::before { content: '→'; color: var(--green-light); flex-shrink: 0; }
+    /* Blühkalender Timeline */
+    .bk-wrap { margin-bottom: 32px; overflow-x: auto; }
+    .bk-row { display: flex; align-items: center; gap: 6px; padding: 4px 0; border-bottom: 1px solid #f3f4f6; min-width: 420px; }
+    .bk-row:last-child { border-bottom: none; }
+    .bk-row.bk-header { border-bottom: 2px solid #e5e7eb; padding-bottom: 6px; margin-bottom: 2px; }
+    .bk-dot { width: 10px; min-width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .bk-name { width: 130px; min-width: 130px; font-size: .78rem; color: #374151; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .bk-header .bk-name { font-size: .7rem; color: #9ca3af; }
+    .bk-months { display: flex; gap: 3px; flex: 1; }
+    .bk-cell { flex: 1; height: 14px; border-radius: 3px; background: #f3f4f6; }
+    .bk-cell.bk-lbl { background: none; font-size: .67rem; color: #9ca3af; text-align: center; height: auto; line-height: 1; }
+    @media(max-width:480px){ .bk-name { width: 90px; min-width: 90px; } }
 
     /* Tipps */
     .tipps-list { background: var(--green-pale); border-radius: var(--radius); padding: 20px 24px; margin-bottom: 36px; }
@@ -1648,8 +1643,9 @@
     <div style="max-width:900px;margin:0 auto;padding:0 20px 60px">
       <div class="section-title">🌺 Empfohlene Pflanzen</div>
       <div class="pflanzen-grid" id="pflanzen-grid"></div>
-      <div class="section-title">📅 Jahreskalender</div>
-      <div class="kalender-grid" id="kalender-grid"></div>
+      <div class="section-title">📅 Blühkalender</div>
+      <div id="bluehkalender-wrap" class="bk-wrap"></div>
+      <div id="kalender-grid" style="display:none"></div>
       <div class="section-title">💡 Tipps</div>
       <ul class="tipps-list" id="tipps-list"></ul>
       <div class="anfrage-cta">
@@ -3560,6 +3556,45 @@
     renderStueckliste(currentPlan);
   }
 
+  function renderBluehkalender(plan) {
+    const el = document.getElementById('bluehkalender-wrap');
+    if (!el) return;
+    const MONATE = ['Mrz','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov'];
+    const MONAT_NR = [3,4,5,6,7,8,9,10,11];
+    const MONAT_IDX = {'jan':1,'feb':2,'mär':3,'mar':3,'apr':4,'mai':5,'jun':6,'jul':7,'aug':8,'sep':9,'okt':10,'nov':11,'dez':12};
+    function parseMonate(bz) {
+      if (!bz) return [];
+      const s = bz.toLowerCase();
+      if (s.includes('ganzjähr') || s.includes('immergrün')) return MONAT_NR;
+      const found = Object.entries(MONAT_IDX)
+        .filter(([k]) => s.includes(k)).map(([,v]) => v).sort((a,b) => a-b);
+      if (!found.length) return [];
+      const lo = found[0], hi = found[found.length-1];
+      return Array.from({length: hi-lo+1}, (_,i) => lo+i);
+    }
+    const header = `<div class="bk-row bk-header">
+      <div class="bk-dot"></div>
+      <div class="bk-name">Pflanze</div>
+      <div class="bk-months">${MONATE.map(m=>`<div class="bk-cell bk-lbl">${m}</div>`).join('')}</div>
+    </div>`;
+    const rows = plan.pflanzen.map(p => {
+      const monate = parseMonate(p.bluehzeit);
+      const c = bloomColor(p.farbe);
+      const cells = MONAT_NR.map(m => {
+        const on = monate.includes(m);
+        return `<div class="bk-cell" style="${on?`background:${c};opacity:.82`:``}"></div>`;
+      }).join('');
+      return `<div class="bk-row">
+        <div class="bk-dot" style="background:${c}"></div>
+        <div class="bk-name" title="${p.name_deutsch} · ${p.bluehzeit||''}">
+          ${p.name_deutsch}${monate.length===0?'<span style="font-size:.65rem;color:#ccc;margin-left:3px">?</span>':''}
+        </div>
+        <div class="bk-months">${cells}</div>
+      </div>`;
+    }).join('');
+    el.innerHTML = header + rows;
+  }
+
   function renderErgebnis(plan) {
     _baseStueck = plan.pflanzen.map(p => p.stueckzahl);
     document.querySelectorAll('.dichte-btn').forEach((b,i) => b.classList.toggle('active', i===1));
@@ -3608,15 +3643,8 @@
       </div>`;
     }).join('');
 
-    // Kalender
-    const jez = { 'Frühling': '🌱', 'Sommer': '☀️', 'Herbst': '🍂', 'Winter': '❄️' };
-    const winterHint = '<p style="font-size:.75rem;color:#aaa;margin:0 0 6px">Winterschmuck / Struktur</p>';
-    document.getElementById('kalender-grid').innerHTML = Object.entries(plan.pflanzkalender || {}).map(([jz, items]) => `
-      <div class="kalender-card">
-        <h4>${jez[jz] || '📅'} ${jz}</h4>
-        ${jz === 'Winter' && (items||[]).length > 0 ? winterHint : ''}
-        <ul>${(items||[]).length > 0 ? (items||[]).map(item => `<li>${item}</li>`).join('') : '<li style="color:#ccc">–</li>'}</ul>
-      </div>`).join('');
+    // Blühkalender Timeline
+    renderBluehkalender(plan);
 
     // Tipps
     const tipps = document.getElementById('tipps-list');
