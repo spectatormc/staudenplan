@@ -3429,34 +3429,35 @@
       const groundPt = proj(wx, wd, WALL);
       const crownPt  = proj(wx, wd, WALL + h_m);
 
-      const crownRx = Math.max(7, rFrac * bedW * ISO_X * 1.1);
-      const crownRy = crownRx * 0.6;
-      const stemW   = Math.max(1.2, crownRx * 0.18);
+      const crownRx = Math.max(9, rFrac * bedW * ISO_X * 1.65);
+      const crownRy = crownRx * 0.68;
+      const stemW   = Math.max(2.0, crownRx * 0.22);
       const opa     = inSaison ? 1 : 0.28;
       const glowA   = (inSaison && saison && saison !== 'alle') ? 'filter="url(#glow)"' : '';
 
-      const shadow = `<ellipse cx="${groundPt.x.toFixed(1)}" cy="${groundPt.y.toFixed(1)}" rx="${(crownRx * 0.7).toFixed(1)}" ry="${(crownRx * 0.28).toFixed(1)}" fill="rgba(0,0,0,.14)"/>`;
-      const stem   = `<line x1="${groundPt.x.toFixed(1)}" y1="${groundPt.y.toFixed(1)}" x2="${crownPt.x.toFixed(1)}" y2="${crownPt.y.toFixed(1)}" stroke="#5a7a3a" stroke-width="${stemW.toFixed(1)}"/>`;
+      const shadow = `<ellipse cx="${groundPt.x.toFixed(1)}" cy="${groundPt.y.toFixed(1)}" rx="${(crownRx * 0.75).toFixed(1)}" ry="${(crownRx * 0.3).toFixed(1)}" fill="rgba(0,0,0,.16)"/>`;
+      const stem   = `<line x1="${groundPt.x.toFixed(1)}" y1="${groundPt.y.toFixed(1)}" x2="${crownPt.x.toFixed(1)}" y2="${crownPt.y.toFixed(1)}" stroke="#4e7030" stroke-width="${stemW.toFixed(1)}"/>`;
 
       let crown, label = '';
       if (isFuell) {
-        crown = `<ellipse cx="${crownPt.x.toFixed(1)}" cy="${crownPt.y.toFixed(1)}" rx="${(crownRx * 0.85).toFixed(1)}" ry="${(crownRy * 0.85).toFixed(1)}" fill="${c}" opacity="${(opa * 0.62).toFixed(2)}" filter="url(#isoBlur)"/>`;
+        crown = `<ellipse cx="${crownPt.x.toFixed(1)}" cy="${crownPt.y.toFixed(1)}" rx="${(crownRx * 0.9).toFixed(1)}" ry="${(crownRy * 0.9).toFixed(1)}" fill="${c}" opacity="${(opa * 0.62).toFixed(2)}" filter="url(#isoBlur)"/>`;
       } else {
-        crown = `<ellipse cx="${crownPt.x.toFixed(1)}" cy="${crownPt.y.toFixed(1)}" rx="${crownRx.toFixed(1)}" ry="${crownRy.toFixed(1)}" fill="${c}" opacity="${opa}" stroke="rgba(255,255,255,.5)" stroke-width="1.2" ${glowA}/>`;
-        const fs = Math.max(7, crownRx * 0.58);
-        label = `<text x="${crownPt.x.toFixed(1)}" y="${(crownPt.y + fs * 0.4).toFixed(1)}" text-anchor="middle" font-size="${fs.toFixed(0)}px" font-weight="800" fill="rgba(0,0,0,.65)" font-family="system-ui">${num}</text>`;
+        crown = `<ellipse cx="${crownPt.x.toFixed(1)}" cy="${crownPt.y.toFixed(1)}" rx="${crownRx.toFixed(1)}" ry="${crownRy.toFixed(1)}" fill="${c}" opacity="${opa}" stroke="rgba(255,255,255,.55)" stroke-width="1.5" ${glowA}/>`;
+        const fs = Math.max(8, crownRx * 0.65);
+        label = `<text x="${crownPt.x.toFixed(1)}" y="${(crownPt.y + fs * 0.42).toFixed(1)}" text-anchor="middle" font-size="${fs.toFixed(0)}px" font-weight="800" fill="rgba(0,0,0,.7)" font-family="system-ui">${num}</text>`;
       }
 
       return `<g>${shadow}${stem}${crown}${label}</g>`;
     }).join('');
 
-    // Dimension labels
-    const backMid  = proj(bedW / 2, 0, WALL);
-    const frontMid = proj(bedW / 2, bedD, WALL);
-    const leftMid  = proj(0, bedD / 2, WALL);
-    const rightMid = proj(bedW, bedD / 2, WALL);
+    // Labels: corners + dimensions
+    const backCorner  = proj(0, 0, WALL);          // back-left rim = topmost ISO point
+    const frontBottom = proj(bedW / 2, bedD, 0);   // front-wall center at ground
+    const leftMid     = proj(0, bedD / 2, WALL);
+    const rightMid    = proj(bedW, bedD / 2, WALL);
+    const lx = Math.max(22, leftMid.x - 10);       // clamp so left label stays on canvas
 
-    const svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg" style="max-width:100%;display:block;border-radius:10px">
+    const svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg" overflow="visible" style="max-width:100%;display:block;border-radius:10px">
       <defs>
         <filter id="glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
         <filter id="isoBlur" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="3.5"/></filter>
@@ -3464,6 +3465,7 @@
           <stop offset="0%" stop-color="#e8f0e9"/>
           <stop offset="100%" stop-color="#f4f0ea"/>
         </linearGradient>
+        <clipPath id="bgClip"><rect width="${W}" height="${H}" rx="10"/></clipPath>
       </defs>
       <rect width="${W}" height="${H}" fill="url(#isoBg)" rx="10"/>
       ${rightWall}${frontWall}
@@ -3471,9 +3473,9 @@
       ${soilDots}
       ${gridLines.join('')}
       ${plantSVGs}
-      <text x="${backMid.x.toFixed(0)}" y="${(backMid.y - 9).toFixed(0)}" text-anchor="middle" font-size="9" fill="#999" font-family="system-ui">↑ Hinten</text>
-      <text x="${frontMid.x.toFixed(0)}" y="${(frontMid.y + 17).toFixed(0)}" text-anchor="middle" font-size="9" fill="#999" font-family="system-ui">↓ Vordergrund</text>
-      <text x="${(leftMid.x - 10).toFixed(0)}" y="${(leftMid.y + 3).toFixed(0)}" text-anchor="end" font-size="9" fill="#bbb" font-family="system-ui">${bedD.toFixed(1)} m</text>
+      <text x="${backCorner.x.toFixed(0)}" y="${(backCorner.y - 14).toFixed(0)}" text-anchor="middle" font-size="9" fill="#999" font-family="system-ui">↑ Hinten</text>
+      <text x="${frontBottom.x.toFixed(0)}" y="${(frontBottom.y + 20).toFixed(0)}" text-anchor="middle" font-size="9" fill="#999" font-family="system-ui">↓ Vordergrund</text>
+      <text x="${lx}" y="${(leftMid.y + 3).toFixed(0)}" text-anchor="end" font-size="9" fill="#bbb" font-family="system-ui">${bedD.toFixed(1)} m</text>
       <text x="${(rightMid.x + 6).toFixed(0)}" y="${(rightMid.y + 3).toFixed(0)}" font-size="9" fill="#bbb" font-family="system-ui">${bedW.toFixed(1)} m</text>
     </svg>`;
 
