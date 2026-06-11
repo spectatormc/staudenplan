@@ -1116,7 +1116,7 @@
         <input type="text" id="plz-input-p" maxlength="5" placeholder="z.B. 80331" pattern="[0-9]{5}" oninput="formData.plz=this.value.trim()">
       </div>
     </div>
-    <label class="field-label" style="margin-top:20px;margin-bottom:8px;display:block">Blickrichtung aufs Beet <span class="sicht-pflicht">* Pflicht</span></label>
+    <label class="field-label" style="margin-top:20px;margin-bottom:8px;display:block">Blickrichtung aufs Beet <span style="font-size:.8rem;font-weight:400;color:#888">(optional)</span></label>
     <div id="sichtseite-grid-pro" style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin-bottom:0">
       <div id="sicht-svg-wrap-pro"></div>
       <div>
@@ -1124,7 +1124,7 @@
         <div id="sicht-hint-pro" style="font-size:.8rem;color:#aaa;margin-top:3px">Klicke auf einen der 12 Punkte</div>
       </div>
     </div>
-    <div id="pro-err-1" class="error-msg" style="display:none">Bitte Fläche eingeben und Blickrichtung wählen.</div>
+    <div id="pro-err-1" class="error-msg" style="display:none">Bitte Fläche eingeben.</div>
     <div class="btn-row" style="margin-top:20px">
       <button class="btn-back" onclick="showModewahl()">← Modus ändern</button>
       <button class="btn-next" id="pro-btn-next-1" onclick="proGoStep(2)" disabled>Weiter →</button>
@@ -1377,7 +1377,7 @@
         <input type="text" id="plz-input-s" maxlength="5" placeholder="z.B. 80331" pattern="[0-9]{5}" oninput="formData.plz=this.value.trim()">
       </div>
     </div>
-    <label class="field-label" style="margin-top:20px;margin-bottom:8px;display:block">Blickrichtung aufs Beet <span class="sicht-pflicht">* Pflicht</span></label>
+    <label class="field-label" style="margin-top:20px;margin-bottom:8px;display:block">Blickrichtung aufs Beet <span style="font-size:.8rem;font-weight:400;color:#888">(optional)</span></label>
     <div id="sichtseite-grid-einfach" style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin-bottom:0">
       <div id="sicht-svg-wrap-einfach"></div>
       <div>
@@ -1385,7 +1385,7 @@
         <div id="sicht-hint-einfach" style="font-size:.8rem;color:#aaa;margin-top:3px">Klicke auf einen der 12 Punkte</div>
       </div>
     </div>
-    <div id="err-1" class="error-msg" style="display:none">Bitte Fläche eingeben und Blickrichtung wählen.</div>
+    <div id="err-1" class="error-msg" style="display:none">Bitte Fläche eingeben.</div>
     <div class="btn-row">
       <button class="btn-next" id="btn-next-1" onclick="goStep(2)" disabled>Weiter →</button>
     </div>
@@ -1984,10 +1984,6 @@
   }
 
   function goStep(n) {
-    if (n === 2 && !formData.sichtseite) {
-      document.getElementById('err-1').style.display = 'block';
-      return;
-    }
     document.querySelectorAll('#view-fragebogen .step').forEach(s => s.classList.remove('active'));
     document.getElementById('step-' + n).classList.add('active');
     updateProgress(n);
@@ -2046,7 +2042,7 @@
 
   function validateStep1() {
     const v = parseFloat(document.getElementById('gartenflaeche').value);
-    const valid = v > 0 && !!formData.sichtseite;
+    const valid = v > 0;
     document.getElementById('btn-next-1').disabled = !valid;
     document.getElementById('err-1').style.display = valid ? 'none' : 'block';
     if (v > 0) formData.gartenflaeche = v;
@@ -2081,7 +2077,7 @@
   function validateProStep1() {
     const inputV = parseFloat(document.getElementById('pro-gartenflaeche').value);
     if (inputV > 0) formData.gartenflaeche = inputV;
-    const valid = (formData.gartenflaeche > 0) && !!formData.sichtseite;
+    const valid = formData.gartenflaeche > 0;
     document.getElementById('pro-btn-next-1').disabled = !valid;
   }
 
@@ -2531,6 +2527,14 @@
   function validateStep1() {
     const v = parseFloat(document.getElementById('gartenflaeche').value);
     const valid = v > 0 && !!formData.sichtseite;
+    document.getElementById('btn-next-1').disabled = !valid;
+    document.getElementById('err-1').style.display = valid ? 'none' : 'block';
+    if (v > 0) formData.gartenflaeche = v;
+  }
+
+  function validateStep1() {
+    const v = parseFloat(document.getElementById('gartenflaeche').value);
+    const valid = v > 0;
     document.getElementById('btn-next-1').disabled = !valid;
     document.getElementById('err-1').style.display = valid ? 'none' : 'block';
     if (v > 0) formData.gartenflaeche = v;
