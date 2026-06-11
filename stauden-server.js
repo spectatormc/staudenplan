@@ -925,63 +925,132 @@ app.get('/vorschau/pflanzen', (req, res) => {
     return res.status(403).send('<h2>403 — Vorschau-Key fehlt</h2><p>?key=preview2026</p>');
   }
   const pflanzen = db.prepare(`
-    SELECT id, name_deutsch, name_botanisch, licht, boden, feuchtigkeit, bluehzeit, farbe,
+    SELECT id, name_deutsch, name_botanisch, licht, boden, bluehzeit, farbe,
            hoehe_cm_min, hoehe_cm_max, pflege_sterne, rolle_empfehlung, bild_url,
-           wuchs, trockenheitstoleranz, bienen_freundlich, heimisch, stil
+           bienen_freundlich, heimisch, bild_geprueft
     FROM pflanzen WHERE status = 'staging' ORDER BY name_deutsch
   `).all();
   const total    = pflanzen.length;
   const ohneBild = pflanzen.filter(p => !p.bild_url).length;
+  const ausstehend = pflanzen.filter(p => !p.bild_geprueft);
+  const bearbeitet = pflanzen.filter(p =>  p.bild_geprueft);
 
-  const rows = pflanzen.map(p => {
-    const img    = p.bild_url ? `<img src="${p.bild_url}" style="width:60px;height:60px;object-fit:cover;border-radius:6px">` : `<span style="display:inline-block;width:60px;height:60px;background:#f0ede8;border-radius:6px;text-align:center;line-height:60px;font-size:1.4rem">🌿</span>`;
-    const bienen = p.bienen_freundlich ? '🐝' : '';
+  const makeRow = (p, mitCheckbox) => {
+    const img      = p.bild_url ? `<img src="${p.bild_url}" style="width:56px;height:56px;object-fit:cover;border-radius:6px">` : `<span style="display:inline-block;width:56px;height:56px;background:#f0ede8;border-radius:6px;text-align:center;line-height:56px;font-size:1.3rem">🌿</span>`;
+    const bienen   = p.bienen_freundlich ? '🐝' : '';
     const heimisch = p.heimisch ? '🏡' : '';
+    const cb       = mitCheckbox ? `<td style="padding:8px 6px;text-align:center"><input type="checkbox" class="pcb" value="${p.id}"></td>` : `<td></td>`;
+    const geprueft = p.bild_geprueft ? `<span style="font-size:.7rem;background:#d1ecf1;color:#0c5460;padding:2px 7px;border-radius:10px;font-weight:600">✓ geprüft</span>` : '';
     return `<tr>
+      ${cb}
       <td style="padding:8px 6px;text-align:center">${img}</td>
-      <td style="padding:8px 6px"><strong>${p.name_deutsch}</strong><br><small style="color:#888">${p.name_botanisch}</small></td>
-      <td style="padding:8px 6px">${p.licht || '–'}</td>
-      <td style="padding:8px 6px">${p.bluehzeit || '–'}</td>
-      <td style="padding:8px 6px">${p.farbe || '–'}</td>
-      <td style="padding:8px 6px">${p.hoehe_cm_min || '?'}–${p.hoehe_cm_max || '?'} cm</td>
-      <td style="padding:8px 6px">${p.rolle_empfehlung || '–'}</td>
+      <td style="padding:8px 6px"><strong>${p.name_deutsch}</strong> ${geprueft}<br><small style="color:#888">${p.name_botanisch}</small></td>
+      <td style="padding:8px 6px;font-size:.82rem">${p.licht || '–'}</td>
+      <td style="padding:8px 6px;font-size:.82rem">${p.bluehzeit || '–'}</td>
+      <td style="padding:8px 6px;font-size:.82rem">${p.farbe || '–'}</td>
+      <td style="padding:8px 6px;font-size:.82rem">${p.hoehe_cm_min || '?'}–${p.hoehe_cm_max || '?'} cm</td>
+      <td style="padding:8px 6px;font-size:.82rem">${p.rolle_empfehlung || '–'}</td>
       <td style="padding:8px 6px">${bienen}${heimisch}</td>
-      <td style="padding:8px 6px"><a href="/pflanze/${encodeURIComponent((p.name_botanisch||'').toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,''))}" target="_blank" style="color:#4a8c5c;font-size:.8rem">→ Seite</a></td>
     </tr>`;
-  }).join('');
+  };
+
+  const rowsAus = ausstehend.map(p => makeRow(p, true)).join('');
+  const rowsBea = bearbeitet.map(p => makeRow(p, false)).join('');
 
   res.send(`<!DOCTYPE html><html lang="de"><head>
-    <meta charset="UTF-8"><title>Staging-Vorschau — ${total} Pflanzen</title>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Staging-Vorschau — ${total} Pflanzen</title>
     <style>
-      body { font-family: system-ui, sans-serif; max-width: 1100px; margin: 0 auto; padding: 24px; background: #f8f6f0 }
-      h1 { color: #2d5a3d; margin-bottom: 4px }
-      .meta { color: #888; margin-bottom: 20px; font-size: .9rem }
-      .warn { background: #fff3cd; border: 1px solid #f0c040; border-radius: 8px; padding: 12px 16px; margin-bottom: 20px; font-size: .9rem }
-      .approve-box { background: #e8f5e9; border: 1px solid #81c784; border-radius: 8px; padding: 14px 18px; margin-bottom: 24px; font-family: monospace; font-size: .85rem; color: #1b5e20 }
-      table { width: 100%; border-collapse: collapse; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.08) }
-      th { background: #2d5a3d; color: white; padding: 10px 6px; text-align: left; font-size: .82rem }
-      tr:nth-child(even) { background: #f9f7f3 }
-      input[type=search] { padding: 8px 14px; border: 1px solid #ddd; border-radius: 8px; width: 300px; font-size: .9rem; margin-bottom: 16px }
+      *{box-sizing:border-box}
+      body{font-family:system-ui,sans-serif;max-width:1200px;margin:0 auto;padding:24px;background:#f8f6f0}
+      h1{color:#2d5a3d;margin-bottom:4px}
+      h2{color:#2d5a3d;margin:32px 0 12px;font-size:1.1rem}
+      .meta{color:#888;margin-bottom:20px;font-size:.9rem}
+      .warn{background:#fff3cd;border:1px solid #f0c040;border-radius:8px;padding:12px 16px;margin-bottom:20px;font-size:.9rem}
+      .approve-box{background:#e8f5e9;border:1px solid #81c784;border-radius:8px;padding:14px 18px;margin-bottom:24px;font-family:monospace;font-size:.85rem;color:#1b5e20}
+      table{width:100%;border-collapse:collapse;background:white;border-radius:10px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:8px}
+      th{background:#2d5a3d;color:white;padding:9px 6px;text-align:left;font-size:.8rem}
+      tr:nth-child(even){background:#f9f7f3}
+      input[type=search]{padding:8px 14px;border:1px solid #ddd;border-radius:8px;width:280px;font-size:.9rem;margin-bottom:12px}
+      .toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+      .btn-check{background:#2d6a4f;color:#fff;border:none;border-radius:8px;padding:9px 18px;cursor:pointer;font-weight:600;font-size:.88rem}
+      .btn-check:disabled{opacity:.5;cursor:not-allowed}
+      .btn-all{background:none;border:1px solid #aaa;border-radius:8px;padding:7px 13px;cursor:pointer;font-size:.82rem;color:#555}
+      #sel-count{font-size:.85rem;color:#2d5a3d;font-weight:600}
+      #status-msg{font-size:.85rem;color:#1b5e20;font-weight:600;display:none}
+      input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:#2d6a4f}
     </style>
   </head><body>
     <h1>🌿 Staging-Vorschau</h1>
-    <p class="meta">${total} Pflanzen im Staging · ${ohneBild} ohne Bild · Nur intern sichtbar · Nicht in Planung oder Suche</p>
-    ${ohneBild > 0 ? `<div class="warn">⚠️ <strong>${ohneBild} Pflanzen haben noch kein Bild.</strong> Bitte zuerst <code>node scripts/fetch-plant-images.js</code> ausführen.</div>` : ''}
+    <p class="meta">${total} Pflanzen · ${ohneBild} ohne Bild · ${bearbeitet.length} geprüft · Nur intern sichtbar</p>
+    ${ohneBild > 0 ? `<div class="warn">⚠️ <strong>${ohneBild} Pflanzen haben noch kein Bild.</strong></div>` : ''}
     <div class="approve-box">
-      Freischalten wenn bereit:<br>
-      <strong>node scripts/approve-staging.js</strong><br>
+      Freischalten wenn bereit: <strong>node scripts/approve-staging.js</strong><br>
       oder einzeln: <strong>node scripts/approve-staging.js --id=123</strong>
     </div>
-    <input type="search" id="q" placeholder="Filtern…" oninput="filterTable(this.value)">
+
+    <h2>📋 Ausstehend (${ausstehend.length})</h2>
+    <div class="toolbar">
+      <input type="search" id="q" placeholder="Filtern…" oninput="filterTable(this.value)">
+      <button class="btn-all" onclick="toggleAll(true)">Alle wählen</button>
+      <button class="btn-all" onclick="toggleAll(false)">Alle abwählen</button>
+      <span id="sel-count">0 ausgewählt</span>
+      <button class="btn-check" id="btn-recheck" onclick="beauftragenPruefung()" disabled>🔍 Prüfung beauftragen</button>
+      <span id="status-msg"></span>
+    </div>
     <table id="t">
-      <thead><tr><th>Bild</th><th>Name</th><th>Licht</th><th>Blühzeit</th><th>Farbe</th><th>Höhe</th><th>Rolle</th><th></th><th></th></tr></thead>
-      <tbody id="tb">${rows}</tbody>
+      <thead><tr><th style="width:32px"></th><th>Bild</th><th>Name</th><th>Licht</th><th>Blühzeit</th><th>Farbe</th><th>Höhe</th><th>Rolle</th><th></th></tr></thead>
+      <tbody id="tb">${rowsAus || '<tr><td colspan="9" style="padding:16px;color:#888;text-align:center">Alle Pflanzen bereits geprüft ✓</td></tr>'}</tbody>
     </table>
+
+    ${bearbeitet.length > 0 ? `
+    <h2>✅ Bearbeitet (${bearbeitet.length})</h2>
+    <table id="t2">
+      <thead><tr><th></th><th>Bild</th><th>Name</th><th>Licht</th><th>Blühzeit</th><th>Farbe</th><th>Höhe</th><th>Rolle</th><th></th></tr></thead>
+      <tbody>${rowsBea}</tbody>
+    </table>` : ''}
+
     <script>
+      document.querySelectorAll('.pcb').forEach(cb => cb.addEventListener('change', updateCount));
+      function updateCount() {
+        const n = document.querySelectorAll('.pcb:checked').length;
+        document.getElementById('sel-count').textContent = n + ' ausgewählt';
+        document.getElementById('btn-recheck').disabled = n === 0;
+      }
+      function toggleAll(val) {
+        document.querySelectorAll('#tb .pcb:not([style*="none"])').forEach(cb => {
+          if(cb.closest('tr').style.display !== 'none') cb.checked = val;
+        });
+        updateCount();
+      }
       function filterTable(q) {
-        const rows = document.querySelectorAll('#tb tr');
-        const lq = q.toLowerCase();
-        rows.forEach(r => r.style.display = r.textContent.toLowerCase().includes(lq) ? '' : 'none');
+        document.querySelectorAll('#tb tr').forEach(r => {
+          r.style.display = r.textContent.toLowerCase().includes(q.toLowerCase()) ? '' : 'none';
+        });
+      }
+      async function beauftragenPruefung() {
+        const ids = [...document.querySelectorAll('.pcb:checked')].map(cb => parseInt(cb.value));
+        if (!ids.length) return;
+        const btn = document.getElementById('btn-recheck');
+        const msg = document.getElementById('status-msg');
+        btn.disabled = true;
+        btn.textContent = '⏳ Wird gestartet…';
+        msg.style.display = 'inline';
+        msg.textContent = '';
+        const r = await fetch('/api/recheck-pflanzen', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ ids })
+        });
+        const data = await r.json();
+        if (r.ok) {
+          msg.textContent = '✓ ' + data.message + ' — Seite lädt in 5s neu…';
+          setTimeout(() => location.reload(), 5000);
+        } else {
+          msg.textContent = '✗ Fehler: ' + (data.error || 'unbekannt');
+          btn.disabled = false;
+          btn.textContent = '🔍 Prüfung beauftragen';
+        }
       }
     </script>
   </body></html>`);
@@ -1115,6 +1184,26 @@ app.post('/api/bild-reject/:id', (req, res) => {
   const id = parseInt(req.params.id);
   db.prepare('UPDATE pflanzen SET bild_vorschlag = NULL, bild_check_info = NULL WHERE id = ?').run(id);
   res.json({ ok: true });
+});
+
+app.post('/api/recheck-pflanzen', (req, res) => {
+  const ids = (req.body.ids || []).map(Number).filter(n => n > 0 && Number.isInteger(n));
+  if (!ids.length) return res.status(400).json({ error: 'Keine gültigen IDs' });
+
+  // Sofort als "wird geprüft" vormerken — Seite lädt nach 5s neu
+  db.prepare(`UPDATE pflanzen SET bild_geprueft = 1 WHERE id IN (${ids.map(() => '?').join(',')})`)
+    .run(...ids);
+
+  // Prüfskript im Hintergrund starten (--fix ersetzt schlechte Bilder direkt)
+  const { spawn } = require('child_process');
+  const child = spawn(process.execPath, [
+    path.join(__dirname, 'scripts', 'check-plant-images.js'),
+    '--fix',
+    `--ids=${ids.join(',')}`
+  ], { cwd: __dirname, detached: true, stdio: 'ignore' });
+  child.unref();
+
+  res.json({ ok: true, count: ids.length, message: `Prüfung für ${ids.length} Pflanzen gestartet` });
 });
 
 // ─── Pflanzenseiten (SEO) ─────────────────────────────────────────────────────

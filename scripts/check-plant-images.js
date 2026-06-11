@@ -30,6 +30,7 @@ const LIVE_ONLY   = args.includes('--live');
 const ONLY_BAD    = args.includes('--only-bad');
 const LIMIT       = (() => { const l = args.find(a => a.startsWith('--limit=')); return l ? parseInt(l.split('=')[1]) : null; })();
 const MIN_KONF    = (() => { const k = args.find(a => a.startsWith('--min-konfidenz=')); return k ? parseFloat(k.split('=')[1]) : 0.70; })();
+const IDS         = (() => { const i = args.find(a => a.startsWith('--ids=')); return i ? i.split('=')[1].split(',').map(Number).filter(Boolean) : null; })();
 
 const db     = new Database(path.join(__dirname, '..', 'stauden.db'));
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -44,11 +45,13 @@ const log = (...msgs) => {
 
 const UPDATE_BILD      = db.prepare('UPDATE pflanzen SET bild_url = ?, bild_lizenz = ? WHERE id = ?');
 const UPDATE_VORSCHLAG = db.prepare('UPDATE pflanzen SET bild_vorschlag = ?, bild_check_info = ? WHERE id = ?');
+const UPDATE_GEPRUEFT  = db.prepare('UPDATE pflanzen SET bild_geprueft = 1 WHERE id = ?');
 
 // ── Pflanzenliste aufbauen ─────────────────────────────────────────────────────
 let where = "bild_url IS NOT NULL AND name_deutsch != 'Test-Pflanze'";
-if (STAGING_ONLY) where += " AND status = 'staging'";
-if (LIVE_ONLY)    where += " AND (status IS NULL OR status = 'live')";
+if (IDS && IDS.length)  where += ` AND id IN (${IDS.join(',')})`;
+else if (STAGING_ONLY)  where += " AND status = 'staging'";
+else if (LIVE_ONLY)     where += " AND (status IS NULL OR status = 'live')";
 
 let pflanzen = db.prepare(`
   SELECT id, name_deutsch, name_botanisch, bild_url, status
@@ -210,6 +213,9 @@ async function main() {
     } else {
       ergebnisse.ok.push({ ...p, result });
     }
+
+    // Als geprüft markieren (für manuelle Nachkontrolle via --ids)
+    if (IDS) UPDATE_GEPRUEFT.run(p.id);
 
     // Rate-Limit: GPT-4o Vision ~60 req/min, wir bleiben auf 30/min
     await new Promise(r => setTimeout(r, 2000));
