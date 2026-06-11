@@ -163,6 +163,13 @@
     .option-card .oc-icon { font-size: 2rem; margin-bottom: 8px; }
     .option-card .oc-label { font-weight: 600; font-size: 0.95rem; }
     .option-card .oc-sub { font-size: 0.78rem; color: var(--text-light); margin-top: 4px; }
+    /* Stil-Empfehlungen in Schritt 4 */
+    .option-card.oc-top { border-color: #2d6a4f !important; box-shadow: 0 0 0 2px rgba(45,106,79,.15); position: relative; }
+    .option-card.oc-top::after { content: '★ Empfohlen'; position: absolute; top: -11px; left: 50%; transform: translateX(-50%); background: #2d6a4f; color: #fff; font-size: .67rem; font-weight: 700; padding: 2px 9px; border-radius: 20px; white-space: nowrap; }
+    .option-card.oc-ungeeignet { opacity: .38; filter: grayscale(.65); position: relative; pointer-events: initial; }
+    .option-card.oc-ungeeignet::after { content: '⚠ kaum geeignet'; position: absolute; top: -11px; left: 50%; transform: translateX(-50%); background: #966420; color: #fff; font-size: .67rem; font-weight: 700; padding: 2px 9px; border-radius: 20px; white-space: nowrap; }
+    .stil-hint-bar { background: #eef6f0; border-left: 3px solid #2d6a4f; border-radius: 0 8px 8px 0; padding: 9px 14px; margin-bottom: 14px; font-size: .84rem; color: #2d4a2e; line-height: 1.5; }
+    .sicht-pflicht { color: #c0392b; font-size: .78rem; font-weight: 600; margin-left: 6px; }
 
     label.field-label { display: block; font-weight: 600; margin-bottom: 8px; }
     input[type="number"], input[type="text"], input[type="email"], textarea, select {
@@ -1109,7 +1116,7 @@
         <input type="text" id="plz-input-p" maxlength="5" placeholder="z.B. 80331" pattern="[0-9]{5}" oninput="formData.plz=this.value.trim()">
       </div>
     </div>
-    <label class="field-label" style="margin-top:20px;margin-bottom:8px;display:block">Blickrichtung aufs Beet</label>
+    <label class="field-label" style="margin-top:20px;margin-bottom:8px;display:block">Blickrichtung aufs Beet <span class="sicht-pflicht">* Pflicht</span></label>
     <div id="sichtseite-grid-pro" style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin-bottom:0">
       <div id="sicht-svg-wrap-pro"></div>
       <div>
@@ -1206,6 +1213,7 @@
   <div class="step" id="pro-step-4">
     <h2>🎨 Gartenstil</h2>
     <p class="hint">Der Stil bestimmt die Pflanzenauswahl und Kombinationen.</p>
+    <div id="stil-hint-pro" class="stil-hint-bar" style="display:none"></div>
     <div class="option-grid">
       <div class="option-card" onclick="selectProOption('stil','Naturgarten / Wildgarten',this)"><div class="oc-icon">🦋</div><div class="oc-label">Naturgarten</div><div class="oc-sub">ökologisch, naturnah</div></div>
       <div class="option-card" onclick="selectProOption('stil','Bauerngarten / Romantisch',this)"><div class="oc-icon">🌹</div><div class="oc-label">Bauerngarten</div><div class="oc-sub">üppig, bunt</div></div>
@@ -1369,7 +1377,7 @@
         <input type="text" id="plz-input-s" maxlength="5" placeholder="z.B. 80331" pattern="[0-9]{5}" oninput="formData.plz=this.value.trim()">
       </div>
     </div>
-    <label class="field-label" style="margin-top:20px;margin-bottom:8px;display:block">Blickrichtung aufs Beet</label>
+    <label class="field-label" style="margin-top:20px;margin-bottom:8px;display:block">Blickrichtung aufs Beet <span class="sicht-pflicht">* Pflicht</span></label>
     <div id="sichtseite-grid-einfach" style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin-bottom:0">
       <div id="sicht-svg-wrap-einfach"></div>
       <div>
@@ -1503,6 +1511,7 @@
   <div class="step" id="step-4">
     <h2>🎨 Welcher Gartenstil?</h2>
     <p class="hint">Der Stil bestimmt die Auswahl und Kombination der Pflanzen.</p>
+    <div id="stil-hint-einfach" class="stil-hint-bar" style="display:none"></div>
     <div class="option-grid">
       <div class="option-card" onclick="selectOption('stil', 'Naturgarten / Wildgarten', this)">
         <div class="oc-icon">🦋</div>
@@ -1880,6 +1889,88 @@
       document.getElementById('pro-btn-next-2').disabled = false;
       document.getElementById('pro-btn-next-3').disabled = false;
     }
+    updateStilHints();
+  }
+
+  // ── Stil-Empfehlungen nach Standort ──────────────────────────────────────────
+  function getStilFitness(stilValue, licht, boden) {
+    const isSun     = /Vollsonne/i.test(licht);
+    const isSemi    = /Halbschatten/i.test(licht);
+    const isShade   = /Schatten/.test(licht) && !isSemi;
+    const isDry     = /Sandig/.test(boden);
+    const isHeavy   = /Lehmig/.test(boden);
+
+    const rules = {
+      'Mediterraner Garten': () => {
+        if (isShade || isSemi) return ['ungeeignet', 'Braucht Vollsonne — zu wenig Licht für Lavendel & Salbei'];
+        if (isHeavy) return ['ungeeignet', 'Lehmiger Boden hält Staunässe — mediterrane Pflanzen mögen Drainage'];
+        return ['top', 'Vollsonne + trockener Boden: ideal für Lavendel, Salbei und Thymian'];
+      },
+      'Steingarten / Alpin': () => {
+        if (isShade) return ['ungeeignet', 'Alpenpflanzen brauchen Sonne und Wärme'];
+        if (isHeavy) return ['ungeeignet', 'Staunässe im Lehmboden vertragen Alpenpflanzen nicht'];
+        if (isSun && isDry) return ['top', 'Vollsonne + sandiger Boden: perfekte Drainage für Alpenpflanzen'];
+        if (isSun) return ['top', 'Sonne und gute Drainage — Alpenpflanzen fühlen sich wohl'];
+        return ['ok', ''];
+      },
+      'Prairie-Stil / Naturalistisch': () => {
+        if (isShade) return ['ungeeignet', 'Präriegräser und -stauden brauchen viel Sonne'];
+        if (isSun) return ['top', 'Vollsonne: ideal für Piet-Oudolf-Stil mit Gräsern und robusten Stauden'];
+        return ['ok', ''];
+      },
+      'Bauerngarten / Romantisch': () => {
+        if (isShade) return ['ungeeignet', 'Rosen, Malven und Dahlien brauchen Sonne'];
+        if (isSun && !isHeavy) return ['top', 'Sonne + guter Boden: klassischer Bauerngarten mit üppiger Blütenpracht'];
+        return ['ok', ''];
+      },
+      'Cottage-Garten / Englisch': () => {
+        if (isShade) return ['ungeeignet', 'Cottage-Pflanzen wie Rosen und Delphinien brauchen Sonne'];
+        if (isSun && !isDry && !isHeavy) return ['top', 'Sonne + humoser Boden: perfekt für englischen Cottage-Stil'];
+        return ['ok', ''];
+      },
+      'Japanischer Garten': () => {
+        if (isSemi || isShade) return ['top', 'Halbschatten oder Schatten: ideal für Farne, Bambus und Hosta'];
+        return ['ok', ''];
+      },
+      'Naturgarten / Wildgarten': () => {
+        if (isShade) return ['top', 'Schatten: heimische Waldstauden und Schattenpflanzen gedeihen bestens'];
+        if (isSun && isDry) return ['top', 'Vollsonne + trocken: Wildblumenwiese und Steppenpflanzen gedeihen'];
+        return ['ok', 'Naturgarten passt zu fast jedem Standort'];
+      },
+    };
+    const fn = rules[stilValue];
+    return fn ? fn() : ['ok', ''];
+  }
+
+  function updateStilHints() {
+    const licht = formData.licht || '';
+    const boden = formData.boden || '';
+    if (!licht) return;
+
+    [['#step-4 .option-grid', 'stil-hint-einfach'], ['#pro-step-4 .option-grid', 'stil-hint-pro']].forEach(([sel, barId]) => {
+      const grid = document.querySelector(sel);
+      const bar  = document.getElementById(barId);
+      if (!grid || !bar) return;
+
+      const topStile = [], ungStile = [];
+      grid.querySelectorAll('.option-card').forEach(card => {
+        const m = (card.getAttribute('onclick') || '').match(/,\s*'([^']+)'\s*,\s*this/);
+        if (!m) return;
+        const stil = m[1];
+        const [fitness, grund] = getStilFitness(stil, licht, boden);
+        card.classList.remove('oc-top', 'oc-ungeeignet');
+        if (fitness === 'top')        { card.classList.add('oc-top');        topStile.push(stil.split(' /')[0]); }
+        if (fitness === 'ungeeignet') { card.classList.add('oc-ungeeignet'); ungStile.push(stil.split(' /')[0]); }
+        card.title = grund || '';
+      });
+
+      const standortInfo = [licht, boden && boden !== 'Normal / unbekannt' ? boden.split(' /')[0] : ''].filter(Boolean).join(' · ');
+      let html = `<strong>Dein Standort:</strong> ${standortInfo}`;
+      if (topStile.length) html += ` &mdash; <span style="color:#1b4332;font-weight:600">★ empfohlen: ${topStile.join(', ')}</span>`;
+      if (ungStile.length) html += ` &mdash; <span style="color:#8a4000;font-weight:600">⚠ kaum geeignet: ${ungStile.join(', ')}</span>`;
+      bar.innerHTML = html;
+      bar.style.display = 'block';
+    });
   }
 
   // ── Einfach-Form (unverändert) ─────────────────────────────────────────────
@@ -1893,9 +1984,14 @@
   }
 
   function goStep(n) {
+    if (n === 2 && !formData.sichtseite) {
+      document.getElementById('err-1').style.display = 'block';
+      return;
+    }
     document.querySelectorAll('#view-fragebogen .step').forEach(s => s.classList.remove('active'));
     document.getElementById('step-' + n).classList.add('active');
     updateProgress(n);
+    if (n === 4) updateStilHints();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -1965,6 +2061,7 @@
       document.getElementById('btn-next-' + stepNum).disabled = false;
       document.getElementById('err-' + stepNum).style.display = 'none';
     }
+    if (field === 'boden') updateStilHints();
   }
 
   // ── Professionell-Form ─────────────────────────────────────────────────────
@@ -1977,6 +2074,7 @@
     document.querySelectorAll('#view-professionell .step').forEach(s => s.classList.remove('active'));
     document.getElementById('pro-step-' + n).classList.add('active');
     proUpdateProgress(n);
+    if (n === 4) updateStilHints();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -1993,6 +2091,7 @@
     formData[field] = value;
     const map = { licht: 'pro-btn-next-2', boden: 'pro-btn-next-3', stil: 'pro-btn-next-4' };
     if (map[field]) document.getElementById(map[field]).disabled = false;
+    if (field === 'boden') updateStilHints();
   }
 
   function toggleNutzung(val, el) {
@@ -2447,6 +2546,7 @@
       document.getElementById('btn-next-' + stepNum).disabled = false;
       document.getElementById('err-' + stepNum).style.display = 'none';
     }
+    if (field === 'boden') updateStilHints();
   }
 
   async function planErstellen() {
