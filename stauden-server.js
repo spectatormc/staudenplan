@@ -1227,6 +1227,111 @@ app.get('/api/recheck-status', (req, res) => {
   res.json({ done, total: ids.length, fertig: done === ids.length });
 });
 
+// ─── Bildauswahl: 3 Kandidaten pro Pflanze ────────────────────────────────────
+
+app.get('/auswahl-pflanzen', (req, res) => {
+  if (req.query.key !== 'preview2026') return res.status(403).send('<h2>403</h2>');
+
+  const pflanzen = db.prepare(`
+    SELECT id, name_deutsch, name_botanisch, bild_url, bild_kandidaten
+    FROM pflanzen WHERE bild_kandidaten IS NOT NULL AND bild_kandidaten != '[]'
+    ORDER BY name_deutsch
+  `).all();
+
+  if (!pflanzen.length) {
+    return res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Bildauswahl</title>
+    <style>body{font-family:system-ui;max-width:900px;margin:0 auto;padding:40px;background:#f8f6f0}
+    h1{color:#2d5a3d}.info{background:#e8f5e9;border-radius:10px;padding:20px;margin-top:20px;font-family:monospace;font-size:.9rem}</style>
+    </head><body><h1>🖼 Bildauswahl</h1>
+    <p>Noch keine Kandidaten geladen.</p>
+    <div class="info">node scripts/fetch-bild-kandidaten.js</div></body></html>`);
+  }
+
+  const cards = pflanzen.map(p => {
+    let kandidaten = [];
+    try { kandidaten = JSON.parse(p.bild_kandidaten || '[]'); } catch {}
+    const aktImg = p.bild_url ? `<img src="${p.bild_url}" class="akt-img"><div class="lbl">Aktuell</div>` : `<div class="no-img">🌿</div><div class="lbl">Kein Bild</div>`;
+    const kandCards = kandidaten.map((url, i) => `
+      <div class="kand-card" id="kand-${p.id}-${i}" onclick="waehle(${p.id},'${url}',${i})">
+        <img src="${url}" onerror="this.parentElement.classList.add('broken')">
+        <div class="lbl">Option ${i + 1}</div>
+      </div>`).join('');
+    return `<div class="plant-card" id="plant-${p.id}">
+      <div class="plant-head">
+        <strong>${p.name_deutsch}</strong>
+        <span class="bot">${p.name_botanisch}</span>
+        <span class="done-badge" id="done-${p.id}" style="display:none">✓ Gespeichert</span>
+      </div>
+      <div class="imgs-row">
+        <div class="akt-wrap">${aktImg}</div>
+        <div class="arrow">→</div>
+        <div class="kand-row">${kandCards}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  res.send(`<!DOCTYPE html><html lang="de"><head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Bildauswahl — ${pflanzen.length} Pflanzen</title>
+  <style>
+    *{box-sizing:border-box}
+    body{font-family:system-ui,sans-serif;max-width:1100px;margin:0 auto;padding:24px;background:#f8f6f0}
+    h1{color:#2d5a3d;margin-bottom:4px}
+    .meta{color:#888;font-size:.88rem;margin-bottom:24px}
+    .plant-card{background:#fff;border-radius:12px;padding:16px 18px;margin-bottom:16px;box-shadow:0 1px 5px rgba(0,0,0,.09);transition:opacity .3s}
+    .plant-card.saved{opacity:.45}
+    .plant-head{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+    .plant-head strong{font-size:1rem;color:#1b4332}
+    .bot{font-size:.78rem;color:#999}
+    .done-badge{font-size:.78rem;background:#d4edda;color:#155724;padding:3px 10px;border-radius:20px;font-weight:600}
+    .imgs-row{display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap}
+    .akt-wrap{text-align:center;min-width:110px}
+    .akt-img{width:110px;height:110px;object-fit:cover;border-radius:8px;border:2px solid #ddd;display:block}
+    .no-img{width:110px;height:110px;background:#f0ede8;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1.8rem}
+    .lbl{font-size:.7rem;color:#aaa;margin-top:4px;text-align:center}
+    .arrow{font-size:1.4rem;color:#bbb;padding-top:40px}
+    .kand-row{display:flex;gap:10px;flex-wrap:wrap}
+    .kand-card{text-align:center;cursor:pointer;border:2px solid #e8e4de;border-radius:8px;padding:4px;transition:border-color .15s,transform .12s;min-width:110px}
+    .kand-card img{width:110px;height:110px;object-fit:cover;border-radius:6px;display:block}
+    .kand-card:hover{border-color:#2d6a4f;transform:scale(1.03)}
+    .kand-card.selected{border-color:#2d6a4f;box-shadow:0 0 0 3px rgba(45,106,79,.2)}
+    .kand-card.broken{opacity:.3;pointer-events:none}
+    .kand-card.broken::after{content:'✗';display:block;font-size:1.5rem;padding:30px}
+  </style>
+</head><body>
+  <h1>🖼 Bildauswahl</h1>
+  <p class="meta">${pflanzen.length} Pflanzen · Klicke auf ein Bild um es zu übernehmen — wird sofort gespeichert</p>
+  ${cards}
+  <script>
+    async function waehle(id, url, idx) {
+      // Visuelles Feedback
+      document.querySelectorAll(\`#plant-\${id} .kand-card\`).forEach(c => c.classList.remove('selected'));
+      document.getElementById(\`kand-\${id}-\${idx}\`).classList.add('selected');
+      const r = await fetch(\`/api/bild-waehlen/\${id}\`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ url })
+      });
+      if (r.ok) {
+        document.getElementById(\`plant-\${id}\`).classList.add('saved');
+        document.getElementById(\`done-\${id}\`).style.display = 'inline';
+        // Aktuelles Bild aktualisieren
+        const akt = document.querySelector(\`#plant-\${id} .akt-img\`);
+        if (akt) akt.src = url;
+      }
+    }
+  </script>
+</body></html>`);
+});
+
+app.post('/api/bild-waehlen/:id', (req, res) => {
+  const id  = parseInt(req.params.id);
+  const url = req.body.url;
+  if (!id || !url) return res.status(400).json({ error: 'id oder url fehlt' });
+  db.prepare('UPDATE pflanzen SET bild_url = ?, bild_kandidaten = NULL WHERE id = ?').run(url, id);
+  res.json({ ok: true });
+});
+
 // ─── Pflanzenseiten (SEO) ─────────────────────────────────────────────────────
 
 app.get('/pflanzen', (req, res) => {

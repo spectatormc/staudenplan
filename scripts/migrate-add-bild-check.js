@@ -4,7 +4,7 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const db = new Database(path.join(__dirname, '..', 'stauden.db'));
 
-[['bild_vorschlag', 'TEXT'], ['bild_check_info', 'TEXT'], ['bild_geprueft', 'INTEGER DEFAULT 0']].forEach(([name, type]) => {
+[['bild_vorschlag', 'TEXT'], ['bild_check_info', 'TEXT'], ['bild_geprueft', 'INTEGER DEFAULT 0'], ['bild_kandidaten', 'TEXT']].forEach(([name, type]) => {
   try {
     db.exec(`ALTER TABLE pflanzen ADD COLUMN ${name} ${type}`);
     console.log(`✅ Spalte "${name}" hinzugefügt.`);
