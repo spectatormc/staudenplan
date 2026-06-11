@@ -1602,6 +1602,7 @@
     <h2>🌸 Dein persönlicher Bepflanzungsplan</h2>
     <p id="ergebnis-subtitle">Maßgeschneidert für deinen Garten</p>
     <div class="ergebnis-meta" id="ergebnis-meta"></div>
+    <div id="saison-warnung" style="display:none;margin:12px 0 4px;padding:10px 14px;background:#fef9c3;border:1px solid #fde047;border-radius:8px;font-size:.85rem;color:#854d0e"></div>
   </div>
 
   <!-- Pflanzendichte -->
@@ -2450,7 +2451,12 @@
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'Unbekannter Fehler');
       currentPlan = data.plan;
-      renderErgebnis(data.plan);
+      // Leitstauden immer mind. 3 Exemplare (Profipraxis)
+      currentPlan.pflanzen.forEach(p => {
+        if (p.rolle === 'Leitstaude' && (p.stueckzahl || 1) < 3) p.stueckzahl = 3;
+      });
+      currentPlan.gesamtkosten_geschaetzt = currentPlan.pflanzen.reduce((s, p) => s + (p.preis_stueck_eur || 0) * (p.stueckzahl || 1), 0);
+      renderErgebnis(currentPlan);
     } catch (err) {
       hide('view-loading');
       if (formData.modus === 'professionell') { show('view-professionell'); proGoStep(6); }
@@ -2619,6 +2625,26 @@
     // ── 1. Leit & Begleitstauden: Goldener-Schnitt-Platzierung ────────────────
     const PHI = 0.6180339887;
     const all = [];
+
+    // Kombinationspartner räumlich zusammenziehen
+    const kombiIdx = {};
+    pflanzen.forEach((p, pi) => {
+      if (p.name_botanisch) kombiIdx[p.name_botanisch.toLowerCase()] = pi;
+      if (p.name_deutsch) kombiIdx[p.name_deutsch.toLowerCase()] = pi;
+    });
+    const anchorX = pflanzen.map((_, pi) => (pi * PHI + 0.05) % 1);
+    function partnerAnchorX(p, pi) {
+      if (!p.kombinationspartner) return null;
+      for (const raw of p.kombinationspartner.split(/[,;|]/)) {
+        const s = raw.trim().toLowerCase();
+        if (kombiIdx[s] !== undefined && kombiIdx[s] !== pi) return anchorX[kombiIdx[s]];
+        const genus = s.split(' ')[0];
+        const match = Object.keys(kombiIdx).find(k => k.startsWith(genus + ' ') || k === genus);
+        if (match && kombiIdx[match] !== pi) return anchorX[kombiIdx[match]];
+      }
+      return null;
+    }
+
     pflanzen.forEach((p, pi) => {
       if (getRolle(p) === 'fuell') return;
       const n = p.stueckzahl || 1;
@@ -2627,6 +2653,7 @@
       const sX = rolle === 'leit' ? 0.09 : 0.18;
       const sY = rolle === 'leit' ? 0.07 : 0.13;
       const r = getR(p);
+      const pX = partnerAnchorX(p, pi);
 
       let drifts;
       if (isRund) {
@@ -2643,11 +2670,14 @@
         });
       } else {
         const zone = yZone(p);
-        drifts = Array.from({ length: nDrifts }, (_, di) => ({
-          xFrac: (pi * PHI + di * 0.31 + 0.05) % 1,
-          yFrac: zone.yMin + pseudoRand(pi * 53 + di * 31 + 5) * (zone.yMax - zone.yMin),
-          zone
-        }));
+        drifts = Array.from({ length: nDrifts }, (_, di) => {
+          const rawX = (pi * PHI + di * 0.31 + 0.05) % 1;
+          return {
+            xFrac: (pX !== null && di === 0) ? rawX * 0.5 + pX * 0.5 : rawX,
+            yFrac: zone.yMin + pseudoRand(pi * 53 + di * 31 + 5) * (zone.yMax - zone.yMin),
+            zone
+          };
+        });
       }
 
       for (let i = 0; i < n; i++) {
@@ -3567,6 +3597,19 @@
     const tipps = document.getElementById('tipps-list');
     tipps.innerHTML = (plan.tipps || []).map(t => `<li>${t}</li>`).join('');
     if (plan.pflanzabstand_hinweis) tipps.innerHTML += `<li>${plan.pflanzabstand_hinweis}</li>`;
+
+    // Saisonale Lücken-Warnung
+    const hatFrueh = plan.pflanzen.some(p => plantInSaison(p.bluehzeit, 'Frühling'));
+    const hatSommer = plan.pflanzen.some(p => plantInSaison(p.bluehzeit, 'Sommer'));
+    const hatHerbst = plan.pflanzen.some(p => plantInSaison(p.bluehzeit, 'Herbst'));
+    const fehlendS = [!hatFrueh && 'Frühjahr', !hatSommer && 'Sommer', !hatHerbst && 'Herbst'].filter(Boolean);
+    const warnEl = document.getElementById('saison-warnung');
+    if (fehlendS.length > 0) {
+      warnEl.textContent = `⚠️ Blühlücke entdeckt: Keine Pflanzen für ${fehlendS.join(' und ')} im Plan — Plan neu generieren oder Früh-/Herbstblüher ergänzen.`;
+      warnEl.style.display = 'block';
+    } else {
+      warnEl.style.display = 'none';
+    }
 
     // Stückliste + Visualisierung vorbereiten
     renderStueckliste(plan);

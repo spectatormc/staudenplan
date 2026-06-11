@@ -233,7 +233,8 @@ Du empfiehlst ausschließlich in Deutschland winterharte Pflanzen. Antworte imme
 1. HÖHENSTAFFELUNG: Hohe Stauden (>100cm) in den Hintergrund, Mittelhohe (50–100cm) in die Mitte, Niedrige (<50cm) und Bodendecker in den Vordergrund.
 2. SCHICHTEN: Plane nach dem Drei-Schichten-Prinzip: 15% Leitstauden, 55% Begleitstauden, 30% Füllstauden/Bodendecker.
 3. BLÜTENFOLGE: Verteile die Blütezeiten — immer mind. 2 Arten pro Saison (Frühjahr/Sommer/Herbst) einplanen.
-4. FARBHARMONIE: Maximal 3–4 Hauptfarben, Weiß oder Silber als Verbinder nutzen.`;
+4. FARBHARMONIE: Maximal 3–4 Hauptfarben, Weiß oder Silber als Verbinder nutzen.
+5. LEITSTAUDEN: Jede Leitstaude mind. 3 Exemplare einplanen — Einzelsetzung wirkt verloren und entspricht nicht der Profipraxis.`;
 
   if (kandidaten.length > 0) {
     // Warnliste für ausbreitende Arten
