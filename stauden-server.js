@@ -1426,7 +1426,7 @@ app.post('/api/bild-waehlen/:id', (req, res) => {
   const id  = parseInt(req.params.id);
   const url = req.body.url;
   if (!id || !url) return res.status(400).json({ error: 'id oder url fehlt' });
-  db.prepare('UPDATE pflanzen SET bild_url = ?, bild_kandidaten = NULL, bild_gesperrt = 0 WHERE id = ?').run(url, id);
+  db.prepare("UPDATE pflanzen SET bild_url = ?, bild_kandidaten = NULL, bild_gesperrt = 0, status = 'live' WHERE id = ?").run(url, id);
   res.json({ ok: true });
 });
 
