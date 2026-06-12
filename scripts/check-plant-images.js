@@ -54,7 +54,7 @@ else if (STAGING_ONLY)  where += " AND status = 'staging'";
 else if (LIVE_ONLY)     where += " AND (status IS NULL OR status = 'live')";
 
 let pflanzen = db.prepare(`
-  SELECT id, name_deutsch, name_botanisch, bild_url, status
+  SELECT id, name_deutsch, name_botanisch, bild_url, status, farbe
   FROM pflanzen WHERE ${where}
   ORDER BY id
 `).all();
@@ -83,34 +83,79 @@ async function getImageDataUrl(bildUrl) {
   }
 }
 
+// ── Wikipedia: Referenzbild intern holen (nur für GPT, nie angezeigt) ────────
+async function getWikipediaRef(nameBotanisch) {
+  const variants = [
+    `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(nameBotanisch.replace(/ /g,'_'))}`,
+    `https://de.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(nameBotanisch.replace(/ /g,'_'))}`,
+    `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(nameBotanisch.split(' ')[0])}`,
+  ];
+  for (const url of variants) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(5000), headers: { 'User-Agent': 'StaudenplanBot/1.0' } });
+      if (!res.ok) continue;
+      const data = await res.json();
+      const src = data.originalimage?.source || data.thumbnail?.source;
+      if (src) return src;
+    } catch {}
+  }
+  return null;
+}
+
 // ── GPT-4o Vision: passt das Bild zur Pflanze? ───────────────────────────────
 async function checkImage(pflanze) {
   const imageSource = await getImageDataUrl(pflanze.bild_url);
   if (!imageSource) return { passt: false, konfidenz: 0, was_gezeigt: 'Bild nicht ladbar', grund: 'Datei fehlt oder nicht erreichbar' };
 
-  const isDataUrl = imageSource.startsWith('data:');
-  const imageContent = isDataUrl
-    ? { type: 'image_url', image_url: { url: imageSource, detail: 'low' } }
-    : { type: 'image_url', image_url: { url: imageSource, detail: 'low' } };
+  const kandidatContent = { type: 'image_url', image_url: { url: imageSource, detail: 'low' } };
+  const farbenHinweis   = pflanze.farbe ? ` Typische Blütenfarbe laut Datenbank: ${pflanze.farbe}.` : '';
 
-  const prompt = `Du bist Pflanzenexperte. Analysiere dieses Bild und beantworte: Zeigt es die Pflanze "${pflanze.name_deutsch}" (botanisch: ${pflanze.name_botanisch})?
+  // Wikipedia-Referenz holen (intern, nie angezeigt)
+  const wikiUrl = await getWikipediaRef(pflanze.name_botanisch);
+  const hatReferenz = !!wikiUrl;
+
+  let messages;
+  if (hatReferenz) {
+    const refContent = { type: 'image_url', image_url: { url: wikiUrl, detail: 'low' } };
+    const prompt = `Du bist Pflanzenexperte. Bild 1 ist ein verifiziertes Wikipedia-Referenzbild der Pflanze "${pflanze.name_deutsch}" (botanisch: ${pflanze.name_botanisch}).${farbenHinweis}
+
+Prüfe ob Bild 2 (das Kandidatenbild) dieselbe oder eine botanisch sehr ähnliche Pflanze zeigt.
+Achte besonders auf: Blütenfarbe, Blütenform, Blattform, Wuchsform.
 
 Antworte NUR mit diesem JSON (kein Markdown):
 {
   "passt": true oder false,
   "konfidenz": 0.0 bis 1.0,
-  "was_gezeigt": "<was tatsächlich im Bild zu sehen ist, in 1 Satz>",
-  "grund": "<kurze Begründung warum es passt oder nicht passt>"
+  "was_gezeigt": "<was in Bild 2 zu sehen ist, in 1 Satz>",
+  "grund": "<Vergleich mit Referenz: was stimmt überein oder weicht ab>"
 }
 
 Regeln:
-- passt=true wenn die Pflanze klar erkennbar ist (Gattung genügt, muss nicht exakt diese Sorte sein)
-- passt=false wenn eine komplett andere Pflanze, ein Tier, eine Landschaft oder ein nicht-pflanzenartiges Motiv zu sehen ist
-- konfidenz=1.0 wenn du dir 100% sicher bist, 0.5 wenn unsicher`;
+- passt=true wenn Gattung und Habitus erkennbar übereinstimmen (exakte Sorte nicht nötig)
+- passt=false wenn Blütenfarbe deutlich abweicht, eine andere Pflanzengattung zu sehen ist, oder ein Tier/Landschaft/Nicht-Pflanze gezeigt wird
+- konfidenz=1.0 wenn du 100% sicher bist, 0.5 wenn unsicher`;
+    messages = [{ role: 'user', content: [{ type: 'text', text: prompt }, refContent, kandidatContent] }];
+  } else {
+    const prompt = `Du bist Pflanzenexperte. Analysiere dieses Bild: Zeigt es die Pflanze "${pflanze.name_deutsch}" (botanisch: ${pflanze.name_botanisch})?${farbenHinweis}
+
+Antworte NUR mit diesem JSON (kein Markdown):
+{
+  "passt": true oder false,
+  "konfidenz": 0.0 bis 1.0,
+  "was_gezeigt": "<was im Bild zu sehen ist, in 1 Satz>",
+  "grund": "<kurze Begründung>"
+}
+
+Regeln:
+- passt=true wenn die Gattung klar erkennbar ist und Blütenfarbe zur Angabe passt
+- passt=false wenn eine andere Pflanze, ein Tier, eine Landschaft oder Nicht-Pflanze zu sehen ist
+- konfidenz=1.0 wenn du 100% sicher bist, 0.5 wenn unsicher`;
+    messages = [{ role: 'user', content: [{ type: 'text', text: prompt }, kandidatContent] }];
+  }
 
   const res = await openai.chat.completions.create({
     model: 'gpt-4o',
-    messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, imageContent] }],
+    messages,
     max_tokens: 200,
     temperature: 0,
   });
@@ -135,13 +180,14 @@ async function pixabaySearch(query) {
   } catch { return null; }
 }
 
-async function fetchReplacement(nameDeutsch, nameBotanisch) {
+async function fetchReplacement(nameDeutsch, nameBotanisch, farbe) {
   const genus = nameBotanisch.split(' ')[0];
+  const f     = (farbe || '').split(',')[0].trim();
   for (const q of [
-    `${nameBotanisch} plant`,
-    `${genus} garden plant`,
-    `${nameDeutsch} Garten`,
-    `${genus} flower`,
+    f ? `${nameBotanisch} ${f} flower` : `${nameBotanisch} flower`,
+    `${nameBotanisch} plant garden`,
+    f ? `${genus} ${f} perennial` : `${genus} garden plant`,
+    `${nameDeutsch} Blüte`,
   ]) {
     const url = await pixabaySearch(q);
     if (url) return url;
@@ -157,7 +203,7 @@ async function main() {
   const modus = DRY_RUN ? '[DRY RUN]' : FIX ? '[FIX-MODUS]' : PROPOSE ? '[VORSCHLAG-MODUS]' : '[NUR PRÜFEN]';
   log(`\n=== Bildprüfung mit GPT-4o Vision ${modus} ===`);
   log(`Pflanzen: ${pflanzen.length} | Min-Konfidenz: ${MIN_KONF} | ${STAGING_ONLY ? 'Nur Staging' : LIVE_ONLY ? 'Nur Live' : 'Alle'}`);
-  log(`Geschätzte Kosten: ~${(pflanzen.length * 0.003).toFixed(2)} € (${pflanzen.length} × 0.003 €)\n`);
+  log(`Geschätzte Kosten: ~${(pflanzen.length * 0.006).toFixed(2)} € (${pflanzen.length} × ~0.006 € mit Wikipedia-Referenz)\n`);
 
   const ergebnisse = { ok: [], schlecht: [], fehler: [] };
   let idx = 0;
@@ -191,7 +237,7 @@ async function main() {
 
       if (FIX) {
         process.stdout.write(`   🔄 Suche Ersatz auf Pixabay…`);
-        const newUrl = await fetchReplacement(p.name_deutsch, p.name_botanisch);
+        const newUrl = await fetchReplacement(p.name_deutsch, p.name_botanisch, p.farbe);
         if (newUrl) {
           UPDATE_BILD.run(newUrl, 'Pixabay License', p.id);
           log(`   ✓ Ersetzt: ${newUrl.slice(0, 80)}`);
@@ -201,7 +247,7 @@ async function main() {
         await new Promise(r => setTimeout(r, 400));
       } else if (PROPOSE) {
         process.stdout.write(`   🔍 Suche Vorschlag auf Pixabay…`);
-        const newUrl = await fetchReplacement(p.name_deutsch, p.name_botanisch);
+        const newUrl = await fetchReplacement(p.name_deutsch, p.name_botanisch, p.farbe);
         if (newUrl) {
           UPDATE_VORSCHLAG.run(newUrl, JSON.stringify({ konfidenz, was_gezeigt, grund }), p.id);
           log(`   📌 Vorschlag gespeichert: ${newUrl.slice(0, 80)}`);

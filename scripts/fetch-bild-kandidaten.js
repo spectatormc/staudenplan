@@ -19,7 +19,7 @@ const IDS  = (() => { const i = args.find(a => a.startsWith('--ids=')); return i
 let where = "bild_geprueft = 1 AND status = 'staging'";
 if (IDS?.length) where = `id IN (${IDS.join(',')})`;
 
-const pflanzen = db.prepare(`SELECT id, name_deutsch, name_botanisch FROM pflanzen WHERE ${where} ORDER BY id`).all();
+const pflanzen = db.prepare(`SELECT id, name_deutsch, name_botanisch, farbe FROM pflanzen WHERE ${where} ORDER BY id`).all();
 console.log(`\n=== Bildkandidaten für ${pflanzen.length} Pflanzen ===\n`);
 
 async function pixabayMulti(query, n = 3) {
@@ -53,11 +53,13 @@ function downloadLocal(url, id, idx) {
 async function main() {
   for (const p of pflanzen) {
     process.stdout.write(`[${p.id}] ${p.name_deutsch.padEnd(38)} `);
-    const genus   = p.name_botanisch.split(' ')[0];
+    const genus  = p.name_botanisch.split(' ')[0];
+    const farbe  = (p.farbe || '').split(',')[0].trim(); // erste Farbe
     const queries = [
-      `${p.name_botanisch} plant flower`,
-      `${p.name_deutsch} Garten Blüte`,
-      `${genus} garden perennial`,
+      farbe ? `${p.name_botanisch} ${farbe} flower` : `${p.name_botanisch} flower`,
+      `${p.name_botanisch} plant garden`,
+      farbe ? `${genus} ${farbe} perennial garden` : `${genus} garden perennial`,
+      `${p.name_deutsch} Blüte Garten`,
     ];
 
     const urls = new Set();
