@@ -1573,6 +1573,27 @@ app.get('/admin', (req, res) => {
     </div>`;
   }).join('') || '<p class="empty">Keine Staging-Pflanzen.</p>';
 
+  // ── Tab 4: Live Pflanzen ──
+  const livePflanzen = db.prepare(`
+    SELECT id, name_deutsch, name_botanisch, bild_url, hoehe_cm_min, hoehe_cm_max
+    FROM pflanzen WHERE status='live' OR status IS NULL ORDER BY name_deutsch
+  `).all();
+
+  const liveRows = livePflanzen.map(p => {
+    const img = p.bild_url
+      ? `<img src="${p.bild_url}" class="st-img">`
+      : `<div class="st-img no-img-sm">🌿</div>`;
+    return `<div class="st-row" id="lv-${p.id}">
+      ${img}
+      <div class="st-info" style="flex:1;min-width:180px">
+        <strong>${p.name_deutsch}</strong>
+        <span class="bot">${p.name_botanisch}</span>
+      </div>
+      <div class="st-meta">${p.hoehe_cm_min||'?'}–${p.hoehe_cm_max||'?'}cm</div>
+      <button class="btn-pruefen" id="bp-${p.id}" onclick="bildPruefen(${p.id},this)">Bild prüfen</button>
+    </div>`;
+  }).join('') || '<p class="empty">Keine Live-Pflanzen.</p>';
+
   res.send(`<!DOCTYPE html><html lang="de"><head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Admin — Staudenplan</title>
@@ -1650,6 +1671,9 @@ app.get('/admin', (req, res) => {
     .g-img{width:48px;height:48px;object-fit:cover;border-radius:5px;flex-shrink:0}
     .g-info{flex:1;min-width:0}.g-info strong{display:block;font-size:.88rem;color:#1b4332}
     .btn-entsperren{background:#fff;border:1px solid #ccc;color:#666;font-size:.72rem;padding:3px 9px;border-radius:14px;cursor:pointer;white-space:nowrap}
+    .btn-pruefen{background:#fff3cd;border:1px solid #e0b84a;color:#856404;font-size:.75rem;font-weight:600;padding:4px 11px;border-radius:14px;cursor:pointer;white-space:nowrap;flex-shrink:0}
+    .btn-pruefen:hover{background:#ffeaa0}
+    .btn-pruefen:disabled{opacity:.5;cursor:default}
     /* ── Staging Liste ── */
     .st-list{background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 5px rgba(0,0,0,.08)}
     .st-row{display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid #f0ede8}
@@ -1684,6 +1708,7 @@ app.get('/admin', (req, res) => {
   <div class="tab active" onclick="showTab('pruefung',this)">Bildprüfung <span class="badge orange" id="b-pruefung">${vorschlaege.length}</span></div>
   <div class="tab" onclick="showTab('auswahl',this)">Bildauswahl <span class="badge" id="b-auswahl">${kandidatenPflanzen.length}</span></div>
   <div class="tab" onclick="showTab('staging',this)">Staging <span class="badge orange" id="b-staging">${stagingPflanzen.length}</span></div>
+  <div class="tab" onclick="showTab('live',this)">Live Pflanzen <span class="badge" id="b-live">${livePflanzen.length}</span></div>
 </div>
 
 <div class="content">
@@ -1710,12 +1735,22 @@ app.get('/admin', (req, res) => {
   </div>
 
   <!-- Tab 3: Staging -->
-  <div class="pane" id="pane-staging">
+  <div class="pane" id="pane-staging" style="display:none">
     <div class="toolbar">
       <span class="toolbar-meta">${stagingPflanzen.length} Pflanzen im Staging</span>
       <a href="/vorschau/pflanzen?key=preview2026" target="_blank" class="btn-action btn-gray" style="text-decoration:none">↗ Vorschau öffnen</a>
     </div>
     <div class="st-list">${stagingRows}</div>
+  </div>
+
+  <!-- Tab 4: Live Pflanzen -->
+  <div class="pane" id="pane-live" style="display:none">
+    <div class="toolbar">
+      <span class="toolbar-meta">${livePflanzen.length} Live-Pflanzen · "Bild prüfen" schaltet die Pflanze offline und startet einen GPT-Check</span>
+    </div>
+    <input type="text" id="live-search" placeholder="Pflanze suchen…" oninput="filterLive(this.value)"
+      style="width:100%;max-width:360px;padding:9px 14px;border:1.5px solid #ddd;border-radius:8px;font-size:.9rem;margin-bottom:16px;display:block">
+    <div class="st-list" id="live-list">${liveRows}</div>
   </div>
 
 </div>
@@ -1818,6 +1853,42 @@ app.get('/admin', (req, res) => {
     else{ btn.textContent='✗ Behalten'; btn.disabled=false; }
   }
 
+  // ── Live-Tab Suche ──
+  function filterLive(q) {
+    const term = q.toLowerCase();
+    document.querySelectorAll('#live-list .st-row').forEach(row => {
+      const text = row.textContent.toLowerCase();
+      row.style.display = text.includes(term) ? '' : 'none';
+    });
+  }
+
+  // ── Live: Bild prüfen ──
+  async function bildPruefen(id, btn) {
+    if (!confirm('Pflanze offline schalten und Bild mit GPT prüfen? Dauert ca. 10 Sekunden.')) return;
+    btn.innerHTML = '<span class=spinner></span>'; btn.disabled = true;
+    const r = await fetch('/api/bild-pruefen/' + id, { method: 'POST' });
+    if (r.ok) {
+      const row = document.getElementById('lv-' + id);
+      row.style.opacity = '.35';
+      btn.textContent = '⏳ In Prüfung…';
+      // Nach 12s prüfen ob Vorschlag bereit (recheck-status nutzt bild_geprueft)
+      setTimeout(async () => {
+        const s = await fetch('/api/recheck-status?ids=' + id);
+        const data = await s.json();
+        if (data.fertig) {
+          btn.textContent = '✓ Geprüft — Bildprüfung-Tab öffnen';
+          btn.onclick = () => { document.querySelector('.tab[onclick*="pruefung"]').click(); };
+          btn.disabled = false;
+        } else {
+          btn.textContent = '⏳ Läuft noch…';
+          btn.disabled = false;
+        }
+      }, 12000);
+    } else {
+      btn.textContent = 'Bild prüfen'; btn.disabled = false;
+    }
+  }
+
   async function kandidatenNeuLaden(btn){
     if(!confirm('Kandidaten für alle geprueften Pflanzen neu laden?'))return;
     btn.innerHTML='<span class=spinner></span> Läuft…'; btn.disabled=true;
@@ -1826,6 +1897,20 @@ app.get('/admin', (req, res) => {
   }
 </script>
 </body></html>`);
+});
+
+// Einzelne Live-Pflanze offline schalten und Bildcheck starten
+app.post('/api/bild-pruefen/:id', (req, res) => {
+  const id = parseInt(req.params.id);
+  if (!id) return res.status(400).json({ error: 'id fehlt' });
+  db.prepare("UPDATE pflanzen SET status='staging', bild_geprueft=0 WHERE id=?").run(id);
+  const { spawn } = require('child_process');
+  const child = spawn(process.execPath, [
+    path.join(__dirname, 'scripts', 'check-plant-images.js'),
+    '--propose', `--ids=${id}`
+  ], { cwd: __dirname, detached: true, stdio: 'ignore' });
+  child.unref();
+  res.json({ ok: true });
 });
 
 // Bildcheck im Hintergrund starten
