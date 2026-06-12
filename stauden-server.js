@@ -1231,14 +1231,14 @@ app.post('/api/bild-approve/:id', async (req, res) => {
     }
   }
 
-  db.prepare("UPDATE pflanzen SET bild_url = ?, bild_lizenz = 'Pixabay License', bild_vorschlag = NULL, bild_check_info = NULL WHERE id = ?")
+  db.prepare("UPDATE pflanzen SET bild_url = ?, bild_lizenz = 'Pixabay License', bild_vorschlag = NULL, bild_check_info = NULL, status = 'live' WHERE id = ?")
     .run(finalUrl, id);
   res.json({ ok: true });
 });
 
 app.post('/api/bild-reject/:id', (req, res) => {
   const id = parseInt(req.params.id);
-  db.prepare('UPDATE pflanzen SET bild_vorschlag = NULL, bild_check_info = NULL WHERE id = ?').run(id);
+  db.prepare("UPDATE pflanzen SET bild_vorschlag = NULL, bild_check_info = NULL, status = 'live' WHERE id = ?").run(id);
   res.json({ ok: true });
 });
 
