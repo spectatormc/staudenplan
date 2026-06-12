@@ -1543,20 +1543,33 @@ app.get('/admin', (req, res) => {
 
   const stagingRows = stagingPflanzen.map(p => {
     const badge = p.bild_gesperrt ? '<span class="tag" style="background:#fff3cd;color:#856404">gesperrt</span>'
-      : p.bild_vorschlag ? '<span class="tag" style="background:#d1ecf1;color:#0c5460">in Prüfung</span>'
+      : p.bild_vorschlag ? ''
       : p.bild_url ? '<span class="tag" style="background:#d4edda;color:#155724">Bild ok</span>'
       : '<span class="tag" style="background:#f8d7da;color:#721c24">kein Bild</span>';
-    const img = p.bild_url
+    const aktImg = p.bild_url
       ? `<img src="${p.bild_url}" class="st-img">`
       : `<div class="st-img no-img-sm">🌿</div>`;
-    return `<div class="st-row">
-      ${img}
-      <div class="st-info">
+    const vorschlagBlock = p.bild_vorschlag ? `
+      <div class="st-vorschlag" id="stv-${p.id}">
+        <div class="st-imgs">
+          ${aktImg}
+          <span class="st-arrow">→</span>
+          <img src="${p.bild_vorschlag}" class="st-img" onerror="this.style.opacity='.2'">
+        </div>
+        <div class="st-vbtns">
+          <button class="btn-ok" style="font-size:.78rem;padding:5px 12px" onclick="stApprove(${p.id},this)">✓ Übernehmen</button>
+          <button class="btn-no" style="font-size:.78rem;padding:5px 12px" onclick="stReject(${p.id},this)">✗ Behalten</button>
+        </div>
+      </div>` : '';
+    return `<div class="st-row" id="str-${p.id}" style="${p.bild_vorschlag?'flex-wrap:wrap;align-items:flex-start':''}">
+      ${p.bild_vorschlag ? '' : aktImg}
+      <div class="st-info" style="flex:1;min-width:180px">
         <strong>${p.name_deutsch}</strong>
         <span class="bot">${p.name_botanisch}</span>
       </div>
       <div class="st-meta">${p.hoehe_cm_min||'?'}–${p.hoehe_cm_max||'?'}cm</div>
       ${badge}
+      ${vorschlagBlock}
     </div>`;
   }).join('') || '<p class="empty">Keine Staging-Pflanzen.</p>';
 
@@ -1644,6 +1657,10 @@ app.get('/admin', (req, res) => {
     .st-img{width:52px;height:52px;object-fit:cover;border-radius:6px;flex-shrink:0}
     .st-info{flex:1;min-width:0}.st-info strong{display:block;font-size:.9rem;color:#1b4332}
     .st-meta{font-size:.75rem;color:#aaa;white-space:nowrap}
+    .st-vorschlag{width:100%;display:flex;align-items:center;gap:10px;padding:8px 0 2px;flex-wrap:wrap}
+    .st-imgs{display:flex;align-items:center;gap:8px}
+    .st-arrow{font-size:1.1rem;color:#bbb}
+    .st-vbtns{display:flex;gap:6px}
     .empty{color:#aaa;font-size:.88rem;padding:20px 0}
     /* ── Spinner ── */
     .spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:6px}
@@ -1787,6 +1804,20 @@ app.get('/admin', (req, res) => {
     const r=await fetch('/api/bild-entsperren/'+id,{method:'POST'});
     if(r.ok){ const row=document.getElementById('plant-g-'+id); btn.textContent='✓'; setTimeout(()=>row.style.display='none',800); }
   }
+  // ── Staging Approve/Reject ──
+  async function stApprove(id,btn){
+    btn.innerHTML='<span class=spinner></span>'; btn.disabled=true;
+    const r=await fetch('/api/bild-approve/'+id,{method:'POST'});
+    if(r.ok){ document.getElementById('stv-'+id).innerHTML='<span style="color:#2d6a4f;font-size:.8rem">✓ Übernommen</span>'; setTimeout(()=>document.getElementById('stv-'+id).remove(),1500); }
+    else{ btn.textContent='✓ Übernehmen'; btn.disabled=false; }
+  }
+  async function stReject(id,btn){
+    btn.textContent='⏳'; btn.disabled=true;
+    const r=await fetch('/api/bild-reject/'+id,{method:'POST'});
+    if(r.ok){ document.getElementById('stv-'+id).innerHTML='<span style="color:#888;font-size:.8rem">✗ Behalten</span>'; setTimeout(()=>document.getElementById('stv-'+id).remove(),1500); }
+    else{ btn.textContent='✗ Behalten'; btn.disabled=false; }
+  }
+
   async function kandidatenNeuLaden(btn){
     if(!confirm('Kandidaten für alle geprueften Pflanzen neu laden?'))return;
     btn.innerHTML='<span class=spinner></span> Läuft…'; btn.disabled=true;
