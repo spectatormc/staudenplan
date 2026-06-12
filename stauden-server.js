@@ -1148,16 +1148,21 @@ app.get('/checking', (req, res) => {
     function updateCounter(){
       document.getElementById('counter').textContent=document.querySelectorAll('.card:not(.done)').length;
     }
+    function hideCard(id){
+      const card=document.getElementById('card-'+id);
+      card.classList.add('done');
+      setTimeout(()=>{ card.style.display='none'; updateCounter(); },900);
+    }
     async function approve(id,btn){
       const orig=btn.textContent; btn.textContent='⏳'; btn.disabled=true;
       const r=await fetch('/api/bild-approve/'+id,{method:'POST'});
-      if(r.ok){document.getElementById('card-'+id).classList.add('done');updateCounter();}
+      if(r.ok){ hideCard(id); }
       else{btn.textContent=orig;btn.disabled=false;alert('Fehler');}
     }
     async function reject(id,btn){
       const orig=btn.textContent; btn.textContent='⏳'; btn.disabled=true;
       const r=await fetch('/api/bild-reject/'+id,{method:'POST'});
-      if(r.ok){document.getElementById('card-'+id).classList.add('done');updateCounter();}
+      if(r.ok){ hideCard(id); }
       else{btn.textContent=orig;btn.disabled=false;alert('Fehler');}
     }
     async function approveAll(){
@@ -1182,12 +1187,52 @@ app.get('/checking', (req, res) => {
 </body></html>`);
 });
 
-app.post('/api/bild-approve/:id', (req, res) => {
+app.post('/api/bild-approve/:id', async (req, res) => {
   const id = parseInt(req.params.id);
-  const p = db.prepare('SELECT bild_vorschlag FROM pflanzen WHERE id = ?').get(id);
+  const p = db.prepare('SELECT bild_vorschlag, name_deutsch FROM pflanzen WHERE id = ?').get(id);
   if (!p?.bild_vorschlag) return res.status(404).json({ error: 'Kein Vorschlag' });
+
+  let finalUrl = p.bild_vorschlag;
+
+  // Externe URL lokal herunterladen (Pixabay-URLs laufen ab)
+  if (finalUrl.startsWith('http')) {
+    try {
+      const fs   = require('fs');
+      const pathM = require('path');
+      const https = require('https');
+      const http  = require('http');
+      const imgDir = pathM.join(__dirname, 'public', 'images', 'pflanzen');
+      if (!fs.existsSync(imgDir)) fs.mkdirSync(imgDir, { recursive: true });
+      const slug = (p.name_deutsch || 'pflanze').toLowerCase()
+        .replace(/ä/g,'ae').replace(/ö/g,'oe').replace(/ü/g,'ue').replace(/ß/g,'ss')
+        .replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,40);
+      const dest  = pathM.join(imgDir, `${slug}-${id}.jpg`);
+      const local = `/images/pflanzen/${slug}-${id}.jpg`;
+
+      await new Promise((resolve, reject) => {
+        const download = (url) => {
+          const proto = url.startsWith('https') ? https : http;
+          const file  = fs.createWriteStream(dest);
+          proto.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } }, r => {
+            if (r.statusCode === 301 || r.statusCode === 302) {
+              file.close(); fs.unlink(dest, ()=>{});
+              return download(r.headers.location);
+            }
+            if (r.statusCode !== 200) { file.close(); fs.unlink(dest, ()=>{}); return reject(new Error('HTTP ' + r.statusCode)); }
+            r.pipe(file);
+            file.on('finish', () => file.close(resolve));
+          }).on('error', err => { fs.unlink(dest, ()=>{}); reject(err); });
+        };
+        download(url);
+      });
+      finalUrl = local;
+    } catch (e) {
+      console.error('Download fehlgeschlagen, externe URL wird gespeichert:', e.message);
+    }
+  }
+
   db.prepare("UPDATE pflanzen SET bild_url = ?, bild_lizenz = 'Pixabay License', bild_vorschlag = NULL, bild_check_info = NULL WHERE id = ?")
-    .run(p.bild_vorschlag, id);
+    .run(finalUrl, id);
   res.json({ ok: true });
 });
 
