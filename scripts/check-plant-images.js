@@ -168,30 +168,51 @@ Regeln:
   }
 }
 
-// ── Pixabay: neues Bild suchen ────────────────────────────────────────────────
-async function pixabaySearch(query) {
-  if (!PIXABAY_KEY) return null;
+// ── Pixabay: mehrere Kandidaten suchen ───────────────────────────────────────
+async function pixabaySearch(query, n = 5) {
+  if (!PIXABAY_KEY) return [];
   try {
-    const url = `https://pixabay.com/api/?key=${PIXABAY_KEY}&q=${encodeURIComponent(query)}&image_type=photo&category=nature&per_page=5&safesearch=true`;
+    const url = `https://pixabay.com/api/?key=${PIXABAY_KEY}&q=${encodeURIComponent(query)}&image_type=photo&category=nature&per_page=${n}&safesearch=true&editors_choice=false&order=popular`;
     const res  = await fetch(url, { signal: AbortSignal.timeout(8000) });
-    if (!res.ok) return null;
+    if (!res.ok) return [];
     const data = await res.json();
-    return data.hits?.[0]?.largeImageURL || data.hits?.[0]?.webformatURL || null;
-  } catch { return null; }
+    return (data.hits || []).map(h => h.largeImageURL || h.webformatURL).filter(Boolean);
+  } catch { return []; }
+}
+
+// ── Schnell-Validierung: ist das überhaupt eine Pflanze? ─────────────────────
+async function istPflanzenbild(imageUrl) {
+  try {
+    const res = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'user', content: [
+        { type: 'text', text: 'Zeigt dieses Bild eine Pflanze, Blume oder Gartenpflanze? Antworte nur mit "ja" oder "nein".' },
+        { type: 'image_url', image_url: { url: imageUrl, detail: 'low' } }
+      ]}],
+      max_tokens: 5,
+      temperature: 0,
+    });
+    const antwort = res.choices[0].message.content.trim().toLowerCase();
+    return antwort.startsWith('ja');
+  } catch { return true; } // im Zweifel durchlassen
 }
 
 async function fetchReplacement(nameDeutsch, nameBotanisch, farbe) {
   const genus = nameBotanisch.split(' ')[0];
   const f     = (farbe || '').split(',')[0].trim();
-  for (const q of [
+  const queries = [
     f ? `${nameBotanisch} ${f} flower` : `${nameBotanisch} flower`,
     `${nameBotanisch} plant garden`,
     f ? `${genus} ${f} perennial` : `${genus} garden plant`,
     `${nameDeutsch} Blüte`,
-  ]) {
-    const url = await pixabaySearch(q);
-    if (url) return url;
-    await new Promise(r => setTimeout(r, 400));
+  ];
+  for (const q of queries) {
+    const urls = await pixabaySearch(q, 5);
+    for (const url of urls) {
+      const ok = await istPflanzenbild(url);
+      if (ok) return url;
+    }
+    await new Promise(r => setTimeout(r, 300));
   }
   return null;
 }
