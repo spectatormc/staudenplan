@@ -1444,6 +1444,380 @@ app.post('/api/bild-entsperren/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// ─── Admin-Übersicht ─────────────────────────────────────────────────────────
+
+app.get('/admin', (req, res) => {
+  if (req.query.key !== 'preview2026') return res.status(403).send('<h2>403</h2>');
+
+  // ── Stats ──
+  const stats = {
+    live:       db.prepare("SELECT COUNT(*) as n FROM pflanzen WHERE status='live' OR status IS NULL").get().n,
+    staging:    db.prepare("SELECT COUNT(*) as n FROM pflanzen WHERE status='staging'").get().n,
+    vorschlaege:db.prepare("SELECT COUNT(*) as n FROM pflanzen WHERE bild_vorschlag IS NOT NULL").get().n,
+    kandidaten: db.prepare("SELECT COUNT(*) as n FROM pflanzen WHERE bild_kandidaten IS NOT NULL AND bild_kandidaten != '[]' AND (bild_gesperrt IS NULL OR bild_gesperrt=0)").get().n,
+    gesperrt:   db.prepare("SELECT COUNT(*) as n FROM pflanzen WHERE bild_gesperrt=1").get().n,
+    ohneBild:   db.prepare("SELECT COUNT(*) as n FROM pflanzen WHERE (bild_url IS NULL OR bild_url='') AND status='staging'").get().n,
+  };
+
+  // ── Tab 1: Bildprüfung ──
+  const vorschlaege = db.prepare(`
+    SELECT id, name_deutsch, name_botanisch, bild_url, bild_vorschlag, bild_check_info, status
+    FROM pflanzen WHERE bild_vorschlag IS NOT NULL AND bild_vorschlag != ''
+    ORDER BY name_deutsch
+  `).all();
+
+  const pruefCards = vorschlaege.map(p => {
+    let info = {};
+    try { info = JSON.parse(p.bild_check_info || '{}'); } catch {}
+    const konfStr = info.konfidenz != null ? `${(info.konfidenz*100).toFixed(0)}% Konfidenz` : '';
+    const altImg = p.bild_url
+      ? `<img src="${p.bild_url}" onerror="this.parentElement.innerHTML='<div class=no-img>🌿</div>'">`
+      : `<div class="no-img">🌿 kein Bild</div>`;
+    return `<div class="card" id="card-${p.id}">
+      <div class="card-head"><strong>${p.name_deutsch}</strong>
+        <span class="tag tag-${p.status||'live'}">${p.status||'live'}</span>
+      </div>
+      <div class="bot">${p.name_botanisch}</div>
+      <div class="imgs">
+        <div class="img-box">${altImg}<div class="lbl">⚠ Aktuell</div></div>
+        <div class="img-box"><img src="${p.bild_vorschlag}" onerror="this.style.opacity='.2'"><div class="lbl">✦ Vorschlag</div></div>
+      </div>
+      ${info.was_gezeigt ? `<div class="verdict">GPT: <em>${info.was_gezeigt}</em>${konfStr?' · '+konfStr:''}${info.grund?'<br><small>'+info.grund+'</small>':''}</div>` : ''}
+      <div class="btns">
+        <button class="btn-ok" onclick="approve(${p.id},this)">✓ Übernehmen</button>
+        <button class="btn-no" onclick="reject(${p.id},this)">✗ Behalten</button>
+      </div>
+    </div>`;
+  }).join('') || '<p class="empty">Keine offenen Vorschläge.</p>';
+
+  // ── Tab 2: Bildauswahl ──
+  const kandidatenPflanzen = db.prepare(`
+    SELECT id, name_deutsch, name_botanisch, bild_url, bild_kandidaten
+    FROM pflanzen WHERE bild_kandidaten IS NOT NULL AND bild_kandidaten != '[]'
+      AND (bild_gesperrt IS NULL OR bild_gesperrt=0)
+    ORDER BY name_deutsch
+  `).all();
+  const gesperrte = db.prepare(`
+    SELECT id, name_deutsch, name_botanisch, bild_url
+    FROM pflanzen WHERE bild_gesperrt=1 AND status='staging' ORDER BY name_deutsch
+  `).all();
+
+  const auswahlCards = kandidatenPflanzen.map(p => {
+    let kands = [];
+    try { kands = JSON.parse(p.bild_kandidaten||'[]'); } catch {}
+    const aktImg = p.bild_url
+      ? `<img src="${p.bild_url}" class="akt-img"><div class="lbl">Aktuell</div>`
+      : `<div class="no-img-sm">🌿</div><div class="lbl">Kein Bild</div>`;
+    const kandCards = kands.map((url,i)=>`
+      <div class="kand-card" id="kand-${p.id}-${i}" onclick="waehle(${p.id},'${url}',${i})">
+        <img src="${url}" onerror="this.parentElement.classList.add('broken')">
+        <div class="lbl">Option ${i+1}</div>
+      </div>`).join('');
+    return `<div class="plant-card" id="plant-${p.id}">
+      <div class="plant-head">
+        <strong>${p.name_deutsch}</strong><span class="bot">${p.name_botanisch}</span>
+        <span class="done-badge" id="done-${p.id}" style="display:none">✓ Gespeichert</span>
+        ${p.bild_url?`<button class="btn-behalten" onclick="waehle(${p.id},'${p.bild_url}',-1)">Bestand behalten</button>`:''}
+        <button class="btn-falsch" onclick="alleFalsch(${p.id},this)">Alle falsch</button>
+      </div>
+      <div class="imgs-row">
+        <div class="akt-wrap">${aktImg}</div>
+        <div class="arrow">→</div>
+        <div class="kand-row">${kandCards}</div>
+      </div>
+    </div>`;
+  }).join('') || '<p class="empty">Alle bearbeitet.</p>';
+
+  const gesperrtRows = gesperrte.map(p=>`
+    <div class="gesperrt-row" id="plant-g-${p.id}">
+      ${p.bild_url?`<img src="${p.bild_url}" class="g-img">`:`<div class="g-img no-img-sm">🌿</div>`}
+      <div class="g-info"><strong>${p.name_deutsch}</strong><span class="bot">${p.name_botanisch}</span></div>
+      <button class="btn-entsperren" onclick="entsperre(${p.id},this)">↩ Entsperren</button>
+    </div>`).join('') || '<p class="empty" style="font-size:.85rem">Keine gesperrten Pflanzen.</p>';
+
+  // ── Tab 3: Staging ──
+  const stagingPflanzen = db.prepare(`
+    SELECT id, name_deutsch, name_botanisch, bild_url, licht, boden, hoehe_cm_min, hoehe_cm_max, bild_gesperrt, bild_vorschlag
+    FROM pflanzen WHERE status='staging' ORDER BY name_deutsch
+  `).all();
+
+  const stagingRows = stagingPflanzen.map(p => {
+    const badge = p.bild_gesperrt ? '<span class="tag" style="background:#fff3cd;color:#856404">gesperrt</span>'
+      : p.bild_vorschlag ? '<span class="tag" style="background:#d1ecf1;color:#0c5460">in Prüfung</span>'
+      : p.bild_url ? '<span class="tag" style="background:#d4edda;color:#155724">Bild ok</span>'
+      : '<span class="tag" style="background:#f8d7da;color:#721c24">kein Bild</span>';
+    const img = p.bild_url
+      ? `<img src="${p.bild_url}" class="st-img">`
+      : `<div class="st-img no-img-sm">🌿</div>`;
+    return `<div class="st-row">
+      ${img}
+      <div class="st-info">
+        <strong>${p.name_deutsch}</strong>
+        <span class="bot">${p.name_botanisch}</span>
+      </div>
+      <div class="st-meta">${p.hoehe_cm_min||'?'}–${p.hoehe_cm_max||'?'}cm</div>
+      ${badge}
+    </div>`;
+  }).join('') || '<p class="empty">Keine Staging-Pflanzen.</p>';
+
+  res.send(`<!DOCTYPE html><html lang="de"><head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Admin — Staudenplan</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:system-ui,sans-serif;background:#f2efe9;min-height:100vh}
+    /* ── Header ── */
+    .header{background:#1b4332;color:#fff;padding:16px 24px;display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+    .header h1{font-size:1.1rem;font-weight:700;letter-spacing:.02em}
+    .stat-chips{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto}
+    .chip{background:rgba(255,255,255,.13);border-radius:20px;padding:4px 12px;font-size:.78rem;white-space:nowrap}
+    .chip.warn{background:rgba(255,200,0,.25);color:#ffe082}
+    /* ── Tabs ── */
+    .tabs{background:#fff;border-bottom:1px solid #e0dbd4;display:flex;gap:0;padding:0 24px}
+    .tab{padding:14px 20px;font-size:.9rem;font-weight:600;color:#888;border-bottom:3px solid transparent;cursor:pointer;white-space:nowrap;transition:color .15s}
+    .tab:hover{color:#2d5a3d}
+    .tab.active{color:#1b4332;border-bottom-color:#2d6a4f}
+    .badge{display:inline-block;background:#e8f5e9;color:#2d5a3d;font-size:.7rem;font-weight:700;border-radius:20px;padding:1px 7px;margin-left:5px;vertical-align:middle}
+    .badge.orange{background:#fff3cd;color:#856404}
+    /* ── Content ── */
+    .content{max-width:1200px;margin:0 auto;padding:24px}
+    .pane{display:none}.pane.active{display:block}
+    /* ── Toolbar ── */
+    .toolbar{display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;align-items:center}
+    .toolbar-meta{color:#999;font-size:.85rem;flex:1}
+    .btn-action{padding:9px 18px;border-radius:8px;border:none;cursor:pointer;font-size:.85rem;font-weight:600;transition:background .15s}
+    .btn-green{background:#2d6a4f;color:#fff}.btn-green:hover{background:#1b5e20}
+    .btn-gray{background:#f0ede8;color:#555;border:1px solid #ddd}.btn-gray:hover{background:#e5e0d8}
+    .btn-orange{background:#e65100;color:#fff}.btn-orange:hover{background:#bf360c}
+    /* ── Bildprüfung Grid ── */
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}
+    .card{background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 5px rgba(0,0,0,.08);transition:opacity .3s}
+    .card.done{opacity:.25;pointer-events:none}
+    .card-head{display:flex;align-items:center;gap:8px;margin-bottom:2px}
+    .card-head strong{font-size:.95rem;color:#1b4332;flex:1}
+    .bot{font-size:.74rem;color:#aaa;margin-bottom:10px}
+    .tag{font-size:.68rem;font-weight:700;padding:2px 7px;border-radius:20px;white-space:nowrap}
+    .tag-live{background:#d1ecf1;color:#0c5460}
+    .tag-staging{background:#fff3cd;color:#856404}
+    .imgs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+    .img-box img{width:100%;height:130px;object-fit:cover;border-radius:7px;border:2px solid #e8e4de;display:block}
+    .no-img{width:100%;height:130px;background:#f0ede8;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:1.2rem;color:#bbb}
+    .lbl{font-size:.68rem;color:#aaa;margin-top:3px;text-align:center}
+    .verdict{background:#fff8e1;border-radius:6px;padding:7px 9px;font-size:.75rem;color:#5d4037;margin-bottom:8px;line-height:1.4}
+    .btns{display:flex;gap:7px}
+    .btn-ok{flex:1;background:#2d6a4f;color:#fff;border:none;border-radius:7px;padding:9px;cursor:pointer;font-weight:600;font-size:.88rem}
+    .btn-ok:hover{background:#1b5e20}
+    .btn-no{flex:1;background:#f5f5f5;color:#555;border:1px solid #ddd;border-radius:7px;padding:9px;cursor:pointer;font-size:.88rem}
+    .btn-no:hover{background:#eee}
+    /* ── Bildauswahl ── */
+    .plant-card{background:#fff;border-radius:10px;padding:14px 16px;margin-bottom:14px;box-shadow:0 1px 5px rgba(0,0,0,.08);transition:opacity .3s}
+    .plant-card.saved,.plant-card.gesperrt-lokal{opacity:.25;pointer-events:none}
+    .plant-head{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+    .plant-head strong{font-size:.95rem;color:#1b4332}
+    .done-badge{font-size:.75rem;background:#d4edda;color:#155724;padding:3px 9px;border-radius:20px;font-weight:600}
+    .btn-behalten{background:#e8f5e9;border:1px solid #81c784;color:#2d5a3d;font-size:.75rem;font-weight:600;padding:3px 10px;border-radius:20px;cursor:pointer}
+    .btn-falsch{background:#fff3cd;border:1px solid #e0b84a;color:#856404;font-size:.75rem;font-weight:600;padding:3px 10px;border-radius:20px;cursor:pointer;margin-left:auto}
+    .imgs-row{display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap}
+    .akt-wrap{text-align:center;min-width:100px}
+    .akt-img{width:100px;height:100px;object-fit:cover;border-radius:7px;border:2px solid #ddd;display:block}
+    .no-img-sm{width:100px;height:100px;background:#f0ede8;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:1.4rem}
+    .arrow{font-size:1.3rem;color:#bbb;padding-top:35px}
+    .kand-row{display:flex;gap:8px;flex-wrap:wrap}
+    .kand-card{text-align:center;cursor:pointer;border:2px solid #e8e4de;border-radius:7px;padding:3px;transition:border-color .15s,transform .12s;min-width:100px}
+    .kand-card img{width:100px;height:100px;object-fit:cover;border-radius:5px;display:block}
+    .kand-card:hover{border-color:#2d6a4f;transform:scale(1.03)}
+    .kand-card.selected{border-color:#2d6a4f;box-shadow:0 0 0 3px rgba(45,106,79,.2)}
+    .kand-card.broken{opacity:.25;pointer-events:none}
+    .kand-card.broken img{display:none}.kand-card.broken::after{content:'✗';display:block;font-size:1rem;padding:38px 8px;color:#bbb}
+    /* Gesperrt */
+    .gesperrt-box{background:#fff8f0;border:1px solid #f0d090;border-radius:8px;padding:12px 14px;margin-top:20px}
+    .gesperrt-box h3{font-size:.85rem;color:#856404;margin-bottom:10px}
+    .gesperrt-row{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #f0e8d0}
+    .gesperrt-row:last-child{border-bottom:none}
+    .g-img{width:48px;height:48px;object-fit:cover;border-radius:5px;flex-shrink:0}
+    .g-info{flex:1;min-width:0}.g-info strong{display:block;font-size:.88rem;color:#1b4332}
+    .btn-entsperren{background:#fff;border:1px solid #ccc;color:#666;font-size:.72rem;padding:3px 9px;border-radius:14px;cursor:pointer;white-space:nowrap}
+    /* ── Staging Liste ── */
+    .st-list{background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 5px rgba(0,0,0,.08)}
+    .st-row{display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid #f0ede8}
+    .st-row:last-child{border-bottom:none}
+    .st-img{width:52px;height:52px;object-fit:cover;border-radius:6px;flex-shrink:0}
+    .st-info{flex:1;min-width:0}.st-info strong{display:block;font-size:.9rem;color:#1b4332}
+    .st-meta{font-size:.75rem;color:#aaa;white-space:nowrap}
+    .empty{color:#aaa;font-size:.88rem;padding:20px 0}
+    /* ── Spinner ── */
+    .spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:6px}
+    @keyframes spin{to{transform:rotate(360deg)}}
+  </style>
+</head><body>
+
+<div class="header">
+  <h1>🌿 Staudenplan Admin</h1>
+  <div class="stat-chips">
+    <span class="chip">${stats.live} live</span>
+    <span class="chip ${stats.staging>0?'warn':''}">${stats.staging} staging</span>
+    <span class="chip ${stats.vorschlaege>0?'warn':''}">${stats.vorschlaege} Vorschläge offen</span>
+    <span class="chip">${stats.kandidaten} zur Bildauswahl</span>
+    ${stats.gesperrt>0?`<span class="chip warn">${stats.gesperrt} gesperrt</span>`:''}
+    ${stats.ohneBild>0?`<span class="chip warn">${stats.ohneBild} ohne Bild</span>`:''}
+  </div>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="showTab('pruefung',this)">Bildprüfung <span class="badge orange" id="b-pruefung">${vorschlaege.length}</span></div>
+  <div class="tab" onclick="showTab('auswahl',this)">Bildauswahl <span class="badge" id="b-auswahl">${kandidatenPflanzen.length}</span></div>
+  <div class="tab" onclick="showTab('staging',this)">Staging <span class="badge orange" id="b-staging">${stagingPflanzen.length}</span></div>
+</div>
+
+<div class="content">
+
+  <!-- Tab 1: Bildprüfung -->
+  <div class="pane active" id="pane-pruefung">
+    <div class="toolbar">
+      <span class="toolbar-meta"><span id="counter-pruefung">${vorschlaege.length}</span> Vorschläge warten</span>
+      <button class="btn-action btn-green" onclick="approveAll()">✓ Alle übernehmen</button>
+      <button class="btn-action btn-gray" onclick="rejectAll()">✗ Alle behalten</button>
+      <button class="btn-action btn-orange" onclick="bildNeuLaden(this)">↺ Bilder neu prüfen</button>
+    </div>
+    <div class="grid" id="grid-pruefung">${pruefCards}</div>
+  </div>
+
+  <!-- Tab 2: Bildauswahl -->
+  <div class="pane" id="pane-auswahl">
+    <div class="toolbar">
+      <span class="toolbar-meta">${kandidatenPflanzen.length} Pflanzen mit Kandidaten</span>
+      <button class="btn-action btn-orange" onclick="kandidatenNeuLaden(this)">↺ Kandidaten neu laden</button>
+    </div>
+    ${auswahlCards}
+    ${gesperrte.length>0?`<div class="gesperrt-box"><h3>Gesperrt — kein passendes Bild (${gesperrte.length})</h3>${gesperrtRows}</div>`:''}
+  </div>
+
+  <!-- Tab 3: Staging -->
+  <div class="pane" id="pane-staging">
+    <div class="toolbar">
+      <span class="toolbar-meta">${stagingPflanzen.length} Pflanzen im Staging</span>
+      <a href="/vorschau/pflanzen?key=preview2026" target="_blank" class="btn-action btn-gray" style="text-decoration:none">↗ Vorschau öffnen</a>
+    </div>
+    <div class="st-list">${stagingRows}</div>
+  </div>
+
+</div>
+
+<script>
+  function showTab(name, el) {
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
+    el.classList.add('active');
+    document.getElementById('pane-'+name).classList.add('active');
+  }
+
+  // ── Bildprüfung ──
+  function updatePruefCounter(){
+    const n = document.querySelectorAll('#grid-pruefung .card:not(.done)').length;
+    document.getElementById('counter-pruefung').textContent = n;
+    document.getElementById('b-pruefung').textContent = n;
+  }
+  function hideCard(id){
+    const c=document.getElementById('card-'+id);
+    c.classList.add('done');
+    setTimeout(()=>{ c.style.display='none'; updatePruefCounter(); },900);
+  }
+  async function approve(id,btn){
+    const orig=btn.textContent; btn.innerHTML='<span class=spinner></span>'; btn.disabled=true;
+    const r=await fetch('/api/bild-approve/'+id,{method:'POST'});
+    if(r.ok){ hideCard(id); }
+    else{ btn.textContent=orig; btn.disabled=false; alert('Fehler'); }
+  }
+  async function reject(id,btn){
+    const orig=btn.textContent; btn.textContent='⏳'; btn.disabled=true;
+    const r=await fetch('/api/bild-reject/'+id,{method:'POST'});
+    if(r.ok){ hideCard(id); }
+    else{ btn.textContent=orig; btn.disabled=false; alert('Fehler'); }
+  }
+  async function approveAll(){
+    const cards=[...document.querySelectorAll('#grid-pruefung .card:not(.done)')];
+    if(!confirm('Alle '+cards.length+' Vorschläge übernehmen?'))return;
+    for(const c of cards){
+      const id=parseInt(c.id.replace('card-',''));
+      await approve(id,c.querySelector('.btn-ok'));
+      await new Promise(r=>setTimeout(r,80));
+    }
+  }
+  async function rejectAll(){
+    const cards=[...document.querySelectorAll('#grid-pruefung .card:not(.done)')];
+    if(!confirm('Alle '+cards.length+' Vorschläge ablehnen?'))return;
+    for(const c of cards){
+      const id=parseInt(c.id.replace('card-',''));
+      await reject(id,c.querySelector('.btn-no'));
+      await new Promise(r=>setTimeout(r,80));
+    }
+  }
+  async function bildNeuLaden(btn){
+    if(!confirm('Neuen Bildcheck starten? Das dauert ca. 15 Minuten.'))return;
+    btn.innerHTML='<span class=spinner></span> Läuft…'; btn.disabled=true;
+    await fetch('/api/bildcheck-starten',{method:'POST'});
+    btn.textContent='✓ Gestartet — Seite in 15 Min. neu laden';
+  }
+
+  // ── Bildauswahl ──
+  async function waehle(id, url, idx) {
+    document.querySelectorAll(\`#plant-\${id} .kand-card\`).forEach(c=>c.classList.remove('selected'));
+    if(idx>=0) document.getElementById(\`kand-\${id}-\${idx}\`).classList.add('selected');
+    const r=await fetch('/api/bild-waehlen/'+id,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})});
+    if(r.ok){
+      const card=document.getElementById('plant-'+id);
+      card.classList.add('saved');
+      document.getElementById('done-'+id).style.display='inline';
+      const akt=document.querySelector('#plant-'+id+' .akt-img');
+      if(akt) akt.src=url;
+      setTimeout(()=>{ card.style.display='none'; document.getElementById('b-auswahl').textContent=parseInt(document.getElementById('b-auswahl').textContent||0)-1; },1200);
+    }
+  }
+  async function alleFalsch(id,btn){
+    if(!confirm('Pflanze sperren?'))return;
+    const r=await fetch('/api/bild-ablehnen/'+id,{method:'POST'});
+    if(r.ok){
+      const card=document.getElementById('plant-'+id);
+      card.classList.add('gesperrt-lokal');
+      btn.textContent='🚫 Gesperrt'; btn.disabled=true;
+      setTimeout(()=>{ card.style.display='none'; },1200);
+    }
+  }
+  async function entsperre(id,btn){
+    const r=await fetch('/api/bild-entsperren/'+id,{method:'POST'});
+    if(r.ok){ const row=document.getElementById('plant-g-'+id); btn.textContent='✓'; setTimeout(()=>row.style.display='none',800); }
+  }
+  async function kandidatenNeuLaden(btn){
+    if(!confirm('Kandidaten für alle geprueften Pflanzen neu laden?'))return;
+    btn.innerHTML='<span class=spinner></span> Läuft…'; btn.disabled=true;
+    await fetch('/api/kandidaten-starten',{method:'POST'});
+    btn.textContent='✓ Gestartet — Seite in 2 Min. neu laden';
+  }
+</script>
+</body></html>`);
+});
+
+// Bildcheck im Hintergrund starten
+app.post('/api/bildcheck-starten', (req, res) => {
+  const { spawn } = require('child_process');
+  const child = spawn(process.execPath, [
+    path.join(__dirname, 'scripts', 'check-plant-images.js'),
+    '--live', '--propose'
+  ], { cwd: __dirname, detached: true, stdio: 'ignore' });
+  child.unref();
+  res.json({ ok: true });
+});
+
+// Kandidaten-Fetch im Hintergrund starten
+app.post('/api/kandidaten-starten', (req, res) => {
+  const { spawn } = require('child_process');
+  const child = spawn(process.execPath, [
+    path.join(__dirname, 'scripts', 'fetch-bild-kandidaten.js')
+  ], { cwd: __dirname, detached: true, stdio: 'ignore' });
+  child.unref();
+  res.json({ ok: true });
+});
+
 // ─── Pflanzenseiten (SEO) ─────────────────────────────────────────────────────
 
 app.get('/pflanzen', (req, res) => {
