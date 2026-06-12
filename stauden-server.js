@@ -1915,13 +1915,17 @@ app.post('/api/bild-pruefen/:id', (req, res) => {
 
 // Bildcheck im Hintergrund starten
 app.post('/api/bildcheck-starten', (req, res) => {
+  // Nur Pflanzen mit offenem Vorschlag neu prüfen (nicht alle 500+ Live-Pflanzen)
+  const ids = db.prepare("SELECT id FROM pflanzen WHERE bild_vorschlag IS NOT NULL AND bild_vorschlag != ''")
+    .all().map(p => p.id);
+  if (!ids.length) return res.json({ ok: true, count: 0 });
   const { spawn } = require('child_process');
   const child = spawn(process.execPath, [
     path.join(__dirname, 'scripts', 'check-plant-images.js'),
-    '--live', '--propose'
+    '--propose', `--ids=${ids.join(',')}`
   ], { cwd: __dirname, detached: true, stdio: 'ignore' });
   child.unref();
-  res.json({ ok: true });
+  res.json({ ok: true, count: ids.length });
 });
 
 // Kandidaten-Fetch im Hintergrund starten
