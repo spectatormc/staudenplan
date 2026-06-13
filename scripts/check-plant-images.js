@@ -44,7 +44,7 @@ const log = (...msgs) => {
 };
 
 const UPDATE_BILD      = db.prepare('UPDATE pflanzen SET bild_url = ?, bild_lizenz = ? WHERE id = ?');
-const UPDATE_VORSCHLAG = db.prepare('UPDATE pflanzen SET bild_vorschlag = ?, bild_check_info = ? WHERE id = ?');
+const UPDATE_VORSCHLAG = db.prepare("UPDATE pflanzen SET bild_vorschlag = ?, bild_check_info = ?, status = 'staging' WHERE id = ?");
 const UPDATE_GEPRUEFT  = db.prepare('UPDATE pflanzen SET bild_geprueft = 1 WHERE id = ?');
 
 // ── Pflanzenliste aufbauen ─────────────────────────────────────────────────────
