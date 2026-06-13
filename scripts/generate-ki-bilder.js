@@ -85,22 +85,25 @@ async function main() {
 
     try {
       const resp = await openai.images.generate({
-        model:   'dall-e-3',
+        model:          'gpt-image-1',
         prompt,
-        n:       1,
-        size:    '1024x1024',
-        quality: 'standard',
+        n:              1,
+        size:           '1024x1024',
+        quality:        'medium',
+        output_format:  'jpeg',
       });
 
-      const tempUrl = resp.data[0].url;
-      const slug    = (p.name_deutsch).toLowerCase()
+      const slug     = (p.name_deutsch).toLowerCase()
         .replace(/ä/g,'ae').replace(/ö/g,'oe').replace(/ü/g,'ue').replace(/ß/g,'ss')
         .replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,40);
       const filename = `ki-${slug}-${p.id}.jpg`;
       const dest     = path.join(IMG_DIR, filename);
       const localUrl = `/images/pflanzen/${filename}`;
 
-      await downloadImage(tempUrl, dest);
+      // gpt-image-1 gibt base64 zurück, keine URL
+      const b64 = resp.data[0].b64_json;
+      if (!b64) throw new Error('Kein b64_json in Response');
+      fs.writeFileSync(dest, Buffer.from(b64, 'base64'));
 
       UPDATE.run(
         localUrl,
