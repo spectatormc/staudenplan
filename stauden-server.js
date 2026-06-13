@@ -1189,7 +1189,7 @@ app.get('/checking', (req, res) => {
 
 app.post('/api/bild-approve/:id', async (req, res) => {
   const id = parseInt(req.params.id);
-  const p = db.prepare('SELECT bild_vorschlag, name_deutsch FROM pflanzen WHERE id = ?').get(id);
+  const p = db.prepare('SELECT bild_vorschlag, bild_check_info, name_deutsch FROM pflanzen WHERE id = ?').get(id);
   if (!p?.bild_vorschlag) return res.status(404).json({ error: 'Kein Vorschlag' });
 
   let finalUrl = p.bild_vorschlag;
@@ -1231,8 +1231,11 @@ app.post('/api/bild-approve/:id', async (req, res) => {
     }
   }
 
-  db.prepare("UPDATE pflanzen SET bild_url = ?, bild_lizenz = 'Pixabay License', bild_vorschlag = NULL, bild_check_info = NULL, status = 'live' WHERE id = ?")
-    .run(finalUrl, id);
+  let lizenz = 'Pixabay License';
+  try { lizenz = JSON.parse(p.bild_check_info || '{}').lizenz || lizenz; } catch {}
+
+  db.prepare('UPDATE pflanzen SET bild_url = ?, bild_lizenz = ?, bild_vorschlag = NULL, bild_check_info = NULL, status = \'live\' WHERE id = ?')
+    .run(finalUrl, lizenz, id);
   res.json({ ok: true });
 });
 

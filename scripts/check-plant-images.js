@@ -168,6 +168,15 @@ Regeln:
   }
 }
 
+// ── Botanischen Namen für Suche bereinigen ────────────────────────────────────
+function cleanBotanischForSearch(name) {
+  return name
+    .replace(/\s*'[^']*'/g, '')  // Sortenamen 'Album', 'Pumila' etc. entfernen
+    .replace(/\s+x\s+/gi, ' ')   // Hybrid-x entfernen: "Cistus x purpureus" → "Cistus purpureus"
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 // ── Pixabay: mehrere Kandidaten suchen ───────────────────────────────────────
 async function pixabaySearch(query, n = 5) {
   if (!PIXABAY_KEY) return [];
@@ -177,6 +186,45 @@ async function pixabaySearch(query, n = 5) {
     if (!res.ok) return [];
     const data = await res.json();
     return (data.hits || []).map(h => h.largeImageURL || h.webformatURL).filter(Boolean);
+  } catch { return []; }
+}
+
+// ── Wikimedia Commons: freie Pflanzenfotos suchen ────────────────────────────
+async function wikimediaSearch(nameBotanisch, n = 3) {
+  const clean = cleanBotanischForSearch(nameBotanisch);
+  try {
+    const searchUrl = `https://commons.wikimedia.org/w/api.php?action=query&list=search`
+      + `&srsearch=${encodeURIComponent(clean)}&srnamespace=6&srlimit=15&format=json`;
+    const sRes = await fetch(searchUrl, { signal: AbortSignal.timeout(8000), headers: { 'User-Agent': 'StaudenplanBot/1.0 (staudenplan.de)' } });
+    if (!sRes.ok) return [];
+    const sData = await sRes.json();
+    const titles = (sData.query?.search || [])
+      .map(r => r.title)
+      .filter(t => /\.(jpg|jpeg|png)$/i.test(t));
+    if (!titles.length) return [];
+
+    const infoUrl = `https://commons.wikimedia.org/w/api.php?action=query`
+      + `&titles=${encodeURIComponent(titles.slice(0, 10).join('|'))}`
+      + `&prop=imageinfo&iiprop=url|extmetadata&iiurlwidth=800&format=json`;
+    const iRes = await fetch(infoUrl, { signal: AbortSignal.timeout(8000), headers: { 'User-Agent': 'StaudenplanBot/1.0 (staudenplan.de)' } });
+    if (!iRes.ok) return [];
+    const iData = await iRes.json();
+
+    const results = [];
+    for (const page of Object.values(iData.query?.pages || {})) {
+      const info = page.imageinfo?.[0];
+      if (!info) continue;
+      const license = info.extmetadata?.LicenseShortName?.value || '';
+      const isFree = /^(CC[- ]0|CC BY[\s\-]|Public Domain|PD[^-]|CC-BY\s)/i.test(license)
+        && !/NonCommercial|NC/i.test(license);
+      if (!isFree) continue;
+      const imgUrl = info.thumburl || info.url;
+      if (!imgUrl || !/\.(jpg|jpeg|png)(\?|$)/i.test(imgUrl)) continue;
+      const artist = (info.extmetadata?.Artist?.value || 'Wikimedia Commons').replace(/<[^>]+>/g, '').trim().slice(0, 60);
+      results.push({ url: imgUrl, lizenz: `${license || 'CC BY'}, Wikimedia Commons, ${artist}` });
+      if (results.length >= n) break;
+    }
+    return results;
   } catch { return []; }
 }
 
@@ -197,23 +245,37 @@ async function istPflanzenbild(imageUrl) {
   } catch { return true; } // im Zweifel durchlassen
 }
 
+// Gibt { url, lizenz } oder null zurück
 async function fetchReplacement(nameDeutsch, nameBotanisch, farbe) {
-  const genus = nameBotanisch.split(' ')[0];
+  const clean = cleanBotanischForSearch(nameBotanisch);
+  const genus = clean.split(' ')[0];
   const f     = (farbe || '').split(',')[0].trim();
+
   const queries = [
-    f ? `${nameBotanisch} ${f} flower` : `${nameBotanisch} flower`,
-    `${nameBotanisch} plant garden`,
-    f ? `${genus} ${f} perennial` : `${genus} garden plant`,
+    f ? `${clean} ${f} flower` : `${clean} flower`,
+    `${clean} plant garden`,
+    f ? `${genus} ${f} perennial` : `${genus} garden perennial`,
+    `${genus} flower`,
     `${nameDeutsch} Blüte`,
   ];
+
   for (const q of queries) {
     const urls = await pixabaySearch(q, 5);
     for (const url of urls) {
       const ok = await istPflanzenbild(url);
-      if (ok) return url;
+      if (ok) return { url, lizenz: 'Pixabay License' };
     }
     await new Promise(r => setTimeout(r, 300));
   }
+
+  // Pixabay erfolglos → Wikimedia Commons als Fallback
+  process.stdout.write(' [Wikimedia…]');
+  const wikiResults = await wikimediaSearch(nameBotanisch);
+  for (const { url, lizenz } of wikiResults) {
+    const ok = await istPflanzenbild(url);
+    if (ok) return { url, lizenz };
+  }
+
   return null;
 }
 
@@ -257,23 +319,23 @@ async function main() {
       ergebnisse.schlecht.push({ ...p, result });
 
       if (FIX) {
-        process.stdout.write(`   🔄 Suche Ersatz auf Pixabay…`);
-        const newUrl = await fetchReplacement(p.name_deutsch, p.name_botanisch, p.farbe);
-        if (newUrl) {
-          UPDATE_BILD.run(newUrl, 'Pixabay License', p.id);
-          log(`   ✓ Ersetzt: ${newUrl.slice(0, 80)}`);
+        process.stdout.write(`   🔄 Suche Ersatz…`);
+        const found = await fetchReplacement(p.name_deutsch, p.name_botanisch, p.farbe);
+        if (found) {
+          UPDATE_BILD.run(found.url, found.lizenz, p.id);
+          log(`   ✓ Ersetzt: ${found.url.slice(0, 80)} [${found.lizenz}]`);
         } else {
-          log(`   ✗ Kein Ersatz auf Pixabay gefunden`);
+          log(`   ✗ Kein Ersatz gefunden (Pixabay + Wikimedia)`);
         }
         await new Promise(r => setTimeout(r, 400));
       } else if (PROPOSE) {
-        process.stdout.write(`   🔍 Suche Vorschlag auf Pixabay…`);
-        const newUrl = await fetchReplacement(p.name_deutsch, p.name_botanisch, p.farbe);
-        if (newUrl) {
-          UPDATE_VORSCHLAG.run(newUrl, JSON.stringify({ konfidenz, was_gezeigt, grund }), p.id);
-          log(`   📌 Vorschlag gespeichert: ${newUrl.slice(0, 80)}`);
+        process.stdout.write(`   🔍 Suche Vorschlag…`);
+        const found = await fetchReplacement(p.name_deutsch, p.name_botanisch, p.farbe);
+        if (found) {
+          UPDATE_VORSCHLAG.run(found.url, JSON.stringify({ konfidenz, was_gezeigt, grund, lizenz: found.lizenz }), p.id);
+          log(`   📌 Vorschlag gespeichert: ${found.url.slice(0, 80)} [${found.lizenz}]`);
         } else {
-          log(`   ✗ Kein Vorschlag auf Pixabay gefunden`);
+          log(`   ✗ Kein Vorschlag gefunden (Pixabay + Wikimedia)`);
         }
         await new Promise(r => setTimeout(r, 400));
       }

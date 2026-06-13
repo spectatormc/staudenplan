@@ -22,6 +22,14 @@ if (IDS?.length) where = `id IN (${IDS.join(',')})`;
 const pflanzen = db.prepare(`SELECT id, name_deutsch, name_botanisch, farbe FROM pflanzen WHERE ${where} ORDER BY id`).all();
 console.log(`\n=== Bildkandidaten für ${pflanzen.length} Pflanzen ===\n`);
 
+function cleanBotanischForSearch(name) {
+  return name
+    .replace(/\s*'[^']*'/g, '')
+    .replace(/\s+x\s+/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 async function pixabayMulti(query, n = 3) {
   try {
     const url = `https://pixabay.com/api/?key=${PIXABAY_KEY}&q=${encodeURIComponent(query)}&image_type=photo&category=nature&per_page=${n + 2}&safesearch=true`;
@@ -53,12 +61,14 @@ function downloadLocal(url, id, idx) {
 async function main() {
   for (const p of pflanzen) {
     process.stdout.write(`[${p.id}] ${p.name_deutsch.padEnd(38)} `);
-    const genus  = p.name_botanisch.split(' ')[0];
-    const farbe  = (p.farbe || '').split(',')[0].trim(); // erste Farbe
+    const clean  = cleanBotanischForSearch(p.name_botanisch);
+    const genus  = clean.split(' ')[0];
+    const farbe  = (p.farbe || '').split(',')[0].trim();
     const queries = [
-      farbe ? `${p.name_botanisch} ${farbe} flower` : `${p.name_botanisch} flower`,
-      `${p.name_botanisch} plant garden`,
+      farbe ? `${clean} ${farbe} flower` : `${clean} flower`,
+      `${clean} plant garden`,
       farbe ? `${genus} ${farbe} perennial garden` : `${genus} garden perennial`,
+      `${genus} flower`,
       `${p.name_deutsch} Blüte Garten`,
     ];
 
