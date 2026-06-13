@@ -108,7 +108,7 @@ async function main() {
 
       UPDATE.run(
         localUrl,
-        JSON.stringify({ ki: true, prompt: prompt.slice(0, 200), lizenz: 'DALL-E 3 / OpenAI' }),
+        JSON.stringify({ ki: true, prompt: prompt.slice(0, 200), lizenz: 'KI-generiert / OpenAI' }),
         p.id
       );
       console.log(`✅ gespeichert → ${localUrl}`);
