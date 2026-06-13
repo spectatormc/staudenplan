@@ -302,6 +302,16 @@ async function main() {
       const fehlerMsg = `FEHLER: ${e.message}`;
       process.stdout.write(fehlerMsg + '\n');
       ergebnisse.fehler.push({ ...p, fehler: e.message });
+      if (PROPOSE) {
+        process.stdout.write(`   🔍 Suche Vorschlag (bild_url defekt)…`);
+        const found = await fetchReplacement(p.name_deutsch, p.name_botanisch, p.farbe);
+        if (found) {
+          UPDATE_VORSCHLAG.run(found.url, JSON.stringify({ konfidenz: 0, was_gezeigt: 'bild_url defekt', grund: e.message, lizenz: found.lizenz }), p.id);
+          log(`   📌 Vorschlag gespeichert: ${found.url.slice(0, 80)} [${found.lizenz}]`);
+        } else {
+          log(`   ✗ Kein Vorschlag gefunden`);
+        }
+      }
       await new Promise(r => setTimeout(r, 1000));
       continue;
     }
