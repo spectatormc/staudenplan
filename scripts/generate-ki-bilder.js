@@ -52,9 +52,10 @@ console.log(`Geschätzte Kosten: ~${(pflanzen.length * 0.04).toFixed(2)} $ (${pf
 function buildPrompt(p) {
   const farbe = (p.farbe || '').split(',').slice(0,2).map(s => s.trim()).filter(Boolean).join(' and ');
   const farbeHinweis = farbe ? ` with ${farbe} flowers` : '';
-  return `Photorealistic botanical garden photograph of ${p.name_botanisch} (${p.name_deutsch})${farbeHinweis}. `
-    + `Close-up of the plant in a natural garden setting, soft natural light, sharp focus on flowers and leaves, `
-    + `green background bokeh. No text, no watermarks, no people. High quality plant photography.`;
+  return `Photorealistic garden photograph of the full plant ${p.name_botanisch} (${p.name_deutsch})${farbeHinweis}. `
+    + `Show the entire plant including stems, leaves and flowers to reveal its natural shape and growth habit. `
+    + `Plant in a garden bed, natural daylight, blurred green garden background. `
+    + `No text, no watermarks, no people. High quality plant photography.`;
 }
 
 function downloadImage(url, dest) {
