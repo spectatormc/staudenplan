@@ -1515,7 +1515,7 @@ app.get('/admin', (req, res) => {
       <div class="bot">${p.name_botanisch}</div>
       <div class="imgs">
         <div class="img-box">${altImg}<div class="lbl">Bisheriges Bild</div></div>
-        <div class="img-box"><img src="${p.bild_vorschlag}" onerror="this.style.opacity='.2'"><div class="lbl">✦ DALL-E 3 generiert</div></div>
+        <div class="img-box"><img src="${p.bild_vorschlag}" onerror="this.style.opacity='.2'"><div class="lbl">✦ KI generiert</div></div>
       </div>
       <div class="btns">
         <button class="btn-ok" onclick="approveKi(${p.id},this)">✓ Übernehmen</button>
@@ -1734,7 +1734,9 @@ app.get('/admin', (req, res) => {
   <div class="pane" id="pane-ki">
     <div class="toolbar">
       <span class="toolbar-meta"><span id="counter-ki">${kiPflanzen.length}</span> KI-Bilder zur Review</span>
-      <button class="btn-action btn-green" onclick="kiGenerieren(this)">✦ 10 KI-Bilder generieren (~$0.40)</button>
+      <button class="btn-action btn-green" onclick="approveAllKi()">✓ Alle akzeptieren</button>
+      <button class="btn-action btn-gray" onclick="rejectAllKi()">✗ Alle verwerfen</button>
+      <button class="btn-action btn-orange" onclick="kiGenerieren(this)">✦ 10 weitere generieren (~$0.40)</button>
     </div>
     <div class="grid" id="grid-ki">${kiCards}</div>
   </div>
@@ -1830,11 +1832,29 @@ app.get('/admin', (req, res) => {
     if(r.ok){ hideKiCard(id); }
     else{ btn.textContent=orig; btn.disabled=false; alert('Fehler'); }
   }
+  async function approveAllKi(){
+    const cards=[...document.querySelectorAll('#grid-ki .card:not(.done)')];
+    if(!cards.length||!confirm('Alle '+cards.length+' KI-Bilder übernehmen?'))return;
+    for(const c of cards){
+      const id=parseInt(c.id.replace('ki-card-',''));
+      await approveKi(id,c.querySelector('.btn-ok'));
+      await new Promise(r=>setTimeout(r,80));
+    }
+  }
+  async function rejectAllKi(){
+    const cards=[...document.querySelectorAll('#grid-ki .card:not(.done)')];
+    if(!cards.length||!confirm('Alle '+cards.length+' KI-Bilder verwerfen?'))return;
+    for(const c of cards){
+      const id=parseInt(c.id.replace('ki-card-',''));
+      await rejectKi(id,c.querySelector('.btn-no'));
+      await new Promise(r=>setTimeout(r,80));
+    }
+  }
   async function kiGenerieren(btn){
-    if(!confirm('10 KI-Bilder mit DALL-E 3 generieren? Kosten ca. $0.40, dauert ~3 Min.'))return;
+    if(!confirm('10 KI-Bilder generieren (gpt-image-1)? Kosten ca. $0.40, dauert ~5 Min.'))return;
     btn.innerHTML='<span class=spinner></span> Läuft…'; btn.disabled=true;
     await fetch('/api/ki-bilder-starten',{method:'POST'});
-    btn.textContent='✓ Gestartet — Tab in 4 Min. neu laden';
+    btn.textContent='✓ Gestartet — Tab in 5 Min. neu laden';
   }
 
   // ── Bildauswahl ──
