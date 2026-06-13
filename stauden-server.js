@@ -1693,11 +1693,9 @@ app.get('/admin', (req, res) => {
   <h1>🌿 Staudenplan Admin</h1>
   <div class="stat-chips">
     <span class="chip">${stats.live} live</span>
-    <span class="chip ${stats.staging>0?'warn':''}">${stats.staging} staging</span>
-    <span class="chip ${stats.vorschlaege>0?'warn':''}">${stats.vorschlaege} Vorschläge offen</span>
-    <span class="chip">${stats.kandidaten} zur Bildauswahl</span>
+    <span class="chip ${stats.staging>0?'warn':''}">${stats.staging} offline (Bildprüfung)</span>
+    ${stats.kandidaten>0?`<span class="chip">${stats.kandidaten} zur Bildauswahl</span>`:''}
     ${stats.gesperrt>0?`<span class="chip warn">${stats.gesperrt} gesperrt</span>`:''}
-    ${stats.ohneBild>0?`<span class="chip warn">${stats.ohneBild} ohne Bild</span>`:''}
     ${stats.ki>0?`<span class="chip" style="background:rgba(180,100,255,.2);color:#d9a0ff">${stats.ki} KI-Bilder</span>`:''}
   </div>
 </div>
