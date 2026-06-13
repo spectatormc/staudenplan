@@ -1223,7 +1223,7 @@ app.post('/api/bild-approve/:id', async (req, res) => {
             file.on('finish', () => file.close(resolve));
           }).on('error', err => { fs.unlink(dest, ()=>{}); reject(err); });
         };
-        download(url);
+        download(finalUrl);
       });
       finalUrl = local;
     } catch (e) {
