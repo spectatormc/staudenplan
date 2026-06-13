@@ -1535,43 +1535,6 @@ app.get('/admin', (req, res) => {
       <button class="btn-entsperren" onclick="entsperre(${p.id},this)">↩ Entsperren</button>
     </div>`).join('') || '<p class="empty" style="font-size:.85rem">Keine gesperrten Pflanzen.</p>';
 
-  // ── Tab 3: Staging ──
-  const stagingPflanzen = db.prepare(`
-    SELECT id, name_deutsch, name_botanisch, bild_url, licht, boden, hoehe_cm_min, hoehe_cm_max, bild_gesperrt, bild_vorschlag
-    FROM pflanzen WHERE status='staging' ORDER BY name_deutsch
-  `).all();
-
-  const stagingRows = stagingPflanzen.map(p => {
-    const badge = p.bild_gesperrt ? '<span class="tag" style="background:#fff3cd;color:#856404">gesperrt</span>'
-      : p.bild_vorschlag ? ''
-      : p.bild_url ? '<span class="tag" style="background:#d4edda;color:#155724">Bild ok</span>'
-      : '<span class="tag" style="background:#f8d7da;color:#721c24">kein Bild</span>';
-    const aktImg = p.bild_url
-      ? `<img src="${p.bild_url}" class="st-img">`
-      : `<div class="st-img no-img-sm">🌿</div>`;
-    const vorschlagBlock = p.bild_vorschlag ? `
-      <div class="st-vorschlag" id="stv-${p.id}">
-        <div class="st-imgs">
-          ${aktImg}
-          <span class="st-arrow">→</span>
-          <img src="${p.bild_vorschlag}" class="st-img" onerror="this.style.opacity='.2'">
-        </div>
-        <div class="st-vbtns">
-          <button class="btn-ok" style="font-size:.78rem;padding:5px 12px" onclick="stApprove(${p.id},this)">✓ Übernehmen</button>
-          <button class="btn-no" style="font-size:.78rem;padding:5px 12px" onclick="stReject(${p.id},this)">✗ Behalten</button>
-        </div>
-      </div>` : '';
-    return `<div class="st-row" id="str-${p.id}" style="${p.bild_vorschlag?'flex-wrap:wrap;align-items:flex-start':''}">
-      ${p.bild_vorschlag ? '' : aktImg}
-      <div class="st-info" style="flex:1;min-width:180px">
-        <strong>${p.name_deutsch}</strong>
-        <span class="bot">${p.name_botanisch}</span>
-      </div>
-      <div class="st-meta">${p.hoehe_cm_min||'?'}–${p.hoehe_cm_max||'?'}cm</div>
-      ${badge}
-      ${vorschlagBlock}
-    </div>`;
-  }).join('') || '<p class="empty">Keine Staging-Pflanzen.</p>';
 
   // ── Tab 4: Live Pflanzen ──
   const livePflanzen = db.prepare(`
@@ -1707,7 +1670,6 @@ app.get('/admin', (req, res) => {
 <div class="tabs">
   <div class="tab active" onclick="showTab('pruefung',this)">Bildprüfung <span class="badge orange" id="b-pruefung">${vorschlaege.length}</span></div>
   <div class="tab" onclick="showTab('auswahl',this)">Bildauswahl <span class="badge" id="b-auswahl">${kandidatenPflanzen.length}</span></div>
-  <div class="tab" onclick="showTab('staging',this)">Staging <span class="badge orange" id="b-staging">${stagingPflanzen.length}</span></div>
   <div class="tab" onclick="showTab('live',this)">Live Pflanzen <span class="badge" id="b-live">${livePflanzen.length}</span></div>
 </div>
 
@@ -1734,16 +1696,7 @@ app.get('/admin', (req, res) => {
     ${gesperrte.length>0?`<div class="gesperrt-box"><h3>Gesperrt — kein passendes Bild (${gesperrte.length})</h3>${gesperrtRows}</div>`:''}
   </div>
 
-  <!-- Tab 3: Staging -->
-  <div class="pane" id="pane-staging" style="display:none">
-    <div class="toolbar">
-      <span class="toolbar-meta">${stagingPflanzen.length} Pflanzen im Staging</span>
-      <a href="/vorschau/pflanzen?key=preview2026" target="_blank" class="btn-action btn-gray" style="text-decoration:none">↗ Vorschau öffnen</a>
-    </div>
-    <div class="st-list">${stagingRows}</div>
-  </div>
-
-  <!-- Tab 4: Live Pflanzen -->
+  <!-- Tab 3: Live Pflanzen -->
   <div class="pane" id="pane-live" style="display:none">
     <div class="toolbar">
       <span class="toolbar-meta">${livePflanzen.length} Live-Pflanzen · "Bild prüfen" schaltet die Pflanze offline und startet einen GPT-Check</span>
@@ -1839,19 +1792,7 @@ app.get('/admin', (req, res) => {
     const r=await fetch('/api/bild-entsperren/'+id,{method:'POST'});
     if(r.ok){ const row=document.getElementById('plant-g-'+id); btn.textContent='✓'; setTimeout(()=>row.style.display='none',800); }
   }
-  // ── Staging Approve/Reject ──
-  async function stApprove(id,btn){
-    btn.innerHTML='<span class=spinner></span>'; btn.disabled=true;
-    const r=await fetch('/api/bild-approve/'+id,{method:'POST'});
-    if(r.ok){ document.getElementById('stv-'+id).innerHTML='<span style="color:#2d6a4f;font-size:.8rem">✓ Übernommen</span>'; setTimeout(()=>document.getElementById('stv-'+id).remove(),1500); }
-    else{ btn.textContent='✓ Übernehmen'; btn.disabled=false; }
-  }
-  async function stReject(id,btn){
-    btn.textContent='⏳'; btn.disabled=true;
-    const r=await fetch('/api/bild-reject/'+id,{method:'POST'});
-    if(r.ok){ document.getElementById('stv-'+id).innerHTML='<span style="color:#888;font-size:.8rem">✗ Behalten</span>'; setTimeout(()=>document.getElementById('stv-'+id).remove(),1500); }
-    else{ btn.textContent='✗ Behalten'; btn.disabled=false; }
-  }
+
 
   // ── Live-Tab Suche ──
   function filterLive(q) {
