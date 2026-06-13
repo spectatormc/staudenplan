@@ -2461,9 +2461,11 @@ app.get('/pflanze/:slug', (req, res) => {
 
     <!-- Kombinationen -->
     ${(() => {
-      if (!d.kombinationen || d.kombinationen.length === 0) return '';
+      let kombinationen = d.kombinationen;
+      if (typeof kombinationen === 'string') { try { kombinationen = JSON.parse(kombinationen); } catch { kombinationen = []; } }
+      if (!Array.isArray(kombinationen) || kombinationen.length === 0) return '';
       // Für jeden Partner passende DB-Pflanze suchen (Genus-Match als Fallback)
-      const kombinationenMitLink = d.kombinationen.map(k => {
+      const kombinationenMitLink = kombinationen.map(k => {
         const genus = (k.name_botanisch || '').split(' ')[0];
         const match = db.prepare(
           `SELECT name_botanisch, name_deutsch FROM pflanzen
