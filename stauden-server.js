@@ -1697,7 +1697,7 @@ app.get('/admin', (req, res) => {
   </div>
 
   <!-- Tab 3: Live Pflanzen -->
-  <div class="pane" id="pane-live" style="display:none">
+  <div class="pane" id="pane-live">
     <div class="toolbar">
       <span class="toolbar-meta">${livePflanzen.length} Live-Pflanzen · "Bild prüfen" schaltet die Pflanze offline und startet einen GPT-Check</span>
     </div>
