@@ -822,6 +822,7 @@ function pflanzeToSlug(name_botanisch) {
 // ─── Impressum & Datenschutz ─────────────────────────────────────────────────
 
 const LEGAL_STYLE = `
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">
   <style>
     *{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',system-ui,sans-serif;background:#f8f4ef;color:#1a1a1a}
     nav{background:#1b4332;padding:14px 24px;display:flex;align-items:center;gap:12px}
