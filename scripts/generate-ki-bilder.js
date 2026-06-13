@@ -90,7 +90,6 @@ async function main() {
         n:       1,
         size:    '1024x1024',
         quality: 'standard',
-        style:   'natural',
       });
 
       const tempUrl = resp.data[0].url;
