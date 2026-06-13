@@ -1998,6 +1998,7 @@ app.get('/pflanzen', (req, res) => {
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Stauden suchen & filtern — ${total} winterharte Gartenstauden | Staudenplan.de</title>
   <meta name="description" content="Alle ${total} winterharten Gartenstauden filtern nach Standort, Blühzeit, Farbe, Höhe, Feuchtigkeit und mehr — mit Fotos, Pflege-Tipps und Kauflink.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">
   <link rel="canonical" href="https://www.staudenplan.de/pflanzen">
   <meta property="og:title" content="Stauden suchen — ${total} winterharte Arten">
   <meta property="og:image" content="https://www.staudenplan.de/images/og-default.jpg">
@@ -2346,6 +2347,7 @@ app.get('/pflanze/:slug', (req, res) => {
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>${pflanze.name_deutsch} (${pflanze.name_botanisch}) — Pflege, Standort & Verwendung | Staudenplan.de</title>
   <meta name="description" content="${pflanze.name_deutsch} (${pflanze.name_botanisch}): ${(pflanze.beschreibung || '').substring(0, 130)} — Standort ${pflanze.licht||''}, Blühzeit ${pflanze.bluehzeit||''}, Pflege und Kauftipp.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">
   <link rel="canonical" href="https://www.staudenplan.de/pflanze/${slug}">
   <meta property="og:title" content="${pflanze.name_deutsch} — Pflege, Standort & Kauftipp">
   <meta property="og:description" content="${(pflanze.beschreibung || '').substring(0, 155)}">
@@ -2706,6 +2708,7 @@ app.get('/ratgeber', (req, res) => {
 
   res.send(`<!DOCTYPE html><html lang="de"><head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">
   <title>Garten-Ratgeber — Staudenbeete planen, pflegen und gestalten | Staudenplan.de</title>
   <meta name="description" content="Ratgeber für Staudenbeete: ${artikel.length} Expertentexte zu Standorten, Pflanzkombinationen, Pflege und Gestaltung — von Grundprinzipien bis Praxistipps.">
   <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',system-ui,sans-serif;background:#f8f4ef;color:#1a1a1a}@media(max-width:640px){a[style*="grid-template-columns:1fr 1fr"]{display:flex!important;flex-direction:column!important}}</style>
@@ -2804,6 +2807,7 @@ app.get('/ratgeber/:slug', (req, res) => {
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>${artikel.titel} | Staudenplan.de Ratgeber</title>
   <meta name="description" content="${artikel.inhalt.substring(0, 155).replace(/"/g,"'")}">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">
   <link rel="canonical" href="https://www.staudenplan.de/ratgeber/${slug}">
   <meta property="og:title" content="${artikel.titel}">
   <meta property="og:type" content="article">
