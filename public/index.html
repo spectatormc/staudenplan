@@ -1095,7 +1095,7 @@
     </div>
     <div class="btn-row">
       <button class="btn-back" onclick="proGoStep(1)">← Zurück</button>
-      <button class="btn-next" id="pro-btn-next-2" onclick="proGoStep(formData.skipBodenStep ? 4 : 3)" disabled>Weiter →</button>
+      <button class="btn-next" id="pro-btn-next-2" onclick="proGoStep(4)" disabled>Weiter →</button>
     </div>
   </div>
 
@@ -1126,7 +1126,7 @@
       <div class="option-card" onclick="selectProOption('stil','Cottage-Garten / Englisch',this)"><div class="oc-icon">🏡</div><div class="oc-label">Cottage</div><div class="oc-sub">englisch, verspielt</div></div>
     </div>
     <div class="btn-row">
-      <button class="btn-back" onclick="proGoStep(formData.skipBodenStep ? 2 : 3)">← Zurück</button>
+      <button class="btn-back" onclick="proGoStep(2)">← Zurück</button>
       <button class="btn-next" id="pro-btn-next-4" onclick="proGoStep(5)" disabled>Weiter →</button>
     </div>
   </div>
@@ -1355,7 +1355,7 @@
     <div id="err-2" class="error-msg" style="display:none">Bitte einen Standort auswählen.</div>
     <div class="btn-row">
       <button class="btn-back" onclick="goStep(1)">← Zurück</button>
-      <button class="btn-next" id="btn-next-2" onclick="goStep(formData.skipBodenStep ? 4 : 3)" disabled>Weiter →</button>
+      <button class="btn-next" id="btn-next-2" onclick="goStep(4)" disabled>Weiter →</button>
     </div>
   </div>
 
@@ -1420,7 +1420,7 @@
     </div>
     <div id="err-4" class="error-msg" style="display:none">Bitte eine Option auswählen.</div>
     <div class="btn-row">
-      <button class="btn-back" onclick="goStep(formData.skipBodenStep ? 2 : 3)">← Zurück</button>
+      <button class="btn-back" onclick="goStep(2)">← Zurück</button>
       <button class="btn-next" id="btn-next-4" onclick="goStep(5)" disabled>Weiter →</button>
     </div>
   </div>
