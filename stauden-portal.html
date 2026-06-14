@@ -1167,6 +1167,11 @@
         <div class="sc-hidden" data-licht="Halbschatten (3–6 h)" data-boden="Lehmig / schwer" data-standortbeschr="Teichrand oder Sumpfbeet (Wasserrand WR), dauerhaft feuchter bis nasser schwerer Boden, Uferpflanzen und Feuchtwiesencharakter"></div>
       </div>
       <div class="standort-card" onclick="selectStandort(this, 'pro')">
+        <div class="sc-icon">🏊</div><div class="sc-label">Gartenteich / Wasserpflanzen</div>
+        <div class="sc-sub">Im Wasser · Seerosen · Schwimmpflanzen</div><div class="sc-tags"><span>Sonne</span><span>Wasser</span></div>
+        <div class="sc-hidden" data-licht="Vollsonne (6+ h)" data-boden="Lehmig / schwer" data-standortbeschr="Gartenteich mit Seerosen und echten Wasserpflanzen, nasse Zone direkt im Wasser, Wassertiefe 30-120 cm, Schwimmpflanzen Seerosen Sauerstoffpflanzen Roehrichtpflanzen Teichrand nass"></div>
+      </div>
+      <div class="standort-card" onclick="selectStandort(this, 'pro')">
         <div class="sc-icon">🌾</div><div class="sc-label">Präriecharakter / Naturgarten</div>
         <div class="sc-sub">Vollsonne · wechselfeucht</div><div class="sc-tags"><span>Vollsonne</span><span>wechselfeucht</span></div>
         <div class="sc-hidden" data-licht="Vollsonne (6+ h)" data-boden="Normal / humos" data-standortbeschr="Präriecharakter (Freifläche Fr2-Fr3), Vollsonne, wechselfeuchter normaler Boden, naturnahe Wiesenstimmung mit hoher Biodiversität"></div>
@@ -1189,7 +1194,7 @@
     </div>
     <div class="btn-row">
       <button class="btn-back" onclick="proGoStep(1)">← Zurück</button>
-      <button class="btn-next" id="pro-btn-next-2" onclick="proGoStep(3)" disabled>Weiter →</button>
+      <button class="btn-next" id="pro-btn-next-2" onclick="proGoStep(4)" disabled>Weiter →</button>
     </div>
   </div>
 
@@ -1225,7 +1230,7 @@
       <div class="option-card" onclick="selectProOption('stil','Steingarten / Alpin',this)"><div class="oc-icon">🪨</div><div class="oc-label">Steingarten</div><div class="oc-sub">felsig, robust, alpin</div></div>
     </div>
     <div class="btn-row">
-      <button class="btn-back" onclick="proGoStep(3)">← Zurück</button>
+      <button class="btn-back" onclick="proGoStep(2)">← Zurück</button>
       <button class="btn-next" id="pro-btn-next-4" onclick="proGoStep(5)" disabled>Weiter →</button>
     </div>
   </div>
@@ -1439,6 +1444,13 @@
         <div class="sc-hidden" data-licht="Halbschatten (3–6 h)" data-boden="Lehmig / schwer" data-standortbeschr="Teichrand oder Sumpfbeet (Wasserrand WR), dauerhaft feuchter bis nasser Boden, schwere lehmige Böden die Wasser halten, Uferpflanzen und Feuchtwiesencharakter"></div>
       </div>
       <div class="standort-card" onclick="selectStandort(this, 'einfach')">
+        <div class="sc-icon">🏊</div>
+        <div class="sc-label">Gartenteich / Wasserpflanzen</div>
+        <div class="sc-sub">Im Wasser · Seerosen · Schwimmpflanzen</div>
+        <div class="sc-tags"><span>Sonne</span><span>Wasser</span></div>
+        <div class="sc-hidden" data-licht="Vollsonne (6+ h)" data-boden="Lehmig / schwer" data-standortbeschr="Gartenteich mit Seerosen und echten Wasserpflanzen, nasse Zone direkt im Wasser, Wassertiefe 30-120 cm, Schwimmpflanzen Seerosen Sauerstoffpflanzen Roehrichtpflanzen Teichrand nass"></div>
+      </div>
+      <div class="standort-card" onclick="selectStandort(this, 'einfach')">
         <div class="sc-icon">🌾</div>
         <div class="sc-label">Präriecharakter / Naturgarten</div>
         <div class="sc-sub">Vollsonne · wechselfeucht · naturnahe Wiese</div>
@@ -1470,7 +1482,7 @@
     <div id="err-2" class="error-msg" style="display:none">Bitte einen Standort auswählen.</div>
     <div class="btn-row">
       <button class="btn-back" onclick="goStep(1)">← Zurück</button>
-      <button class="btn-next" id="btn-next-2" onclick="goStep(3)" disabled>Weiter →</button>
+      <button class="btn-next" id="btn-next-2" onclick="goStep(4)" disabled>Weiter →</button>
     </div>
   </div>
 
@@ -1556,7 +1568,7 @@
     </div>
     <div id="err-4" class="error-msg" style="display:none">Bitte eine Option auswählen.</div>
     <div class="btn-row">
-      <button class="btn-back" onclick="goStep(3)">← Zurück</button>
+      <button class="btn-back" onclick="goStep(2)">← Zurück</button>
       <button class="btn-next" id="btn-next-4" onclick="goStep(5)" disabled>Weiter →</button>
     </div>
   </div>
@@ -2165,7 +2177,7 @@
     formData.saison = document.getElementById('pro-saison').value;
     if (!formData.gartenflaeche) { alert('Bitte Fläche eingeben.'); return; }
     if (!formData.licht) { proGoStep(2); return; }
-    if (!formData.boden) { proGoStep(3); return; }
+    if (!formData.boden) { proGoStep(2); return; }
     if (!formData.stil) { proGoStep(4); return; }
     await planErstellen();
   }
