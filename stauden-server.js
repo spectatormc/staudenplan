@@ -391,6 +391,35 @@ app.get('/', (req, res) => {
     </div>
   </section>
 
+  <!-- Quiz Teaser -->
+  <section class="seo-quiz-teaser">
+    <div class="seo-section-inner">
+      <div class="quiz-teaser-inner">
+        <div class="quiz-teaser-left">
+          <div class="quiz-teaser-icon">🧠</div>
+          <h2>Teste dein Staudenwissen</h2>
+          <p>Kannst du Stauden am Bild erkennen? Oder willst du herausfinden, welcher Gartentyp du bist? Unser Quiz macht den Test – kostenlos und in 2 Minuten.</p>
+          <div class="quiz-teaser-badges">
+            <span>🌿 Wissenstest</span>
+            <span>🌸 Gartentyp-Quiz</span>
+          </div>
+          <a href="/quiz" class="quiz-teaser-btn">Quiz starten →</a>
+        </div>
+        <div class="quiz-teaser-right">
+          <div class="quiz-preview-card">
+            <div class="qp-label">Wie heißt diese Staude?</div>
+            <div class="qp-options">
+              <div class="qp-opt qp-richtig">✓ Echinacea purpurea</div>
+              <div class="qp-opt">Rudbeckia fulgida</div>
+              <div class="qp-opt">Salvia nemorosa</div>
+              <div class="qp-opt">Monarda didyma</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- Footer -->
   <footer class="seo-footer">
     <div class="seo-footer-inner">
@@ -424,6 +453,7 @@ app.get('/', (req, res) => {
         <h4>Bepflanzungsplan</h4>
         <ul>
           <li><a href="/">Kostenlosen Plan erstellen</a></li>
+          <li><a href="/quiz">🧠 Stauden-Quiz</a></li>
           <li><a href="/pflanzen">Stauden-Lexikon</a></li>
           <li><a href="/ratgeber">Garten-Ratgeber</a></li>
           <li><a href="/ratgeber/bepflanzungsplan-garten-kostenlos-erstellen-so-geht-s">Plan selbst erstellen</a></li>
@@ -478,6 +508,24 @@ app.get('/', (req, res) => {
 .spc-name { font-weight:700; font-size:.9rem; color:#1b4332; }
 .spc-bot { font-size:.73rem; font-style:italic; color:#888; }
 .spc-tag { font-size:.7rem; background:#e0f0e8; color:#2d6a4f; border-radius:4px; padding:1px 7px; align-self:flex-start; margin-top:2px; }
+.seo-quiz-teaser { background:linear-gradient(135deg, #1b4332 0%, #2d6a4f 60%, #40916c 100%); padding:56px 20px; }
+.quiz-teaser-inner { max-width:960px; margin:0 auto; display:grid; grid-template-columns:1fr 1fr; gap:48px; align-items:center; }
+.quiz-teaser-left .quiz-teaser-icon { font-size:2.8rem; margin-bottom:12px; }
+.quiz-teaser-left h2 { font-size:1.6rem; color:#fff; font-weight:800; margin-bottom:12px; line-height:1.25; }
+.quiz-teaser-left p { color:rgba(255,255,255,.85); font-size:.95rem; line-height:1.65; margin-bottom:18px; }
+.quiz-teaser-badges { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:24px; }
+.quiz-teaser-badges span { background:rgba(255,255,255,.15); color:#fff; border-radius:20px; padding:5px 14px; font-size:.8rem; font-weight:600; }
+.quiz-teaser-btn { display:inline-block; padding:14px 32px; background:#fff; color:#1b4332; border-radius:30px; font-weight:800; text-decoration:none; font-size:1rem; transition:transform .15s,box-shadow .15s; box-shadow:0 4px 16px rgba(0,0,0,.15); }
+.quiz-teaser-btn:hover { transform:translateY(-2px); box-shadow:0 8px 24px rgba(0,0,0,.2); }
+.quiz-preview-card { background:rgba(255,255,255,.95); border-radius:14px; padding:22px; box-shadow:0 8px 32px rgba(0,0,0,.2); }
+.qp-label { font-size:.9rem; font-weight:700; color:#1b4332; margin-bottom:14px; text-align:center; }
+.qp-options { display:flex; flex-direction:column; gap:8px; }
+.qp-opt { padding:11px 14px; border-radius:8px; border:2px solid #d0e8d8; background:#f0faf3; font-size:.85rem; font-weight:600; color:#1b4332; }
+.qp-richtig { background:#d4edda; border-color:#28a745; color:#155724; }
+@media(max-width:720px) {
+  .quiz-teaser-inner { grid-template-columns:1fr; gap:28px; }
+  .quiz-teaser-right { display:none; }
+}
 .seo-footer { background:#1b4332; color:#fff; padding:48px 20px 24px; }
 .seo-footer-inner { max-width:960px; margin:0 auto; display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:32px; margin-bottom:32px; }
 .seo-footer h4 { font-size:.95rem; margin-bottom:12px; color:#52b788; }
