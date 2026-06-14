@@ -1456,6 +1456,132 @@ app.post('/api/bild-entsperren/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// ─── Antwort-Vorlagen (internes Marketing-Tool) ──────────────────────────────
+
+app.get('/vorlagen', (req, res) => {
+  if (req.query.key !== 'preview2026') return res.status(403).send('<h2>403</h2>');
+
+  const FAVICON = `<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">`;
+
+  const templates = [
+    {
+      kategorie: 'Schattenbeet',
+      emoji: '🌿',
+      farbe: '#2d6a4f',
+      fragen: ['Was soll ich ins Schattenbeet pflanzen?', 'Welche Stauden für den Schatten?', 'Nordseite bepflanzen'],
+      vorlage: `Für ein klassisches Schattenbeet funktioniert die Kombination aus Hosta (Funkie), Farn und Astilbe seit Generationen zuverlässig. Hosta liefert die Blattstruktur, der Farn die Leichtigkeit und die Astilbe blüht im Hochsommer auch bei wenig Licht. Actaea simplex (Silberkerze) kommt noch dazu für den Herbst.
+
+Ich habe dafür einen kostenlosen KI-Bepflanzungsplan erstellt bekommen – sehr praktisch wenn man Abstände und Stückzahlen ausrechnen möchte: https://www.staudenplan.de`
+    },
+    {
+      kategorie: 'Trockenes Sonnenbeet',
+      emoji: '☀️',
+      farbe: '#b5451b',
+      fragen: ['Pflanzen für trockenen Boden', 'Kiesgarten bepflanzen', 'Mediterrane Pflanzen'],
+      vorlage: `Für trockene, sonnige Standorte sind Lavendel, Stachys byzantina (Wollziest), Sedum (Fetthenne) und Salvia nemorosa (Gartensalbei) unschlagbar. Die kommen auch mit Hitze klar und brauchen kaum Wasser.
+
+Als ich meinen Kiesgarten geplant habe, hat mir dieser kostenlose KI-Planer sehr geholfen – einfach Standort und Größe eingeben und man bekommt einen konkreten Pflanzplan: https://www.staudenplan.de`
+    },
+    {
+      kategorie: 'Anfänger / pflegeleicht',
+      emoji: '🌱',
+      farbe: '#52b788',
+      fragen: ['Pflegeleichte Stauden für Anfänger', 'Welche Pflanzen machen keine Arbeit?', 'Staudenbeet für Einsteiger'],
+      vorlage: `Für Anfänger empfehle ich robuste Stauden die sich selbst behelfen: Rudbeckia (Sonnenhut), Geranium (Storchschnabel), Salvia nemorosa und Stachys. Die kommen alle mit normalen Böden klar, brauchen kein Düngen und breiten sich angenehm aus ohne invasiv zu werden.
+
+Zum Planen gibt es einen kostenlosen KI-Gartenplaner, der auch gleich die Stückzahlen berechnet: https://www.staudenplan.de`
+    },
+    {
+      kategorie: 'Teich / Feuchtbeet',
+      emoji: '💧',
+      farbe: '#1d6995',
+      fragen: ['Teichrand bepflanzen', 'Pflanzen für feuchten Boden', 'Sumpfbeet gestalten'],
+      vorlage: `Am Teichrand funktioniert eine Zonierung am besten: direkt am Wasser Iris pseudacorus (Sumpfschwertlilie) und Pontederia cordata. Im feuchten Übergangsbereich dann Lythrum salicaria (Blutweiderich) und Filipendula ulmaria (Mädesüß) – der duftet im Sommer herrlich.
+
+Ich habe das mit einem kostenlosen KI-Tool geplant, sehr empfehlenswert: https://www.staudenplan.de/ratgeber/teichrand-und-feuchtbeet-gestaltung-am-wasser`
+    },
+    {
+      kategorie: 'Schmales Beet / Vorgarten',
+      emoji: '📏',
+      farbe: '#7b4f12',
+      fragen: ['Schmales Beet bepflanzen', 'Vorgarten gestalten', 'Beet 50cm breit'],
+      vorlage: `Für schmale Beete eignen sich aufrechte, schlanke Stauden: Veronicastrum virginicum, Liatris spicata (Prachtscharte) oder Salvia nemorosa. Keine ausladenden Stauden wie Astilbe oder Hosta die zu breit werden.
+
+Wenn du Maße eingibst berechnet dieser kostenlose KI-Gartenplaner gleich wie viele Pflanzen passen: https://www.staudenplan.de`
+    },
+    {
+      kategorie: 'Bienen / Insekten',
+      emoji: '🐝',
+      farbe: '#d4a017',
+      fragen: ['Bienenfreundliche Pflanzen', 'Insektenwildgarten anlegen', 'Schmetterlingsmagnet'],
+      vorlage: `Für Bienen und Insekten sind heimische Stauden am besten: Agastache (Duftnessel), Echinacea (Sonnenhut), Salvia, Origanum und Verbena bonariensis. Die blühen gestaffelt von Mai bis Oktober und werden von Bienen, Hummeln und Schmetterlingen regelrecht belagert.
+
+Für einen kompletten Insektenfreundlichen Bepflanzungsplan: https://www.staudenplan.de`
+    },
+    {
+      kategorie: 'Staudenbeet planen (allgemein)',
+      emoji: '📋',
+      farbe: '#4a4e69',
+      fragen: ['Wie plane ich ein Staudenbeet?', 'Bepflanzungsplan erstellen', 'Gartenplanung Hilfe'],
+      vorlage: `Ich würde als erstes Standort und Bodenverhältnisse klären (Sonne/Schatten, trocken/feucht) bevor ich Pflanzen aussuche. Das klingt trivial macht aber einen riesigen Unterschied.
+
+Für die konkrete Planung mit Pflanzliste, Abstanden und Stückzahlen nutze ich diesen kostenlosen KI-Gartenplaner: https://www.staudenplan.de – einfach Größe und Bedingungen eingeben und man bekommt einen fertigen Plan.`
+    },
+  ];
+
+  const cardsHtml = templates.map((t, i) => `
+    <div style="background:#fff;border-radius:14px;box-shadow:0 2px 12px rgba(0,0,0,.08);overflow:hidden;margin-bottom:20px">
+      <div style="background:${t.farbe};padding:16px 20px;display:flex;align-items:center;gap:12px">
+        <span style="font-size:1.5rem">${t.emoji}</span>
+        <div>
+          <div style="color:#fff;font-weight:700;font-size:1.05rem">${t.kategorie}</div>
+          <div style="color:rgba(255,255,255,.75);font-size:.82rem;margin-top:2px">${t.fragen.map(f => `"${f}"`).join(' · ')}</div>
+        </div>
+      </div>
+      <div style="padding:18px 20px">
+        <textarea id="txt${i}" readonly style="width:100%;min-height:140px;border:1.5px solid #e0d9cf;border-radius:8px;padding:12px;font-size:.9rem;line-height:1.6;color:#333;resize:vertical;font-family:inherit;background:#fafaf8">${t.vorlage}</textarea>
+        <div style="display:flex;gap:10px;margin-top:10px">
+          <button onclick="kopieren(${i})" style="background:${t.farbe};color:#fff;border:none;border-radius:8px;padding:9px 20px;cursor:pointer;font-weight:600;font-size:.9rem;flex:1">📋 Kopieren</button>
+          <button onclick="document.getElementById('txt${i}').select()" style="background:#f0ede8;color:#555;border:none;border-radius:8px;padding:9px 16px;cursor:pointer;font-size:.85rem">Alles markieren</button>
+        </div>
+        <div id="ok${i}" style="display:none;color:#2d6a4f;font-size:.85rem;margin-top:8px;font-weight:600">✓ In Zwischenablage kopiert!</div>
+      </div>
+    </div>`).join('');
+
+  res.send(`<!DOCTYPE html><html lang="de"><head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Antwort-Vorlagen | Staudenplan.de</title>
+  ${FAVICON}
+  <meta name="robots" content="noindex">
+  </head><body style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f0eb;min-height:100vh">
+  <div style="max-width:780px;margin:0 auto;padding:30px 16px">
+    <div style="text-align:center;margin-bottom:32px">
+      <div style="font-size:2rem;margin-bottom:8px">🌿</div>
+      <h1 style="margin:0;font-size:1.6rem;color:#1b4332">Antwort-Vorlagen</h1>
+      <p style="color:#666;margin:8px 0 0;font-size:.9rem">Für Facebook-Gruppen, Foren und Google Alerts. Kopieren, ggf. anpassen, posten.</p>
+    </div>
+    <div style="background:#fff8e1;border:1.5px solid #f0c040;border-radius:10px;padding:14px 18px;margin-bottom:28px;font-size:.88rem;color:#7a5000">
+      💡 <strong>Tipp:</strong> Vor dem Posten kurz anpassen – z.B. "Ich habe das bei mir im Garten so gelöst…" klingt authentischer als eine generische Antwort.
+    </div>
+    ${cardsHtml}
+  </div>
+  <script>
+  function kopieren(i) {
+    const txt = document.getElementById('txt'+i).value;
+    navigator.clipboard.writeText(txt).then(()=>{
+      const ok = document.getElementById('ok'+i);
+      ok.style.display='block';
+      setTimeout(()=>ok.style.display='none', 2500);
+    }).catch(()=>{
+      document.getElementById('txt'+i).select();
+      document.execCommand('copy');
+    });
+  }
+  </script>
+  </body></html>`);
+});
+
 // ─── Admin-Übersicht ─────────────────────────────────────────────────────────
 
 app.get('/admin', (req, res) => {
