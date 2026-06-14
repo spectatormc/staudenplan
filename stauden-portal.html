@@ -3207,7 +3207,7 @@
       <!-- Leit- & Begleitstauden: Einzelkreise -->
       <g clip-path="url(#bedClip)">${circles}</g>
       <!-- Beschriftung -->
-      ${!hasDrawn ? `<text x="${W/2}" y="${PAD - 4}" text-anchor="middle" font-size="10" fill="#888" font-family="system-ui">↑ ${sichtIdx === 0 ? 'Vorne' : 'Hinten'} (${gartW} m)</text>
+      ${!hasDrawn ? `<text x="${W/2}" y="${PAD - 4}" text-anchor="middle" font-size="10" fill="#888" font-family="system-ui">↑ ${(formData.sichtseite||'').includes('von hinten') ? 'Vorne' : 'Hinten'} (${gartW} m)</text>
       <text x="8" y="${PAD + bedH/2}" text-anchor="middle" font-size="10" fill="#888" font-family="system-ui" transform="rotate(-90,8,${PAD+bedH/2})">${gartH} m</text>` : ''}
       <!-- Maßstab -->
       <rect x="${PAD+10}" y="${scaleY}" width="${scaleBarW}" height="5" rx="2" fill="#666"/>
