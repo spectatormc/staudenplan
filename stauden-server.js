@@ -1683,27 +1683,14 @@ app.get('/admin', (req, res) => {
 
   // ── Stats ──
   const stats = {
-    live:       db.prepare("SELECT COUNT(*) as n FROM pflanzen WHERE status='live' OR status IS NULL").get().n,
-    staging:    db.prepare("SELECT COUNT(*) as n FROM pflanzen WHERE status='staging'").get().n,
-    vorschlaege:db.prepare("SELECT COUNT(*) as n FROM pflanzen WHERE bild_vorschlag IS NOT NULL").get().n,
-    kandidaten: db.prepare("SELECT COUNT(*) as n FROM pflanzen WHERE bild_kandidaten IS NOT NULL AND bild_kandidaten != '[]' AND (bild_gesperrt IS NULL OR bild_gesperrt=0)").get().n,
-    gesperrt:   db.prepare("SELECT COUNT(*) as n FROM pflanzen WHERE bild_gesperrt=1").get().n,
-    ohneBild:   db.prepare("SELECT COUNT(*) as n FROM pflanzen WHERE (bild_url IS NULL OR bild_url='') AND status='staging'").get().n,
-    ki:         db.prepare("SELECT COUNT(*) as n FROM pflanzen WHERE bild_ki=1 AND bild_vorschlag IS NOT NULL").get().n,
+    live:    db.prepare("SELECT COUNT(*) as n FROM pflanzen WHERE status='live' OR status IS NULL").get().n,
+    staging: db.prepare("SELECT COUNT(*) as n FROM pflanzen WHERE status='staging'").get().n,
   };
 
-  // ── Tab 1: Bildprüfung (ohne KI-generierte) ──
+  // ── Tab 1: Bildprüfung ──
   const vorschlaege = db.prepare(`
     SELECT id, name_deutsch, name_botanisch, bild_url, bild_vorschlag, bild_check_info, status
     FROM pflanzen WHERE bild_vorschlag IS NOT NULL AND bild_vorschlag != ''
-      AND (bild_ki IS NULL OR bild_ki=0)
-    ORDER BY name_deutsch
-  `).all();
-
-  // ── Tab KI Bild ──
-  const kiPflanzen = db.prepare(`
-    SELECT id, name_deutsch, name_botanisch, bild_url, bild_vorschlag, bild_check_info
-    FROM pflanzen WHERE bild_ki=1 AND bild_vorschlag IS NOT NULL AND bild_vorschlag != ''
     ORDER BY name_deutsch
   `).all();
 
@@ -1714,10 +1701,9 @@ app.get('/admin', (req, res) => {
     const altImg = p.bild_url
       ? `<img src="${p.bild_url}" onerror="this.parentElement.innerHTML='<div class=no-img>🌿</div>'">`
       : `<div class="no-img">🌿 kein Bild</div>`;
+    const kiTag = info.ki ? `<span class="tag" style="background:#e8d5ff;color:#5b2d8e">✦ KI</span>` : `<span class="tag tag-${p.status||'live'}">${p.status||'live'}</span>`;
     return `<div class="card" id="card-${p.id}">
-      <div class="card-head"><strong>${p.name_deutsch}</strong>
-        <span class="tag tag-${p.status||'live'}">${p.status||'live'}</span>
-      </div>
+      <div class="card-head"><strong>${p.name_deutsch}</strong>${kiTag}</div>
       <div class="bot">${p.name_botanisch}</div>
       <div class="imgs">
         <div class="img-box">${altImg}<div class="lbl">⚠ Aktuell</div></div>
@@ -1730,73 +1716,6 @@ app.get('/admin', (req, res) => {
       </div>
     </div>`;
   }).join('') || '<p class="empty">Keine offenen Vorschläge.</p>';
-
-  const kiCards = kiPflanzen.map(p => {
-    let info = {};
-    try { info = JSON.parse(p.bild_check_info || '{}'); } catch {}
-    const altImg = p.bild_url
-      ? `<img src="${p.bild_url}" onerror="this.parentElement.innerHTML='<div class=no-img>🌿</div>'">`
-      : `<div class="no-img">🌿 kein Bild</div>`;
-    return `<div class="card" id="ki-card-${p.id}">
-      <div class="card-head"><strong>${p.name_deutsch}</strong>
-        <span class="tag" style="background:#e8d5ff;color:#5b2d8e">✦ KI</span>
-      </div>
-      <div class="bot">${p.name_botanisch}</div>
-      <div class="imgs">
-        <div class="img-box">${altImg}<div class="lbl">Bisheriges Bild</div></div>
-        <div class="img-box"><img src="${p.bild_vorschlag}" onerror="this.style.opacity='.2'"><div class="lbl">✦ KI generiert</div></div>
-      </div>
-      <div class="btns">
-        <button class="btn-ok" onclick="approveKi(${p.id},this)">✓ Übernehmen</button>
-        <button class="btn-no" onclick="rejectKi(${p.id},this)">✗ Verwerfen</button>
-      </div>
-    </div>`;
-  }).join('') || '<p class="empty">Noch keine KI-Bilder generiert.</p>';
-
-  // ── Tab 2: Bildauswahl ──
-  const kandidatenPflanzen = db.prepare(`
-    SELECT id, name_deutsch, name_botanisch, bild_url, bild_kandidaten
-    FROM pflanzen WHERE bild_kandidaten IS NOT NULL AND bild_kandidaten != '[]'
-      AND (bild_gesperrt IS NULL OR bild_gesperrt=0)
-    ORDER BY name_deutsch
-  `).all();
-  const gesperrte = db.prepare(`
-    SELECT id, name_deutsch, name_botanisch, bild_url
-    FROM pflanzen WHERE bild_gesperrt=1 AND status='staging' ORDER BY name_deutsch
-  `).all();
-
-  const auswahlCards = kandidatenPflanzen.map(p => {
-    let kands = [];
-    try { kands = JSON.parse(p.bild_kandidaten||'[]'); } catch {}
-    const aktImg = p.bild_url
-      ? `<img src="${p.bild_url}" class="akt-img"><div class="lbl">Aktuell</div>`
-      : `<div class="no-img-sm">🌿</div><div class="lbl">Kein Bild</div>`;
-    const kandCards = kands.map((url,i)=>`
-      <div class="kand-card" id="kand-${p.id}-${i}" onclick="waehle(${p.id},'${url}',${i})">
-        <img src="${url}" onerror="this.parentElement.classList.add('broken')">
-        <div class="lbl">Option ${i+1}</div>
-      </div>`).join('');
-    return `<div class="plant-card" id="plant-${p.id}">
-      <div class="plant-head">
-        <strong>${p.name_deutsch}</strong><span class="bot">${p.name_botanisch}</span>
-        <span class="done-badge" id="done-${p.id}" style="display:none">✓ Gespeichert</span>
-        ${p.bild_url?`<button class="btn-behalten" onclick="waehle(${p.id},'${p.bild_url}',-1)">Bestand behalten</button>`:''}
-        <button class="btn-falsch" onclick="alleFalsch(${p.id},this)">Alle falsch</button>
-      </div>
-      <div class="imgs-row">
-        <div class="akt-wrap">${aktImg}</div>
-        <div class="arrow">→</div>
-        <div class="kand-row">${kandCards}</div>
-      </div>
-    </div>`;
-  }).join('') || '<p class="empty">Alle bearbeitet.</p>';
-
-  const gesperrtRows = gesperrte.map(p=>`
-    <div class="gesperrt-row" id="plant-g-${p.id}">
-      ${p.bild_url?`<img src="${p.bild_url}" class="g-img">`:`<div class="g-img no-img-sm">🌿</div>`}
-      <div class="g-info"><strong>${p.name_deutsch}</strong><span class="bot">${p.name_botanisch}</span></div>
-      <button class="btn-entsperren" onclick="entsperre(${p.id},this)">↩ Entsperren</button>
-    </div>`).join('') || '<p class="empty" style="font-size:.85rem">Keine gesperrten Pflanzen.</p>';
 
 
   // ── Tab 4: Live Pflanzen ──
@@ -1922,16 +1841,13 @@ app.get('/admin', (req, res) => {
   <h1>🌿 Staudenplan Admin</h1>
   <div class="stat-chips">
     <span class="chip">${stats.live} live</span>
-    <span class="chip ${stats.staging>0?'warn':''}">${stats.staging} offline (Bildprüfung)</span>
-    ${stats.kandidaten>0?`<span class="chip">${stats.kandidaten} zur Bildauswahl</span>`:''}
-    ${stats.ki>0?`<span class="chip" style="background:rgba(180,100,255,.2);color:#d9a0ff">${stats.ki} KI-Bilder</span>`:''}
+    <span class="chip ${stats.staging>0?'warn':''}">${stats.staging} offline</span>
+    ${vorschlaege.length>0?`<span class="chip warn">${vorschlaege.length} zur Bildprüfung</span>`:''}
   </div>
 </div>
 
 <div class="tabs">
   <div class="tab active" onclick="showTab('pruefung',this)">Bildprüfung <span class="badge orange" id="b-pruefung">${vorschlaege.length}</span></div>
-  <div class="tab" onclick="showTab('auswahl',this)">Bildauswahl <span class="badge" id="b-auswahl">${kandidatenPflanzen.length}</span></div>
-  <div class="tab" onclick="showTab('ki',this)">KI Bild <span class="badge" id="b-ki" style="background:#e8d5ff;color:#5b2d8e">${kiPflanzen.length}</span></div>
   <div class="tab" onclick="showTab('live',this)">Live Pflanzen <span class="badge" id="b-live">${livePflanzen.length}</span></div>
   <div class="tab" onclick="showTab('vorlagen',this)">✨ Vorlagen</div>
 </div>
@@ -1949,28 +1865,7 @@ app.get('/admin', (req, res) => {
     <div class="grid" id="grid-pruefung">${pruefCards}</div>
   </div>
 
-  <!-- Tab 2: Bildauswahl -->
-  <div class="pane" id="pane-auswahl">
-    <div class="toolbar">
-      <span class="toolbar-meta">${kandidatenPflanzen.length} Pflanzen mit Kandidaten</span>
-      <button class="btn-action btn-orange" onclick="kandidatenNeuLaden(this)">↺ Kandidaten neu laden</button>
-    </div>
-    ${auswahlCards}
-    ${gesperrte.length>0?`<div class="gesperrt-box"><h3>Gesperrt — kein passendes Bild (${gesperrte.length})</h3>${gesperrtRows}</div>`:''}
-  </div>
-
-  <!-- Tab 3: KI Bild -->
-  <div class="pane" id="pane-ki">
-    <div class="toolbar">
-      <span class="toolbar-meta"><span id="counter-ki">${kiPflanzen.length}</span> KI-Bilder zur Review</span>
-      <button class="btn-action btn-green" onclick="approveAllKi()">✓ Alle akzeptieren</button>
-      <button class="btn-action btn-gray" onclick="rejectAllKi()">✗ Alle verwerfen</button>
-      <button class="btn-action btn-orange" onclick="kiGenerieren(this)">✦ 10 weitere generieren (~$0.40)</button>
-    </div>
-    <div class="grid" id="grid-ki">${kiCards}</div>
-  </div>
-
-  <!-- Tab 4: Live Pflanzen -->
+  <!-- Tab 2: Live Pflanzen -->
   <div class="pane" id="pane-live">
     <div class="toolbar">
       <span class="toolbar-meta">${livePflanzen.length} Live-Pflanzen · "Bild prüfen" schaltet die Pflanze offline und startet einen GPT-Check</span>
@@ -2116,84 +2011,6 @@ Für die konkrete Planung mit Pflanzliste, Abständen und Stückzahlen nutze ich
     btn.textContent='✓ Gestartet — Seite in 15 Min. neu laden';
   }
 
-  // ── KI Bild ──
-  function updateKiCounter(){
-    const n=document.querySelectorAll('#grid-ki .card:not(.done)').length;
-    document.getElementById('counter-ki').textContent=n;
-    document.getElementById('b-ki').textContent=n;
-  }
-  function hideKiCard(id){
-    const c=document.getElementById('ki-card-'+id);
-    c.classList.add('done');
-    setTimeout(()=>{ c.style.display='none'; updateKiCounter(); },900);
-  }
-  async function approveKi(id,btn){
-    const orig=btn.textContent; btn.innerHTML='<span class=spinner></span>'; btn.disabled=true;
-    const r=await fetch('/api/bild-approve/'+id,{method:'POST'});
-    if(r.ok){ hideKiCard(id); }
-    else{ btn.textContent=orig; btn.disabled=false; alert('Fehler'); }
-  }
-  async function rejectKi(id,btn){
-    const orig=btn.textContent; btn.textContent='⏳'; btn.disabled=true;
-    const r=await fetch('/api/ki-bild-ablehnen/'+id,{method:'POST'});
-    if(r.ok){ hideKiCard(id); }
-    else{ btn.textContent=orig; btn.disabled=false; alert('Fehler'); }
-  }
-  async function approveAllKi(){
-    const cards=[...document.querySelectorAll('#grid-ki .card:not(.done)')];
-    if(!cards.length||!confirm('Alle '+cards.length+' KI-Bilder übernehmen?'))return;
-    for(const c of cards){
-      const id=parseInt(c.id.replace('ki-card-',''));
-      await approveKi(id,c.querySelector('.btn-ok'));
-      await new Promise(r=>setTimeout(r,80));
-    }
-  }
-  async function rejectAllKi(){
-    const cards=[...document.querySelectorAll('#grid-ki .card:not(.done)')];
-    if(!cards.length||!confirm('Alle '+cards.length+' KI-Bilder verwerfen?'))return;
-    for(const c of cards){
-      const id=parseInt(c.id.replace('ki-card-',''));
-      await rejectKi(id,c.querySelector('.btn-no'));
-      await new Promise(r=>setTimeout(r,80));
-    }
-  }
-  async function kiGenerieren(btn){
-    if(!confirm('10 KI-Bilder generieren (gpt-image-1)? Kosten ca. $0.40, dauert ~5 Min.'))return;
-    btn.innerHTML='<span class=spinner></span> Läuft…'; btn.disabled=true;
-    await fetch('/api/ki-bilder-starten',{method:'POST'});
-    btn.textContent='✓ Gestartet — Tab in 5 Min. neu laden';
-  }
-
-  // ── Bildauswahl ──
-  async function waehle(id, url, idx) {
-    document.querySelectorAll(\`#plant-\${id} .kand-card\`).forEach(c=>c.classList.remove('selected'));
-    if(idx>=0) document.getElementById(\`kand-\${id}-\${idx}\`).classList.add('selected');
-    const r=await fetch('/api/bild-waehlen/'+id,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})});
-    if(r.ok){
-      const card=document.getElementById('plant-'+id);
-      card.classList.add('saved');
-      document.getElementById('done-'+id).style.display='inline';
-      const akt=document.querySelector('#plant-'+id+' .akt-img');
-      if(akt) akt.src=url;
-      setTimeout(()=>{ card.style.display='none'; document.getElementById('b-auswahl').textContent=parseInt(document.getElementById('b-auswahl').textContent||0)-1; },1200);
-    }
-  }
-  async function alleFalsch(id,btn){
-    if(!confirm('Pflanze sperren?'))return;
-    const r=await fetch('/api/bild-ablehnen/'+id,{method:'POST'});
-    if(r.ok){
-      const card=document.getElementById('plant-'+id);
-      card.classList.add('gesperrt-lokal');
-      btn.textContent='🚫 Gesperrt'; btn.disabled=true;
-      setTimeout(()=>{ card.style.display='none'; },1200);
-    }
-  }
-  async function entsperre(id,btn){
-    const r=await fetch('/api/bild-entsperren/'+id,{method:'POST'});
-    if(r.ok){ const row=document.getElementById('plant-g-'+id); btn.textContent='✓'; setTimeout(()=>row.style.display='none',800); }
-  }
-
-
   // ── Live-Tab Suche ──
   function filterLive(q) {
     const term = q.toLowerCase();
@@ -2228,13 +2045,6 @@ Für die konkrete Planung mit Pflanzliste, Abständen und Stückzahlen nutze ich
     } else {
       btn.textContent = 'Bild prüfen'; btn.disabled = false;
     }
-  }
-
-  async function kandidatenNeuLaden(btn){
-    if(!confirm('Kandidaten für alle geprueften Pflanzen neu laden?'))return;
-    btn.innerHTML='<span class=spinner></span> Läuft…'; btn.disabled=true;
-    await fetch('/api/kandidaten-starten',{method:'POST'});
-    btn.textContent='✓ Gestartet — Seite in 2 Min. neu laden';
   }
 
   // ── Vorlagen-Tab ──
