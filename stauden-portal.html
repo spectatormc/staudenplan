@@ -3075,7 +3075,14 @@
     const drawnPolysEarly = scaledPolygonsForSVG(bedW, bedH, PAD, PAD);
     const placementPolysEarly = scaledPolygonsForSVG(bedW, bedH, 0, 0);
     const hasDrawnEarly = !!drawnPolysEarly;
-    const placements = calcPlacements(plan.pflanzen, bedW, bedH, hasDrawnEarly ? placementPolysEarly : null, parseFloat(gartW));
+    const rawPlacements = calcPlacements(plan.pflanzen, bedW, bedH, hasDrawnEarly ? placementPolysEarly : null, parseFloat(gartW));
+    // Blickrichtung anwenden: rotAngle dreht alle Positionen um Beetmittelpunkt
+    const placements = (rotAngle === 0 || isRund)
+      ? rawPlacements
+      : rawPlacements.map(p => {
+          const rot = rotateAroundCenter(p.x, p.y, rotAngle);
+          return { ...p, x: Math.max(p.r, Math.min(bedW - p.r, rot.x)), y: Math.max(p.r, Math.min(bedH - p.r, rot.y)) };
+        });
     // Normalisierte Positionen speichern → werden von schematisch + Höhenansicht wiederverwendet
     plan._normPlacements = placements.map(p => ({
       xFrac: p.x / bedW, yFrac: p.y / bedH, rFrac: p.r / bedW,
@@ -3198,7 +3205,7 @@
       <!-- Leit- & Begleitstauden: Einzelkreise -->
       <g clip-path="url(#bedClip)">${circles}</g>
       <!-- Beschriftung -->
-      ${!hasDrawn ? `<text x="${W/2}" y="${PAD - 4}" text-anchor="middle" font-size="10" fill="#888" font-family="system-ui">↑ Hinten (${gartW} m)</text>
+      ${!hasDrawn ? `<text x="${W/2}" y="${PAD - 4}" text-anchor="middle" font-size="10" fill="#888" font-family="system-ui">↑ ${sichtIdx === 0 ? 'Vorne' : 'Hinten'} (${gartW} m)</text>
       <text x="8" y="${PAD + bedH/2}" text-anchor="middle" font-size="10" fill="#888" font-family="system-ui" transform="rotate(-90,8,${PAD+bedH/2})">${gartH} m</text>` : ''}
       <!-- Maßstab -->
       <rect x="${PAD+10}" y="${scaleY}" width="${scaleBarW}" height="5" rx="2" fill="#666"/>
