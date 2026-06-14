@@ -432,7 +432,8 @@ app.get('/', (req, res) => {
       </div>
     </div>
     <div class="seo-footer-bottom">
-      <p>© 2025 Staudenplan.de · Betrieben von <a href="https://www.freisinger-gartenschmiede.de" style="color:rgba(255,255,255,.6)" target="_blank">Gartenschmiede GmbH</a> · <a href="/impressum" style="color:rgba(255,255,255,.6)">Impressum</a> · <a href="/datenschutz" style="color:rgba(255,255,255,.6)">Datenschutz</a></p>
+      <p>© 2025 Staudenplan.de · Betrieben von <a href="https://www.freisinger-gartenschmiede.de" style="color:rgba(255,255,255,.6)" target="_blank">Gartenschmiede GmbH</a> · <a href="/impressum" style="color:rgba(255,255,255,.6)">Impressum</a> · <a href="/datenschutz" style="color:rgba(255,255,255,.6)">Datenschutz</a> · <a href="/impressum#haftung" style="color:rgba(255,255,255,.6)">Haftungsausschluss</a></p>
+      <p style="margin-top:6px;font-size:.75rem;opacity:.7">Alle Bepflanzungspläne sind unverbindliche KI-Empfehlungen und ersetzen keine professionelle Gartenberatung.</p>
     </div>
   </footer>
 </div>
@@ -879,8 +880,24 @@ app.get('/impressum', (req, res) => {
     <p>Umsatzsteuer-Identifikationsnummer gemäß § 27a UStG: wird nachgetragen</p>
     <h2>Verantwortlich für den Inhalt nach § 55 Abs. 2 RStV</h2>
     <p>Bastian Rohrhuber<br>Ortsstraße 7, 85354 Freising</p>
-    <h2>Haftungsausschluss</h2>
-    <p>Die Inhalte dieser Website wurden mit größtmöglicher Sorgfalt erstellt. Für die Richtigkeit, Vollständigkeit und Aktualität der Inhalte können wir keine Gewähr übernehmen. Pflanzempfehlungen sind als unverbindliche Hinweise zu verstehen. Standortbedingungen und lokale Gegebenheiten können die Eignung einzelner Pflanzen beeinflussen.</p>
+    <h2 id="haftung">Haftungsausschluss</h2>
+    <h3>1. Allgemeine Inhalte</h3>
+    <p>Die Inhalte dieser Website wurden mit größtmöglicher Sorgfalt erstellt. Für die Richtigkeit, Vollständigkeit und Aktualität der Inhalte können wir jedoch keine Gewähr übernehmen. Als Diensteanbieter sind wir gemäß § 7 Abs. 1 TMG für eigene Inhalte auf diesen Seiten nach den allgemeinen Gesetzen verantwortlich.</p>
+    <h3>2. KI-generierte Bepflanzungspläne</h3>
+    <p>Die auf Staudenplan.de erstellten Bepflanzungspläne werden mithilfe künstlicher Intelligenz (KI) generiert und stellen <strong>ausdrücklich keine professionelle Gartenberatung</strong> dar. Die Pläne sind als unverbindliche Anregung und Entscheidungshilfe zu verstehen.</p>
+    <p>Wir übernehmen keinerlei Haftung für:</p>
+    <ul>
+      <li>Pflanzenverluste oder -schäden, die auf Basis unserer Empfehlungen entstehen</li>
+      <li>Planungsfehler durch falsch eingegebene Standortdaten</li>
+      <li>Abweichungen zwischen empfohlenen und tatsächlich erhältlichen Pflanzensorten</li>
+      <li>Nicht berücksichtigte Mikroklimata, Bodenverhältnisse oder lokale Besonderheiten</li>
+      <li>Fehler oder Ungenauigkeiten in den KI-generierten Pflanzbeschreibungen</li>
+    </ul>
+    <p>Vor größeren Pflanzinvestitionen empfehlen wir ausdrücklich die Rücksprache mit einem qualifizierten Fachbetrieb oder Gartengestalter, der die spezifischen Bedingungen vor Ort beurteilen kann.</p>
+    <h3>3. Pflanzinformationen und Ratgeber-Inhalte</h3>
+    <p>Alle Pflanzbeschreibungen, Wuchshöhen, Standortangaben und Pflegehinweise sind Richtwerte. Tatsächliche Werte können je nach Standort, Klima, Bodenzustand und Pflanzenpflege erheblich abweichen. Insbesondere Angaben zur Winterhärte beziehen sich auf Durchschnittswerte für deutsche Klimazonen — örtliche Frosteinbrüche oder besondere Witterungsereignisse können die Winterhärte einzelner Pflanzen beeinflussen.</p>
+    <h3>4. Externe Links</h3>
+    <p>Diese Website enthält Links zu externen Websites Dritter, auf deren Inhalte wir keinen Einfluss haben. Für die Inhalte der verlinkten Seiten ist stets der jeweilige Anbieter verantwortlich. Eine permanente inhaltliche Kontrolle der verlinkten Seiten ist ohne konkrete Anhaltspunkte einer Rechtsverletzung nicht zumutbar.</p>
     <h2>Urheberrecht</h2>
     <p>Die durch die Seitenbetreiber erstellten Inhalte und Werke auf dieser Website unterliegen dem deutschen Urheberrecht. Die Vervielfältigung, Bearbeitung, Verbreitung und jede Art der Verwertung außerhalb der Grenzen des Urheberrechtes bedürfen der schriftlichen Zustimmung des jeweiligen Autors.</p>
   </main>
@@ -2798,6 +2815,7 @@ const NAV_LINKS = `${FAVICON}${PLAUSIBLE}
 const SITE_FOOTER = `<footer style="background:#1b4332;color:rgba(255,255,255,.7);padding:32px 24px;text-align:center;font-size:.82rem">
   <p style="margin-bottom:8px">© 2025 Staudenplan.de · <a href="/impressum" style="color:rgba(255,255,255,.6)">Impressum</a> · <a href="/datenschutz" style="color:rgba(255,255,255,.6)">Datenschutz</a> · <a href="https://www.freisinger-gartenschmiede.de" style="color:rgba(255,255,255,.6)" target="_blank">Gartenschmiede GmbH</a></p>
   <p><a href="/" style="color:#52b788">🌿 KI-Planer</a> · <a href="/pflanzen" style="color:#52b788">Stauden-Lexikon</a> · <a href="/ratgeber" style="color:#52b788">Ratgeber</a></p>
+  <p style="margin-top:12px;font-size:.75rem;opacity:.5">Alle Bepflanzungspläne sind unverbindliche KI-Empfehlungen und ersetzen keine professionelle Gartenberatung. · <a href="/impressum#haftung" style="color:rgba(255,255,255,.5)">Haftungsausschluss</a></p>
 </footer>`;
 
 app.get('/ratgeber', (req, res) => {
