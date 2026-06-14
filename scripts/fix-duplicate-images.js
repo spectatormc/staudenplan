@@ -1,161 +1,60 @@
-// Ersetzt Duplikat-Bilder (gleiche Dateigröße = gleiche Pixabay-Placeholder) durch DALL-E 3.
-// Ausführen: node scripts/fix-duplicate-images.js
-// Erkennt Duplikate anhand der Dateigröße, generiert pro Pflanze ein eigenes Bild.
+﻿// Generiert neue KI-Bilder fuer Pflanzen mit Duplikat-Bildern. Direkt live, kein Staging.
+require("dotenv").config({ path: require("path").join(__dirname, "..", ".env") });
+const Database = require("better-sqlite3");
+const { OpenAI } = require("openai");
+const fs   = require("fs");
+const path = require("path");
 
-require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
-const Database = require('better-sqlite3');
-const { OpenAI } = require('openai');
-const path = require('path');
-const fs = require('fs');
-const crypto = require('crypto');
-
-const db = new Database(path.join(__dirname, '..', 'stauden.db'));
+const db     = new Database(path.join(__dirname, "..", "stauden.db"));
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const PIXABAY_KEY = process.env.PIXABAY_API_KEY;
+const IMG_DIR = path.join(__dirname, "..", "public", "images", "pflanzen");
 
-const IMG_DIR = path.join(__dirname, '..', 'public', 'images', 'pflanzen');
-const UPDATE = db.prepare('UPDATE pflanzen SET bild_url = ?, bild_lizenz = ? WHERE id = ?');
+const args = process.argv.slice(2);
+const IDS  = (() => { const i = args.find(a => a.startsWith("--ids=")); return i ? i.split("=")[1].split(",").map(Number) : null; })();
 
-// Schritt 1: Alle lokalen Bilder hashen und Duplikat-Gruppen finden
-console.log('\n=== Duplikat-Bilder erkennen ===');
-const sizeMap = {};
-const files = fs.readdirSync(IMG_DIR).filter(f => f.endsWith('.jpg'));
-for (const f of files) {
-  const size = fs.statSync(path.join(IMG_DIR, f)).size;
-  if (!sizeMap[size]) sizeMap[size] = [];
-  sizeMap[size].push(f);
+if (!IDS?.length) { console.error("Bitte --ids=1,2,3 angeben"); process.exit(1); }
+
+const pflanzen = db.prepare(
+  `SELECT id, name_deutsch, name_botanisch, farbe FROM pflanzen WHERE id IN (${IDS.join(",")})`
+).all();
+
+console.log(`\n=== KI-Neugenerierung fuer ${pflanzen.length} Pflanzen ===`);
+console.log(`Kosten: ~${(pflanzen.length * 0.04).toFixed(2)} $\n`);
+
+function buildPrompt(p) {
+  const farbe = (p.farbe || "").split(/[|,]/).slice(0,2).map(s=>s.trim()).filter(Boolean).join(" and ");
+  const farbeHinweis = farbe ? ` with ${farbe} flowers` : "";
+  return `Photorealistic garden photograph of the full plant ${p.name_botanisch} (${p.name_deutsch})${farbeHinweis}. `
+    + `Show the entire plant including stems, leaves and flowers to reveal its natural shape and growth habit. `
+    + `Plant in a garden bed, natural daylight, blurred green garden background. `
+    + `No text, no watermarks, no people. High quality plant photography.`;
 }
 
-// Nur Größen mit >1 Datei = Duplikate
-const dupFiles = new Set();
-for (const [size, group] of Object.entries(sizeMap)) {
-  if (group.length > 1) {
-    // Alle außer der ersten sind Duplikate (erste bekommt auch neues Bild da unklar welches "richtig" ist)
-    group.forEach(f => dupFiles.add(f));
-  }
-}
-
-// IDs aus Dateinamen extrahieren (format: slug-ID.jpg)
-const dupIds = [...dupFiles].map(f => {
-  const m = f.match(/-(\d+)\.jpg$/);
-  return m ? parseInt(m[1]) : null;
-}).filter(Boolean);
-
-console.log(`${dupIds.length} Pflanzen mit doppeltem Bild gefunden.\n`);
-
-if (dupIds.length === 0) { console.log('Keine Duplikate — fertig!'); db.close(); process.exit(0); }
-
-// Pflanzen laden
-const placeholders = dupIds.map(() => '?').join(',');
-const pflanzen = db.prepare(`
-  SELECT id, name_deutsch, name_botanisch, farbe, licht, bluehzeit
-  FROM pflanzen WHERE id IN (${placeholders})
-  ORDER BY name_deutsch
-`).all(...dupIds);
-
-console.log(`Generiere ${pflanzen.length} DALL-E 3 Bilder (je ~$0.04)...\n`);
-
-function slugify(name) {
-  return name.toLowerCase()
-    .replace(/ä/g,'ae').replace(/ö/g,'oe').replace(/ü/g,'ue').replace(/ß/g,'ss')
-    .replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
-}
-
-async function pixabaySearch(nameDeutsch, nameBotanisch) {
-  if (!PIXABAY_KEY) return null;
-  const genus = nameBotanisch.split(' ')[0];
-  const queries = [
-    `${genus} ${nameBotanisch.split(' ')[1] || ''} flower`.trim(),
-    `${genus} plant garden`,
-    `${nameDeutsch} Pflanze`,
-  ];
-  for (const q of queries) {
-    try {
-      const url = `https://pixabay.com/api/?key=${PIXABAY_KEY}&q=${encodeURIComponent(q)}&image_type=photo&category=nature&per_page=5&safesearch=true`;
-      const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
-      if (!res.ok) continue;
-      const data = await res.json();
-      if (data.hits?.length > 0) {
-        // Nimm nicht das erste — nimm eines das nicht die gleiche Größe hat wie bekannte Duplikate
-        for (const hit of data.hits) {
-          const imgUrl = hit.webformatURL || hit.largeImageURL;
-          if (imgUrl) return imgUrl;
-        }
-      }
-    } catch {}
-    await new Promise(r => setTimeout(r, 300));
-  }
-  return null;
-}
-
-async function generateDalle(p) {
-  const color = p.farbe ? p.farbe.split('|')[0] : '';
-  const bloom = p.bluehzeit ? `blooming ${p.bluehzeit}` : 'in bloom';
-  const prompt = `Professional botanical garden photography of ${p.name_botanisch} (${p.name_deutsch}), ${color ? color + ' flowers, ' : ''}${bloom}, close-up shot, natural daylight, shallow depth of field, no people, no text, real plant photography style`;
-
-  const res = await openai.images.generate({
-    model: 'dall-e-3',
-    prompt,
-    size: '1024x1024',
-    quality: 'standard',
-    n: 1,
-  });
-
-  const imgRes = await fetch(res.data[0].url, { signal: AbortSignal.timeout(30000) });
-  if (!imgRes.ok) throw new Error(`Download fehlgeschlagen: ${imgRes.status}`);
-  const buf = Buffer.from(await imgRes.arrayBuffer());
-  return buf;
-}
+const UPDATE = db.prepare("UPDATE pflanzen SET bild_url=?, bild_lizenz=\"KI-generiert / OpenAI\", bild_ki=1 WHERE id=?");
 
 async function main() {
-  let pixOk = 0, dalleOk = 0, err = 0;
-
+  let ok=0, fail=0;
   for (const p of pflanzen) {
-    const filename = `${slugify(p.name_deutsch)}-${p.id}.jpg`;
-    const filepath = path.join(IMG_DIR, filename);
-    process.stdout.write(`  ${p.name_deutsch} (${p.name_botanisch}) ... `);
-
+    process.stdout.write(`[${p.id}] ${p.name_deutsch.padEnd(40)} `);
     try {
-      // 1. Pixabay nochmal mit botanischem Namen probieren
-      let saved = false;
-      if (PIXABAY_KEY) {
-        const pixUrl = await pixabaySearch(p.name_deutsch, p.name_botanisch);
-        if (pixUrl) {
-          const imgRes = await fetch(pixUrl, { signal: AbortSignal.timeout(20000), headers: { 'Referer': 'https://staudenplan.de/' } });
-          if (imgRes.ok) {
-            const buf = Buffer.from(await imgRes.arrayBuffer());
-            const newSize = buf.length;
-            // Prüfen ob diese Größe auch ein Duplikat ist
-            const isDupSize = Object.entries(sizeMap).some(([sz, grp]) => parseInt(sz) === newSize && grp.length > 1);
-            if (!isDupSize && buf.length > 10000) {
-              fs.writeFileSync(filepath, buf);
-              UPDATE.run(`/images/pflanzen/${filename}`, 'Pixabay lokal', p.id);
-              console.log(`Pixabay ✓`);
-              pixOk++; saved = true;
-            }
-          }
-        }
-      }
-
-      // 2. DALL-E 3 wenn Pixabay kein spezifisches Bild liefert
-      if (!saved) {
-        const buf = await generateDalle(p);
-        fs.writeFileSync(filepath, buf);
-        UPDATE.run(`/images/pflanzen/${filename}`, 'DALL-E 3', p.id);
-        console.log(`DALL-E ✓`);
-        dalleOk++; saved = true;
-      }
-    } catch(e) {
-      console.log(`FEHLER: ${e.message}`);
-      err++;
-    }
-
-    await new Promise(r => setTimeout(r, 800));
+      const resp = await openai.images.generate({
+        model:"gpt-image-1", prompt:buildPrompt(p), n:1,
+        size:"1024x1024", quality:"medium", output_format:"jpeg",
+      });
+      const slug = p.name_deutsch.toLowerCase()
+        .replace(/ae/g,"ae").replace(/oe/g,"oe").replace(/ue/g,"ue")
+        .replace(/ae/g,"ae").replace(/oe/g,"oe").replace(/ue/g,"ue")
+        .replace(/a/g,"a").replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,40);
+      const filename = `ki-${slug}-${p.id}.jpg`;
+      const b64 = resp.data[0].b64_json;
+      if (!b64) throw new Error("Kein b64_json");
+      fs.writeFileSync(path.join(IMG_DIR, filename), Buffer.from(b64,"base64"));
+      UPDATE.run(`/images/pflanzen/${filename}`, p.id);
+      console.log("OK -> " + filename); ok++;
+    } catch(e) { console.log("FEHLER: " + e.message); fail++; }
+    await new Promise(r=>setTimeout(r,13000));
   }
-
-  console.log(`\n=== Fertig: ${pixOk} Pixabay, ${dalleOk} DALL-E, ${err} Fehler ===`);
-  console.log(`Geschätzte DALL-E Kosten: ~$${(dalleOk * 0.04).toFixed(2)}\n`);
+  console.log(`\n=== Fertig. ${ok} ersetzt, ${fail} Fehler. ===`);
   db.close();
 }
-
 main().catch(console.error);
