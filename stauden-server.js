@@ -1924,7 +1924,6 @@ app.get('/admin', (req, res) => {
     <span class="chip">${stats.live} live</span>
     <span class="chip ${stats.staging>0?'warn':''}">${stats.staging} offline (Bildprüfung)</span>
     ${stats.kandidaten>0?`<span class="chip">${stats.kandidaten} zur Bildauswahl</span>`:''}
-    ${stats.gesperrt>0?`<span class="chip warn">${stats.gesperrt} gesperrt</span>`:''}
     ${stats.ki>0?`<span class="chip" style="background:rgba(180,100,255,.2);color:#d9a0ff">${stats.ki} KI-Bilder</span>`:''}
   </div>
 </div>
@@ -1934,6 +1933,7 @@ app.get('/admin', (req, res) => {
   <div class="tab" onclick="showTab('auswahl',this)">Bildauswahl <span class="badge" id="b-auswahl">${kandidatenPflanzen.length}</span></div>
   <div class="tab" onclick="showTab('ki',this)">KI Bild <span class="badge" id="b-ki" style="background:#e8d5ff;color:#5b2d8e">${kiPflanzen.length}</span></div>
   <div class="tab" onclick="showTab('live',this)">Live Pflanzen <span class="badge" id="b-live">${livePflanzen.length}</span></div>
+  <div class="tab" onclick="showTab('vorlagen',this)">✨ Vorlagen</div>
 </div>
 
 <div class="content">
@@ -1978,6 +1978,84 @@ app.get('/admin', (req, res) => {
     <input type="text" id="live-search" placeholder="Pflanze suchen…" oninput="filterLive(this.value)"
       style="width:100%;max-width:360px;padding:9px 14px;border:1.5px solid #ddd;border-radius:8px;font-size:.9rem;margin-bottom:16px;display:block">
     <div class="st-list" id="live-list">${liveRows}</div>
+  </div>
+
+  <!-- Tab 5: Vorlagen -->
+  <div class="pane" id="pane-vorlagen">
+    <div style="max-width:760px">
+
+      <!-- KI-Generator -->
+      <div style="background:#fff;border-radius:12px;box-shadow:0 1px 8px rgba(0,0,0,.09);padding:22px;margin-bottom:24px;border:2px solid #52b788">
+        <h2 style="margin:0 0 6px;font-size:1rem;color:#1b4332">✨ KI-Antwort für konkrete Frage generieren</h2>
+        <p style="margin:0 0 12px;font-size:.83rem;color:#888">Frage aus Google Alert / Facebook / Forum einfügen — KI schreibt eine authentische Gärtner-Antwort mit Link:</p>
+        <textarea id="fragenInput" placeholder="z.B. 'Hallo, ich habe ein schattiges Beet unter einer alten Birke, ca. 3m² — was kann ich da pflanzen?'" style="width:100%;min-height:80px;border:1.5px solid #b7dfc7;border-radius:8px;padding:10px 12px;font-size:.9rem;font-family:inherit;resize:vertical;box-sizing:border-box"></textarea>
+        <div style="display:flex;gap:10px;margin-top:10px;align-items:center">
+          <button onclick="generiereAntwort()" id="genBtn" style="background:#1b4332;color:#fff;border:none;border-radius:8px;padding:10px 22px;cursor:pointer;font-weight:700;font-size:.92rem">✨ Generieren</button>
+          <span style="font-size:.78rem;color:#aaa">Strg+Enter</span>
+          <span id="genStatus" style="font-size:.83rem;color:#888;margin-left:4px"></span>
+        </div>
+        <div id="genResult" style="display:none;margin-top:16px">
+          <div style="font-size:.78rem;color:#666;margin-bottom:5px;font-weight:600">Antwort — vor dem Posten kurz prüfen:</div>
+          <textarea id="genText" style="width:100%;min-height:150px;border:1.5px solid #b7dfc7;border-radius:8px;padding:10px 12px;font-size:.88rem;line-height:1.65;font-family:inherit;resize:vertical;box-sizing:border-box;background:#f8fffe"></textarea>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button onclick="kopierenGen()" style="background:#2d6a4f;color:#fff;border:none;border-radius:7px;padding:8px 18px;cursor:pointer;font-weight:600;font-size:.88rem;flex:1">📋 Kopieren</button>
+            <button onclick="generiereAntwort()" style="background:#f0ede8;color:#555;border:none;border-radius:7px;padding:8px 14px;cursor:pointer;font-size:.82rem">↻ Neu</button>
+          </div>
+          <div id="genOk" style="display:none;color:#2d6a4f;font-size:.82rem;margin-top:6px;font-weight:600">✓ Kopiert!</div>
+        </div>
+      </div>
+
+      <!-- Trennlinie -->
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:22px">
+        <div style="flex:1;height:1px;background:#e0dbd4"></div>
+        <span style="font-size:.78rem;color:#aaa;font-weight:600">FERTIGE VORLAGEN</span>
+        <div style="flex:1;height:1px;background:#e0dbd4"></div>
+      </div>
+
+      <!-- Template Cards -->
+      ${[
+        { kategorie:'Schattenbeet', emoji:'🌿', farbe:'#2d6a4f', fragen:['Was soll ich ins Schattenbeet pflanzen?','Welche Stauden für den Schatten?','Nordseite bepflanzen'],
+          vorlage:`Für ein klassisches Schattenbeet funktioniert die Kombination aus Hosta (Funkie), Farn und Astilbe seit Generationen zuverlässig. Hosta liefert die Blattstruktur, der Farn die Leichtigkeit und die Astilbe blüht im Hochsommer auch bei wenig Licht. Actaea simplex (Silberkerze) kommt noch dazu für den Herbst.
+
+Ich habe dafür einen kostenlosen KI-Bepflanzungsplan erstellt bekommen – sehr praktisch wenn man Abstände und Stückzahlen ausrechnen möchte: https://www.staudenplan.de`},
+        { kategorie:'Trockenes Sonnenbeet', emoji:'☀️', farbe:'#b5451b', fragen:['Pflanzen für trockenen Boden','Kiesgarten bepflanzen','Mediterrane Pflanzen'],
+          vorlage:`Für trockene, sonnige Standorte sind Lavendel, Stachys byzantina (Wollziest), Sedum (Fetthenne) und Salvia nemorosa (Gartensalbei) unschlagbar. Die kommen auch mit Hitze klar und brauchen kaum Wasser.
+
+Als ich meinen Kiesgarten geplant habe, hat mir dieser kostenlose KI-Planer sehr geholfen – einfach Standort und Größe eingeben: https://www.staudenplan.de`},
+        { kategorie:'Anfänger / pflegeleicht', emoji:'🌱', farbe:'#52b788', fragen:['Pflegeleichte Stauden für Anfänger','Welche Pflanzen machen keine Arbeit?'],
+          vorlage:`Für Anfänger empfehle ich robuste Stauden: Rudbeckia (Sonnenhut), Geranium (Storchschnabel), Salvia nemorosa und Stachys. Die kommen alle mit normalen Böden klar, brauchen kein Düngen und breiten sich angenehm aus ohne invasiv zu werden.
+
+Zum Planen gibt es einen kostenlosen KI-Gartenplaner, der auch gleich die Stückzahlen berechnet: https://www.staudenplan.de`},
+        { kategorie:'Teich / Feuchtbeet', emoji:'💧', farbe:'#1d6995', fragen:['Teichrand bepflanzen','Pflanzen für feuchten Boden'],
+          vorlage:`Am Teichrand funktioniert eine Zonierung am besten: direkt am Wasser Iris pseudacorus und Pontederia cordata. Im feuchten Übergangsbereich dann Lythrum salicaria (Blutweiderich) und Filipendula ulmaria (Mädesüß) – der duftet im Sommer herrlich.
+
+Ich habe das mit einem kostenlosen KI-Tool geplant: https://www.staudenplan.de/ratgeber/teichrand-und-feuchtbeet-gestaltung-am-wasser`},
+        { kategorie:'Bienen / Insekten', emoji:'🐝', farbe:'#d4a017', fragen:['Bienenfreundliche Pflanzen','Insektenwildgarten anlegen'],
+          vorlage:`Für Bienen und Insekten sind heimische Stauden am besten: Agastache, Echinacea (Sonnenhut), Salvia, Origanum und Verbena bonariensis. Die blühen gestaffelt von Mai bis Oktober und werden regelrecht belagert.
+
+Für einen kompletten Bepflanzungsplan: https://www.staudenplan.de`},
+        { kategorie:'Staudenbeet planen', emoji:'📋', farbe:'#4a4e69', fragen:['Wie plane ich ein Staudenbeet?','Bepflanzungsplan erstellen'],
+          vorlage:`Ich würde als erstes Standort und Bodenverhältnisse klären (Sonne/Schatten, trocken/feucht) bevor ich Pflanzen aussuche. Das klingt trivial macht aber einen riesigen Unterschied.
+
+Für die konkrete Planung mit Pflanzliste, Abständen und Stückzahlen nutze ich diesen kostenlosen KI-Gartenplaner: https://www.staudenplan.de`},
+      ].map((t,i) => `
+        <div style="background:#fff;border-radius:12px;box-shadow:0 1px 8px rgba(0,0,0,.07);overflow:hidden;margin-bottom:16px">
+          <div style="background:${t.farbe};padding:12px 16px;display:flex;align-items:center;gap:10px">
+            <span style="font-size:1.3rem">${t.emoji}</span>
+            <div>
+              <div style="color:#fff;font-weight:700;font-size:.95rem">${t.kategorie}</div>
+              <div style="color:rgba(255,255,255,.7);font-size:.75rem;margin-top:1px">${t.fragen.map(f=>`"${f}"`).join(' · ')}</div>
+            </div>
+          </div>
+          <div style="padding:14px 16px">
+            <textarea id="vtxt${i}" readonly style="width:100%;min-height:110px;border:1.5px solid #e0d9cf;border-radius:7px;padding:10px;font-size:.86rem;line-height:1.6;color:#333;resize:vertical;font-family:inherit;background:#fafaf8;box-sizing:border-box">${t.vorlage}</textarea>
+            <div style="display:flex;gap:8px;margin-top:8px">
+              <button onclick="kopierenV(${i})" style="background:${t.farbe};color:#fff;border:none;border-radius:7px;padding:7px 16px;cursor:pointer;font-weight:600;font-size:.85rem;flex:1">📋 Kopieren</button>
+            </div>
+            <div id="vok${i}" style="display:none;color:#2d6a4f;font-size:.8rem;margin-top:5px;font-weight:600">✓ Kopiert!</div>
+          </div>
+        </div>`).join('')}
+    </div>
   </div>
 
 </div>
@@ -2158,6 +2236,49 @@ app.get('/admin', (req, res) => {
     await fetch('/api/kandidaten-starten',{method:'POST'});
     btn.textContent='✓ Gestartet — Seite in 2 Min. neu laden';
   }
+
+  // ── Vorlagen-Tab ──
+  function kopierenV(i) {
+    const txt = document.getElementById('vtxt'+i).value;
+    navigator.clipboard.writeText(txt).then(()=>{
+      const ok = document.getElementById('vok'+i);
+      ok.style.display='block';
+      setTimeout(()=>ok.style.display='none', 2500);
+    }).catch(()=>{ document.getElementById('vtxt'+i).select(); document.execCommand('copy'); });
+  }
+  function kopierenGen() {
+    const txt = document.getElementById('genText').value;
+    navigator.clipboard.writeText(txt).then(()=>{
+      const ok = document.getElementById('genOk');
+      ok.style.display='block';
+      setTimeout(()=>ok.style.display='none', 2500);
+    }).catch(()=>{ document.getElementById('genText').select(); document.execCommand('copy'); });
+  }
+  async function generiereAntwort() {
+    const frage = document.getElementById('fragenInput').value.trim();
+    if (!frage) { alert('Bitte eine Frage eingeben.'); return; }
+    const btn = document.getElementById('genBtn');
+    const status = document.getElementById('genStatus');
+    btn.disabled = true; btn.textContent = '⏳ …';
+    status.textContent = 'KI arbeitet…';
+    try {
+      const resp = await fetch('/api/antwort-generieren?key=preview2026', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ frage })
+      });
+      const data = await resp.json();
+      if (data.error) throw new Error(data.error);
+      document.getElementById('genText').value = data.antwort;
+      document.getElementById('genResult').style.display = 'block';
+      document.getElementById('genResult').scrollIntoView({ behavior:'smooth', block:'nearest' });
+      status.textContent = '';
+    } catch(e) { status.textContent = 'Fehler: '+e.message; }
+    btn.disabled=false; btn.textContent='✨ Generieren';
+  }
+  document.addEventListener('keydown', e => {
+    if (e.key==='Enter' && e.ctrlKey && document.getElementById('pane-vorlagen').classList.contains('active'))
+      generiereAntwort();
+  });
 </script>
 </body></html>`);
 });
