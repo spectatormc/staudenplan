@@ -1458,6 +1458,44 @@ app.post('/api/bild-entsperren/:id', (req, res) => {
 
 // ─── Antwort-Vorlagen (internes Marketing-Tool) ──────────────────────────────
 
+app.post('/api/antwort-generieren', async (req, res) => {
+  if (req.query.key !== 'preview2026') return res.status(403).json({ error: '403' });
+  const { frage } = req.body;
+  if (!frage || frage.trim().length < 10) return res.status(400).json({ error: 'Frage zu kurz' });
+
+  try {
+    const { OpenAI } = require('openai');
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: `Du bist ein erfahrener Hobbygärtner mit 20 Jahren Erfahrung im Staudengarten. Du antwortest auf Fragen in deutschen Gartenforen und Facebook-Gruppen.
+
+Deine Antworten:
+- Klingen authentisch und persönlich, nicht wie Werbung
+- Sind konkret und hilfreich mit echten Pflanzennamen (botanisch und deutsch)
+- Sind 2–4 Absätze lang, nicht zu kurz, nicht zu lang
+- Erwähnen am Ende natürlich das kostenlose Tool staudenplan.de (https://www.staudenplan.de) als praktischen Tipp – so als ob du es selbst benutzt hast
+- Verwenden keinen übertriebenen Werbeton
+- Beginnen NICHT mit "Ich" sondern mit der eigentlichen Antwort
+- Nutzen ggf. konkrete Beispiele aus eigenem Garten`
+        },
+        {
+          role: 'user',
+          content: `Jemand hat in einer Gartengruppe folgende Frage gestellt:\n\n"${frage.trim()}"\n\nSchreibe eine hilfreiche Antwort.`
+        }
+      ],
+      max_tokens: 500,
+      temperature: 0.75,
+    });
+    res.json({ antwort: completion.choices[0].message.content });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/vorlagen', (req, res) => {
   if (req.query.key !== 'preview2026') return res.status(403).send('<h2>403</h2>');
 
@@ -1561,8 +1599,27 @@ Für die konkrete Planung mit Pflanzliste, Abstanden und Stückzahlen nutze ich 
       <h1 style="margin:0;font-size:1.6rem;color:#1b4332">Antwort-Vorlagen</h1>
       <p style="color:#666;margin:8px 0 0;font-size:.9rem">Für Facebook-Gruppen, Foren und Google Alerts. Kopieren, ggf. anpassen, posten.</p>
     </div>
+    <div style="background:#fff;border-radius:14px;box-shadow:0 2px 16px rgba(0,0,0,.1);padding:24px;margin-bottom:28px;border:2px solid #52b788">
+      <h2 style="margin:0 0 6px;font-size:1.1rem;color:#1b4332">✨ KI-Antwort für konkrete Frage generieren</h2>
+      <p style="margin:0 0 14px;font-size:.85rem;color:#666">Gefundene Frage aus Google Alert, Facebook oder Forum hier einfügen:</p>
+      <textarea id="fragenInput" placeholder="z.B. 'Hallo, ich habe ein schattiges Beet unter einer alten Birke, ca. 3m², was kann ich da pflanzen?'" style="width:100%;min-height:90px;border:1.5px solid #b7dfc7;border-radius:8px;padding:12px;font-size:.92rem;font-family:inherit;color:#333;resize:vertical;box-sizing:border-box"></textarea>
+      <div style="display:flex;gap:10px;margin-top:12px;align-items:center">
+        <button onclick="generiereAntwort()" id="genBtn" style="background:#1b4332;color:#fff;border:none;border-radius:8px;padding:11px 24px;cursor:pointer;font-weight:700;font-size:.95rem">✨ Antwort generieren</button>
+        <span id="genStatus" style="font-size:.85rem;color:#888"></span>
+      </div>
+      <div id="genResult" style="display:none;margin-top:18px">
+        <div style="font-size:.83rem;color:#666;margin-bottom:6px;font-weight:600">Generierte Antwort — vor dem Posten kurz prüfen &amp; anpassen:</div>
+        <textarea id="genText" style="width:100%;min-height:160px;border:1.5px solid #b7dfc7;border-radius:8px;padding:12px;font-size:.9rem;line-height:1.65;color:#333;font-family:inherit;resize:vertical;box-sizing:border-box;background:#f8fffe"></textarea>
+        <div style="display:flex;gap:10px;margin-top:10px">
+          <button onclick="kopierenGen()" style="background:#2d6a4f;color:#fff;border:none;border-radius:8px;padding:9px 20px;cursor:pointer;font-weight:600;font-size:.9rem;flex:1">📋 Kopieren</button>
+          <button onclick="generiereAntwort()" style="background:#f0ede8;color:#555;border:none;border-radius:8px;padding:9px 16px;cursor:pointer;font-size:.85rem">↻ Neu generieren</button>
+        </div>
+        <div id="genOk" style="display:none;color:#2d6a4f;font-size:.85rem;margin-top:8px;font-weight:600">✓ Kopiert!</div>
+      </div>
+    </div>
+
     <div style="background:#fff8e1;border:1.5px solid #f0c040;border-radius:10px;padding:14px 18px;margin-bottom:28px;font-size:.88rem;color:#7a5000">
-      💡 <strong>Tipp:</strong> Vor dem Posten kurz anpassen – z.B. "Ich habe das bei mir im Garten so gelöst…" klingt authentischer als eine generische Antwort.
+      💡 <strong>Vorlagen unten</strong> für häufige Fragen — oder oben eigene Frage eingeben für eine maßgeschneiderte Antwort.
     </div>
     ${cardsHtml}
   </div>
@@ -1573,11 +1630,48 @@ Für die konkrete Planung mit Pflanzliste, Abstanden und Stückzahlen nutze ich 
       const ok = document.getElementById('ok'+i);
       ok.style.display='block';
       setTimeout(()=>ok.style.display='none', 2500);
-    }).catch(()=>{
-      document.getElementById('txt'+i).select();
-      document.execCommand('copy');
-    });
+    }).catch(()=>{ document.getElementById('txt'+i).select(); document.execCommand('copy'); });
   }
+
+  function kopierenGen() {
+    const txt = document.getElementById('genText').value;
+    navigator.clipboard.writeText(txt).then(()=>{
+      const ok = document.getElementById('genOk');
+      ok.style.display='block';
+      setTimeout(()=>ok.style.display='none', 2500);
+    }).catch(()=>{ document.getElementById('genText').select(); document.execCommand('copy'); });
+  }
+
+  async function generiereAntwort() {
+    const frage = document.getElementById('fragenInput').value.trim();
+    if (!frage) { alert('Bitte zuerst eine Frage eingeben.'); return; }
+    const btn = document.getElementById('genBtn');
+    const status = document.getElementById('genStatus');
+    btn.disabled = true;
+    btn.textContent = '⏳ Generiere…';
+    status.textContent = 'KI arbeitet…';
+    try {
+      const resp = await fetch('/api/antwort-generieren?key=preview2026', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ frage })
+      });
+      const data = await resp.json();
+      if (data.error) throw new Error(data.error);
+      document.getElementById('genText').value = data.antwort;
+      document.getElementById('genResult').style.display = 'block';
+      document.getElementById('genResult').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      status.textContent = '';
+    } catch(e) {
+      status.textContent = 'Fehler: ' + e.message;
+    }
+    btn.disabled = false;
+    btn.textContent = '✨ Antwort generieren';
+  }
+
+  document.getElementById('fragenInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && e.ctrlKey) generiereAntwort();
+  });
   </script>
   </body></html>`);
 });
