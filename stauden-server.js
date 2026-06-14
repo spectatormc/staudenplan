@@ -11,6 +11,14 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
+// www-Redirect: staudenplan.de → www.staudenplan.de (301)
+app.use((req, res, next) => {
+  if (req.hostname === 'staudenplan.de') {
+    return res.redirect(301, 'https://www.staudenplan.de' + req.url);
+  }
+  next();
+});
+
 // ─── Datenbank ────────────────────────────────────────────────────────────────
 const db = new Database(path.join(__dirname, 'stauden.db'));
 
