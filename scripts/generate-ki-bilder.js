@@ -27,9 +27,10 @@ try {
 const IMG_DIR = path.join(__dirname, '..', 'public', 'images', 'pflanzen');
 if (!fs.existsSync(IMG_DIR)) fs.mkdirSync(IMG_DIR, { recursive: true });
 
-const args  = process.argv.slice(2);
-const LIMIT = (() => { const l = args.find(a => a.startsWith('--limit=')); return l ? parseInt(l.split('=')[1]) : 10; })();
-const IDS   = (() => { const i = args.find(a => a.startsWith('--ids=')); return i ? i.split('=')[1].split(',').map(Number).filter(Boolean) : null; })();
+const args      = process.argv.slice(2);
+const LIMIT     = (() => { const l = args.find(a => a.startsWith('--limit=')); return l ? parseInt(l.split('=')[1]) : 10; })();
+const IDS       = (() => { const i = args.find(a => a.startsWith('--ids=')); return i ? i.split('=')[1].split(',').map(Number).filter(Boolean) : null; })();
+const KEEP_LIVE = args.includes('--keep-live'); // Status nicht auf staging setzen
 
 let where = "status='staging' AND (bild_ki IS NULL OR bild_ki=0)";
 if (IDS?.length) where = `id IN (${IDS.join(',')})`;
@@ -77,7 +78,9 @@ function downloadImage(url, dest) {
   });
 }
 
-const UPDATE = db.prepare("UPDATE pflanzen SET bild_vorschlag=?, bild_check_info=?, bild_ki=1, status='staging' WHERE id=?");
+const UPDATE = KEEP_LIVE
+  ? db.prepare("UPDATE pflanzen SET bild_vorschlag=?, bild_check_info=?, bild_ki=1 WHERE id=?")
+  : db.prepare("UPDATE pflanzen SET bild_vorschlag=?, bild_check_info=?, bild_ki=1, status='staging' WHERE id=?");
 
 async function main() {
   for (const p of pflanzen) {

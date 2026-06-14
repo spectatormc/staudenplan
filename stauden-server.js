@@ -1735,7 +1735,7 @@ app.get('/admin', (req, res) => {
         <span class="bot">${p.name_botanisch}</span>
       </div>
       <div class="st-meta">${p.hoehe_cm_min||'?'}–${p.hoehe_cm_max||'?'}cm</div>
-      <button class="btn-pruefen" id="bp-${p.id}" onclick="bildPruefen(${p.id},this)">Bild prüfen</button>
+      <button class="btn-pruefen" id="bp-${p.id}" onclick="kiVorschlagErstellen(${p.id},this)">KI-Bild erstellen</button>
     </div>`;
   }).join('') || '<p class="empty">Keine Live-Pflanzen.</p>';
 
@@ -1868,7 +1868,7 @@ app.get('/admin', (req, res) => {
   <!-- Tab 2: Live Pflanzen -->
   <div class="pane" id="pane-live">
     <div class="toolbar">
-      <span class="toolbar-meta">${livePflanzen.length} Live-Pflanzen · "Bild prüfen" schaltet die Pflanze offline und startet einen GPT-Check</span>
+      <span class="toolbar-meta">${livePflanzen.length} Live-Pflanzen · "KI-Bild erstellen" generiert einen neuen Vorschlag — erscheint dann in der Bildprüfung</span>
     </div>
     <input type="text" id="live-search" placeholder="Pflanze suchen…" oninput="filterLive(this.value)"
       style="width:100%;max-width:360px;padding:9px 14px;border:1.5px solid #ddd;border-radius:8px;font-size:.9rem;margin-bottom:16px;display:block">
@@ -2020,30 +2020,20 @@ Für die konkrete Planung mit Pflanzliste, Abständen und Stückzahlen nutze ich
     });
   }
 
-  // ── Live: Bild prüfen ──
-  async function bildPruefen(id, btn) {
-    if (!confirm('Pflanze offline schalten und Bild mit GPT prüfen? Dauert ca. 10 Sekunden.')) return;
+  // ── Live: Neues KI-Bild als Vorschlag erstellen ──
+  async function kiVorschlagErstellen(id, btn) {
+    if (!confirm('Neues KI-Bild generieren? Dauert ca. 30 Sekunden. Das aktuelle Bild bleibt bis zur Freigabe aktiv.')) return;
     btn.innerHTML = '<span class=spinner></span>'; btn.disabled = true;
-    const r = await fetch('/api/bild-pruefen/' + id, { method: 'POST' });
+    const r = await fetch('/api/ki-bild-vorschlag/' + id, { method: 'POST' });
     if (r.ok) {
-      const row = document.getElementById('lv-' + id);
-      row.style.opacity = '.35';
-      btn.textContent = '⏳ In Prüfung…';
-      // Nach 12s prüfen ob Vorschlag bereit (recheck-status nutzt bild_geprueft)
-      setTimeout(async () => {
-        const s = await fetch('/api/recheck-status?ids=' + id);
-        const data = await s.json();
-        if (data.fertig) {
-          btn.textContent = '✓ Geprüft — Bildprüfung-Tab öffnen';
-          btn.onclick = () => { document.querySelector('.tab[onclick*="pruefung"]').click(); };
-          btn.disabled = false;
-        } else {
-          btn.textContent = '⏳ Läuft noch…';
-          btn.disabled = false;
-        }
-      }, 12000);
+      btn.textContent = '⏳ Wird generiert…';
+      setTimeout(() => {
+        btn.textContent = '→ In Bildprüfung';
+        btn.disabled = false;
+        btn.onclick = () => document.querySelector('.tab[onclick*="pruefung"]').click();
+      }, 35000);
     } else {
-      btn.textContent = 'Bild prüfen'; btn.disabled = false;
+      btn.textContent = 'KI-Bild erstellen'; btn.disabled = false;
     }
   }
 
@@ -2093,15 +2083,14 @@ Für die konkrete Planung mit Pflanzliste, Abständen und Stückzahlen nutze ich
 </body></html>`);
 });
 
-// Einzelne Live-Pflanze offline schalten und Bildcheck starten
-app.post('/api/bild-pruefen/:id', (req, res) => {
+// Neues KI-Bild für live Pflanze als Vorschlag generieren (Pflanze bleibt live)
+app.post('/api/ki-bild-vorschlag/:id', (req, res) => {
   const id = parseInt(req.params.id);
   if (!id) return res.status(400).json({ error: 'id fehlt' });
-  db.prepare("UPDATE pflanzen SET status='staging', bild_geprueft=0 WHERE id=?").run(id);
   const { spawn } = require('child_process');
   const child = spawn(process.execPath, [
-    path.join(__dirname, 'scripts', 'check-plant-images.js'),
-    '--propose', `--ids=${id}`
+    path.join(__dirname, 'scripts', 'generate-ki-bilder.js'),
+    `--ids=${id}`, '--keep-live'
   ], { cwd: __dirname, detached: true, stdio: 'ignore' });
   child.unref();
   res.json({ ok: true });
