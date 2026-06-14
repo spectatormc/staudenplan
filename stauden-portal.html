@@ -3004,6 +3004,15 @@
       });
     }
 
+    // Blickrichtung anwenden: alle Positionen um Beetmittelpunkt drehen
+    if (rotAngle !== 0 && !isRund) {
+      all.forEach(p => {
+        const rot = rotateAroundCenter(p.x, p.y, rotAngle);
+        p.x = Math.max(p.r, Math.min(bedW - p.r, rot.x));
+        p.y = Math.max(p.r, Math.min(bedH - p.r, rot.y));
+      });
+    }
+
     return all;
   }
 
@@ -3075,14 +3084,7 @@
     const drawnPolysEarly = scaledPolygonsForSVG(bedW, bedH, PAD, PAD);
     const placementPolysEarly = scaledPolygonsForSVG(bedW, bedH, 0, 0);
     const hasDrawnEarly = !!drawnPolysEarly;
-    const rawPlacements = calcPlacements(plan.pflanzen, bedW, bedH, hasDrawnEarly ? placementPolysEarly : null, parseFloat(gartW));
-    // Blickrichtung anwenden: rotAngle dreht alle Positionen um Beetmittelpunkt
-    const placements = (rotAngle === 0 || isRund)
-      ? rawPlacements
-      : rawPlacements.map(p => {
-          const rot = rotateAroundCenter(p.x, p.y, rotAngle);
-          return { ...p, x: Math.max(p.r, Math.min(bedW - p.r, rot.x)), y: Math.max(p.r, Math.min(bedH - p.r, rot.y)) };
-        });
+    const placements = calcPlacements(plan.pflanzen, bedW, bedH, hasDrawnEarly ? placementPolysEarly : null, parseFloat(gartW));
     // Normalisierte Positionen speichern → werden von schematisch + Höhenansicht wiederverwendet
     plan._normPlacements = placements.map(p => ({
       xFrac: p.x / bedW, yFrac: p.y / bedH, rFrac: p.r / bedW,
