@@ -332,13 +332,14 @@ function antworten(gewaehlt, richtig) {
     else if (b.textContent === gewaehlt) b.classList.add('falsch');
   });
 
+  const botanisch = fragen[frageIdx]?.botanisch || '';
   const fb = document.getElementById('feedback');
   if (gewaehlt === richtig) {
     punkte++;
-    fb.textContent = '✓ Richtig!';
+    fb.innerHTML = `✓ Richtig! <em style="font-weight:400;opacity:.75">${botanisch}</em>`;
     fb.className = 'feedback ok';
   } else {
-    fb.textContent = `✗ Leider falsch. Richtig: ${richtig}`;
+    fb.innerHTML = `✗ Leider falsch. Richtig: ${richtig} <em style="font-weight:400;opacity:.75">${botanisch}</em>`;
     fb.className = 'feedback nein';
   }
 

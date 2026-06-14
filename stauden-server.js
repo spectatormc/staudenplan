@@ -2417,6 +2417,7 @@ app.get('/api/quiz-fragen', (req, res) => {
         id: richtig.id,
         bild_url: richtig.bild_url,
         richtig: richtig.name_deutsch,
+        botanisch: richtig.name_botanisch,
         optionen: optionen.map(p => p.name_deutsch)
       });
     }
