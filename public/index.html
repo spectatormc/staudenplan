@@ -1026,6 +1026,12 @@
       <div class="canvas-area-result" id="canvas-area-result"></div>
     </div>
     <div id="pro-err-1" class="error-msg" style="display:none">Bitte Fläche eingeben oder zeichnen.</div>
+    <div class="form-group" style="margin-top:16px">
+      <label class="field-label">Postleitzahl <span style="font-weight:400;opacity:.6">(optional — für regionale Pflanzenempfehlungen)</span></label>
+      <div class="input-unit" style="max-width:140px">
+        <input type="text" id="pro-plz" maxlength="5" placeholder="z.B. 80331" inputmode="numeric" oninput="formData.plz=this.value.trim()">
+      </div>
+    </div>
     <div class="btn-row" style="margin-top:20px">
       <button class="btn-back" onclick="showModewahl()">← Modus ändern</button>
       <button class="btn-next" id="pro-btn-next-1" onclick="proGoStep(2)" disabled>Weiter →</button>
@@ -1264,6 +1270,12 @@
       </div>
     </div>
     <div id="err-1" class="error-msg" style="display:none">Bitte eine Fläche eingeben (min. 1 m²).</div>
+    <div class="form-group" style="margin-top:16px">
+      <label class="field-label">Postleitzahl <span style="font-weight:400;opacity:.6">(optional — für regionale Empfehlungen)</span></label>
+      <div class="input-unit" style="max-width:140px">
+        <input type="text" id="plz" maxlength="5" placeholder="z.B. 80331" inputmode="numeric" oninput="formData.plz=this.value.trim()">
+      </div>
+    </div>
     <div class="btn-row">
       <button class="btn-next" id="btn-next-1" onclick="goStep(2)" disabled>Weiter →</button>
     </div>
@@ -1633,7 +1645,7 @@
   // ── State ──────────────────────────────────────────────────────────────────
   let formData = {
     gartenflaeche: null, licht: '', boden: '', stil: '', farbe: '', saison: '',
-    modus: 'einfach',
+    modus: 'einfach', plz: '',
     lieblingspflanzen: [], budget: null, nutzung: [], pflegezeit: '',
     vielfalt: 'ausgewogen', skipBodenStep: false
   };
@@ -2114,7 +2126,8 @@
         budget: formData.budget,
         nutzung: formData.nutzung,
         pflegezeit: formData.pflegezeit,
-        vielfalt: formData.vielfalt || 'ausgewogen'
+        vielfalt: formData.vielfalt || 'ausgewogen',
+        plz: formData.plz || null
       };
       const res = await fetch('/api/plan', {
         method: 'POST',
