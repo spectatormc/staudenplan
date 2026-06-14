@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stauden-Quiz – Teste dein Gartenwissen | Staudenplan.de</title>
+<meta name="description" content="Zwei Quizze in einem: Teste dein Stauden-Wissen oder finde heraus, welcher Gartentyp du bist. Kostenlos und sofort auf Staudenplan.de.">
+<meta property="og:title" content="Stauden-Quiz – Welcher Gartentyp bist du?">
+<meta property="og:description" content="Erkenne Stauden am Bild und finde deinen Gartentyp. Jetzt kostenlos mitmachen!">
+<meta property="og:image" content="/images/og-quiz.jpg">
+<link rel="icon" href="/favicon.ico">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --green: #2d6a4f;
+    --light-green: #52b788;
+    --bg: #f6faf7;
+    --card: #fff;
+    --radius: 14px;
+    --shadow: 0 4px 20px rgba(0,0,0,.08);
+  }
+  body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: #1b4332; min-height: 100vh; }
+
+  /* Header */
+  header { background: var(--green); padding: 14px 20px; display: flex; align-items: center; gap: 14px; }
+  header a { color: #fff; text-decoration: none; opacity: .8; font-size: .9rem; }
+  header a:hover { opacity: 1; }
+  header h1 { color: #fff; font-size: 1.1rem; font-weight: 700; }
+
+  /* Hero */
+  .hero { background: linear-gradient(135deg, #1b4332 0%, #2d6a4f 60%, #52b788 100%); color: #fff; text-align: center; padding: 48px 20px 36px; }
+  .hero h2 { font-size: clamp(1.6rem, 5vw, 2.4rem); font-weight: 800; margin-bottom: 10px; }
+  .hero p { opacity: .85; font-size: 1rem; max-width: 520px; margin: 0 auto 24px; }
+
+  /* Tabs */
+  .tabs { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; }
+  .tab-btn { padding: 12px 28px; border-radius: 30px; border: 2px solid rgba(255,255,255,.5); background: transparent; color: #fff; font-size: 1rem; font-weight: 700; cursor: pointer; transition: all .2s; }
+  .tab-btn.active { background: #fff; color: var(--green); border-color: #fff; }
+  .tab-btn:hover:not(.active) { background: rgba(255,255,255,.1); }
+
+  /* Main */
+  main { max-width: 680px; margin: 0 auto; padding: 32px 16px 60px; }
+
+  /* Quiz Container */
+  .quiz-section { display: none; }
+  .quiz-section.active { display: block; }
+
+  /* Card */
+  .card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 28px; margin-bottom: 20px; }
+
+  /* Wissenstest */
+  .progress-bar { height: 8px; background: #e0e0e0; border-radius: 4px; margin-bottom: 24px; overflow: hidden; }
+  .progress-fill { height: 100%; background: linear-gradient(90deg, var(--green), var(--light-green)); border-radius: 4px; transition: width .4s ease; }
+  .frage-nr { font-size: .8rem; color: #888; text-align: right; margin-bottom: 12px; }
+
+  .pflanze-bild { width: 100%; max-height: 300px; object-fit: cover; border-radius: 10px; margin-bottom: 24px; display: block; }
+  .pflanze-frage { font-size: 1.05rem; font-weight: 700; color: var(--green); margin-bottom: 16px; text-align: center; }
+
+  .optionen { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .option-btn {
+    padding: 14px 10px; border-radius: 10px; border: 2px solid #d0e8d8;
+    background: #f0faf3; cursor: pointer; font-size: .9rem; font-weight: 600; color: #1b4332;
+    transition: all .15s; text-align: center; line-height: 1.3;
+  }
+  .option-btn:hover:not(:disabled) { border-color: var(--light-green); background: #e0f5e9; transform: translateY(-1px); }
+  .option-btn.richtig { background: #d4edda; border-color: #28a745; color: #155724; }
+  .option-btn.falsch { background: #f8d7da; border-color: #dc3545; color: #721c24; }
+  .option-btn:disabled { cursor: default; }
+
+  .feedback { text-align: center; margin-top: 14px; font-size: .95rem; font-weight: 600; min-height: 22px; }
+  .feedback.ok { color: #28a745; }
+  .feedback.nein { color: #dc3545; }
+
+  .btn-weiter { display: block; margin: 18px auto 0; padding: 13px 36px; background: var(--green); color: #fff; border: none; border-radius: 30px; font-size: 1rem; font-weight: 700; cursor: pointer; transition: background .15s; }
+  .btn-weiter:hover { background: #1b4332; }
+  .btn-weiter:disabled { opacity: .4; cursor: default; }
+
+  /* Ergebnis */
+  .ergebnis { text-align: center; display: none; }
+  .ergebnis.sichtbar { display: block; }
+  .badge { font-size: 3rem; margin-bottom: 8px; }
+  .ergebnis h3 { font-size: 1.5rem; color: var(--green); font-weight: 800; margin-bottom: 8px; }
+  .score-text { color: #555; margin-bottom: 20px; }
+  .cta-block { background: linear-gradient(135deg, #1b4332, #2d6a4f); color: #fff; border-radius: var(--radius); padding: 24px; margin-top: 20px; }
+  .cta-block p { margin-bottom: 14px; opacity: .9; }
+  .cta-btn { display: inline-block; padding: 13px 32px; background: #fff; color: var(--green); border-radius: 30px; font-weight: 800; text-decoration: none; font-size: 1rem; transition: transform .15s; }
+  .cta-btn:hover { transform: translateY(-2px); }
+  .btn-retry { margin-top: 14px; display: inline-block; padding: 10px 24px; border: 2px solid #ccc; border-radius: 30px; background: transparent; color: #555; cursor: pointer; font-size: .9rem; font-weight: 600; }
+  .btn-retry:hover { border-color: var(--green); color: var(--green); }
+
+  /* Persönlichkeitsquiz */
+  .pq-intro { text-align: center; padding: 20px 0 10px; }
+  .pq-intro p { color: #555; font-size: .95rem; margin-top: 8px; }
+
+  .pq-frage { display: none; }
+  .pq-frage.aktiv { display: block; }
+  .pq-frage-text { font-size: 1.1rem; font-weight: 700; color: var(--green); margin-bottom: 20px; text-align: center; padding: 0 8px; }
+  .pq-frage-nr { font-size: .8rem; color: #888; text-align: right; margin-bottom: 10px; }
+
+  .pq-optionen { display: flex; flex-direction: column; gap: 10px; }
+  .pq-option {
+    padding: 14px 18px; border-radius: 10px; border: 2px solid #d0e8d8;
+    background: #f0faf3; cursor: pointer; font-size: .92rem; font-weight: 500; color: #1b4332;
+    transition: all .15s; text-align: left; display: flex; align-items: center; gap: 12px;
+  }
+  .pq-option .ico { font-size: 1.3rem; flex-shrink: 0; }
+  .pq-option:hover { border-color: var(--light-green); background: #e0f5e9; transform: translateX(3px); }
+  .pq-option.gewaehlt { border-color: var(--green); background: #c8f0d8; }
+
+  .pq-progress { display: flex; justify-content: center; gap: 6px; margin-bottom: 20px; }
+  .pq-dot { width: 8px; height: 8px; border-radius: 50%; background: #d0e8d8; transition: background .3s; }
+  .pq-dot.aktiv { background: var(--green); }
+  .pq-dot.done { background: var(--light-green); }
+
+  /* Persönlichkeitsquiz Ergebnis */
+  .pq-ergebnis { display: none; }
+  .pq-ergebnis.sichtbar { display: block; }
+  .typ-karte { border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); margin-bottom: 20px; }
+  .typ-header { padding: 28px; text-align: center; }
+  .typ-icon { font-size: 3.5rem; margin-bottom: 10px; }
+  .typ-header h3 { font-size: 1.5rem; font-weight: 800; margin-bottom: 6px; }
+  .typ-header p { opacity: .85; font-size: .95rem; }
+  .typ-pflanzen { background: var(--card); padding: 20px 24px; }
+  .typ-pflanzen h4 { font-size: .85rem; text-transform: uppercase; letter-spacing: .06em; color: #888; margin-bottom: 12px; }
+  .pflanze-empfehlung { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
+  .pflanze-empfehlung:last-child { border-bottom: none; }
+  .pflanze-empfehlung .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--light-green); flex-shrink: 0; }
+  .pflanze-empfehlung span { font-weight: 600; color: #1b4332; }
+  .typ-cta { background: #f0faf3; padding: 20px 24px; text-align: center; }
+  .typ-cta p { color: #555; font-size: .9rem; margin-bottom: 12px; }
+
+  .btn-pq-retry { display: inline-block; margin-top: 12px; padding: 10px 24px; border: 2px solid #ccc; border-radius: 30px; background: transparent; color: #555; cursor: pointer; font-size: .9rem; font-weight: 600; }
+  .btn-pq-retry:hover { border-color: var(--green); color: var(--green); }
+
+  /* Loader */
+  .loader { text-align: center; padding: 40px; color: #888; font-size: .95rem; }
+  .spinner { width: 32px; height: 32px; border: 3px solid #e0e0e0; border-top-color: var(--light-green); border-radius: 50%; animation: spin .7s linear infinite; margin: 0 auto 12px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Footer */
+  footer { background: #1b4332; color: rgba(255,255,255,.7); text-align: center; padding: 24px 16px; font-size: .82rem; }
+  footer a { color: rgba(255,255,255,.6); text-decoration: none; }
+  footer a:hover { color: #fff; }
+
+  @media (max-width: 460px) {
+    .optionen { grid-template-columns: 1fr; }
+    .tab-btn { padding: 10px 20px; font-size: .9rem; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <a href="/">← Zurück zum Planer</a>
+  <h1>Stauden-Quiz</h1>
+</header>
+
+<div class="hero">
+  <h2>🌿 Teste dein Gartenwissen</h2>
+  <p>Erkenne Stauden am Bild oder finde heraus, welcher Gartentyp du bist.</p>
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('wissen')">🧠 Wissenstest</button>
+    <button class="tab-btn" onclick="switchTab('typ')">🌸 Gartentyp</button>
+  </div>
+</div>
+
+<main>
+
+  <!-- WISSENSTEST -->
+  <div class="quiz-section active" id="sec-wissen">
+    <div id="wissenstest-start" class="card" style="text-align:center;padding:36px 24px">
+      <div style="font-size:2.5rem;margin-bottom:14px">🌺</div>
+      <h3 style="font-size:1.3rem;color:var(--green);margin-bottom:10px">Erkennst du diese Stauden?</h3>
+      <p style="color:#555;margin-bottom:24px;line-height:1.6">10 Fragen – je ein Bild, vier Antwortmöglichkeiten. Zeig, was du weißt!</p>
+      <button class="btn-weiter" onclick="starteWissenstest()">Quiz starten →</button>
+    </div>
+
+    <div id="wissenstest-quiz" style="display:none">
+      <div class="card">
+        <div class="frage-nr" id="frage-nr">Frage 1 von 10</div>
+        <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+        <img class="pflanze-bild" id="pflanze-bild" src="" alt="Staude" loading="lazy">
+        <p class="pflanze-frage">Wie heißt diese Staude?</p>
+        <div class="optionen" id="optionen"></div>
+        <div class="feedback" id="feedback"></div>
+        <button class="btn-weiter" id="btn-weiter" style="display:none" onclick="naechsteFrage()">Weiter →</button>
+      </div>
+    </div>
+
+    <div class="ergebnis card" id="wissenstest-ergebnis">
+      <div class="badge" id="ergebnis-badge">🌿</div>
+      <h3 id="ergebnis-titel">Staudenexperte!</h3>
+      <p class="score-text" id="ergebnis-text"></p>
+      <div class="cta-block">
+        <p>Jetzt deinen individuellen Pflanzplan erstellen – kostenlos und in 2 Minuten!</p>
+        <a href="/" class="cta-btn">🌿 Pflanzplan erstellen</a>
+      </div>
+      <button class="btn-retry" onclick="starteWissenstest()">Quiz wiederholen</button>
+    </div>
+  </div>
+
+  <!-- GARTENTYP-QUIZ -->
+  <div class="quiz-section" id="sec-typ">
+    <div class="card">
+      <div class="pq-intro">
+        <div style="font-size:2.5rem;margin-bottom:10px">🌻</div>
+        <h3 style="font-size:1.25rem;color:var(--green);font-weight:800">Welcher Gartentyp bist du?</h3>
+        <p>7 kurze Fragen – dein persönliches Gartenprofil und passende Pflanzempfehlungen.</p>
+      </div>
+    </div>
+
+    <div id="pq-fragen-container">
+      <!-- Fragen werden dynamisch eingefügt -->
+    </div>
+
+    <div class="pq-ergebnis" id="pq-ergebnis">
+      <div class="typ-karte" id="typ-karte">
+        <!-- Ergebnis wird dynamisch eingefügt -->
+      </div>
+      <div style="text-align:center;margin-top:8px">
+        <button class="btn-pq-retry" onclick="starteTypQuiz()">Quiz wiederholen</button>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<footer>
+  <p style="margin-bottom:8px">© 2025 Staudenplan.de · <a href="/impressum">Impressum</a> · <a href="/datenschutz">Datenschutz</a></p>
+  <p><a href="/" style="color:#52b788">🌿 KI-Planer</a> · <a href="/pflanzen" style="color:#52b788">Stauden-Lexikon</a> · <a href="/ratgeber" style="color:#52b788">Ratgeber</a></p>
+</footer>
+
+<script>
+// ─── TAB SWITCH ───────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach((b, i) => {
+    b.classList.toggle('active', (i === 0 && tab === 'wissen') || (i === 1 && tab === 'typ'));
+  });
+  document.getElementById('sec-wissen').classList.toggle('active', tab === 'wissen');
+  document.getElementById('sec-typ').classList.toggle('active', tab === 'typ');
+}
+
+// ─── WISSENSTEST ─────────────────────────────────────────────────────────────
+let fragen = [], frageIdx = 0, punkte = 0;
+
+async function starteWissenstest() {
+  document.getElementById('wissenstest-start').style.display = 'none';
+  document.getElementById('wissenstest-quiz').style.display = 'none';
+  document.getElementById('wissenstest-ergebnis').classList.remove('sichtbar');
+  document.getElementById('wissenstest-quiz').innerHTML = '<div class="loader"><div class="spinner"></div>Fragen werden geladen…</div>';
+  document.getElementById('wissenstest-quiz').style.display = 'block';
+
+  try {
+    const resp = await fetch('/api/quiz-fragen?n=10');
+    fragen = await resp.json();
+    frageIdx = 0; punkte = 0;
+    document.getElementById('wissenstest-quiz').innerHTML = `
+      <div class="card">
+        <div class="frage-nr" id="frage-nr">Frage 1 von ${fragen.length}</div>
+        <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+        <img class="pflanze-bild" id="pflanze-bild" src="" alt="Staude" loading="lazy">
+        <p class="pflanze-frage">Wie heißt diese Staude?</p>
+        <div class="optionen" id="optionen"></div>
+        <div class="feedback" id="feedback"></div>
+        <button class="btn-weiter" id="btn-weiter" style="display:none" onclick="naechsteFrage()">Weiter →</button>
+      </div>`;
+    zeigeFrage();
+  } catch {
+    document.getElementById('wissenstest-quiz').innerHTML = '<div class="card" style="text-align:center;color:#c00">Fehler beim Laden der Fragen. Bitte Seite neu laden.</div>';
+  }
+}
+
+function zeigeFrage() {
+  const f = fragen[frageIdx];
+  const total = fragen.length;
+  document.getElementById('frage-nr').textContent = `Frage ${frageIdx + 1} von ${total}`;
+  document.getElementById('progress-fill').style.width = `${(frageIdx / total) * 100}%`;
+  document.getElementById('pflanze-bild').src = f.bild_url;
+  document.getElementById('feedback').textContent = '';
+  document.getElementById('btn-weiter').style.display = 'none';
+
+  const container = document.getElementById('optionen');
+  container.innerHTML = '';
+  f.optionen.forEach(name => {
+    const btn = document.createElement('button');
+    btn.className = 'option-btn';
+    btn.textContent = name;
+    btn.onclick = () => antworten(name, f.richtig);
+    container.appendChild(btn);
+  });
+}
+
+function antworten(gewaehlt, richtig) {
+  const btns = document.querySelectorAll('.option-btn');
+  btns.forEach(b => {
+    b.disabled = true;
+    if (b.textContent === richtig) b.classList.add('richtig');
+    else if (b.textContent === gewaehlt) b.classList.add('falsch');
+  });
+
+  const fb = document.getElementById('feedback');
+  if (gewaehlt === richtig) {
+    punkte++;
+    fb.textContent = '✓ Richtig!';
+    fb.className = 'feedback ok';
+  } else {
+    fb.textContent = `✗ Leider falsch. Richtig: ${richtig}`;
+    fb.className = 'feedback nein';
+  }
+
+  const btn = document.getElementById('btn-weiter');
+  btn.style.display = 'block';
+  btn.textContent = frageIdx + 1 < fragen.length ? 'Weiter →' : 'Ergebnis anzeigen →';
+}
+
+function naechsteFrage() {
+  frageIdx++;
+  if (frageIdx < fragen.length) {
+    zeigeFrage();
+  } else {
+    zeigeErgebnis();
+  }
+}
+
+function zeigeErgebnis() {
+  document.getElementById('wissenstest-quiz').style.display = 'none';
+  const erg = document.getElementById('wissenstest-ergebnis');
+  erg.classList.add('sichtbar');
+
+  const total = fragen.length;
+  const pct = punkte / total;
+  let badge, titel, text;
+  if (pct >= 0.8) {
+    badge = '🏆'; titel = 'Staudenexperte!';
+    text = `${punkte} von ${total} richtig – beeindruckendes Pflanzenwissen!`;
+  } else if (pct >= 0.5) {
+    badge = '🌸'; titel = 'Gartenkenner!';
+    text = `${punkte} von ${total} richtig – du kennst dich schon gut aus!`;
+  } else {
+    badge = '🌱'; titel = 'Gartenanfänger!';
+    text = `${punkte} von ${total} richtig – beim nächsten Mal weißt du mehr!`;
+  }
+  document.getElementById('ergebnis-badge').textContent = badge;
+  document.getElementById('ergebnis-titel').textContent = titel;
+  document.getElementById('ergebnis-text').textContent = text;
+}
+
+// ─── PERSÖNLICHKEITSQUIZ ─────────────────────────────────────────────────────
+
+const PQ_FRAGEN = [
+  {
+    text: 'Wie soll dein Garten hauptsächlich wirken?',
+    optionen: [
+      { text: 'Naturbelassen – wild und lebendig', ico: '🌾', typ: { N: 2 } },
+      { text: 'Romantisch – üppig und blütenreich', ico: '🌹', typ: { B: 2 } },
+      { text: 'Modern – klar und architektonisch', ico: '🏛️', typ: { S: 2 } },
+      { text: 'Entspannt – mit Wasser und Ruhe', ico: '💧', typ: { T: 2 } }
+    ]
+  },
+  {
+    text: 'Wie viel Zeit investierst du gerne in Gartenpflege?',
+    optionen: [
+      { text: 'Wenig – der Garten soll sich selbst helfen', ico: '😌', typ: { N: 2 } },
+      { text: 'Mittel – meine Lieblingsstauden dürfen mehr kosten', ico: '🌿', typ: { B: 2 } },
+      { text: 'Regelmäßig – ich mag Ordnung', ico: '✂️', typ: { S: 2 } },
+      { text: 'Gerne – auch Wasserpflanzen brauchen Aufmerksamkeit', ico: '🐸', typ: { T: 2 } }
+    ]
+  },
+  {
+    text: 'Was liegt dir bei Pflanzen besonders am Herzen?',
+    optionen: [
+      { text: 'Heimische Arten und Insektenfreundlichkeit', ico: '🐝', typ: { N: 2 } },
+      { text: 'Lange Blütezeit und leuchtende Farben', ico: '🌺', typ: { B: 2 } },
+      { text: 'Winteraspekt und ganzjährige Struktur', ico: '❄️', typ: { S: 2 } },
+      { text: 'Wasserpflanzen und Feuchtliebende', ico: '🪷', typ: { T: 2 } }
+    ]
+  },
+  {
+    text: 'Welche Gartenszene begeistert dich am meisten?',
+    optionen: [
+      { text: 'Blühende Wiese mit Gräsern und Schmetterlingen', ico: '🦋', typ: { N: 2 } },
+      { text: 'Üppiges Rosenbeet in Rosa und Lila', ico: '🌸', typ: { B: 2 } },
+      { text: 'Moderner Garten mit geometrischen Formen', ico: '⬜', typ: { S: 2 } },
+      { text: 'Teich mit Seerosen im Morgenlicht', ico: '🌅', typ: { T: 2 } }
+    ]
+  },
+  {
+    text: 'Welche Farben magst du am liebsten im Garten?',
+    optionen: [
+      { text: 'Gelb, Blau, Weiß – Wildblumenfarben', ico: '💛', typ: { N: 2, B: 1 } },
+      { text: 'Rosa, Lila, Magenta – romantische Pastelltöne', ico: '💜', typ: { B: 2 } },
+      { text: 'Weiß, Grün, Silber – ruhige Eleganz', ico: '🤍', typ: { S: 2 } },
+      { text: 'Weiß und Grün – Spiegelungen im Wasser', ico: '🪞', typ: { T: 2 } }
+    ]
+  },
+  {
+    text: 'Was soll der Garten zusätzlich leisten?',
+    optionen: [
+      { text: 'Lebensraum für Vögel, Bienen und Schmetterlinge', ico: '🐦', typ: { N: 2 } },
+      { text: 'Schöner Anblick vom Haus – Fotomomente', ico: '📸', typ: { B: 2 } },
+      { text: 'Ordentlich und repräsentativ fürs Auge', ico: '🏡', typ: { S: 2 } },
+      { text: 'Entspannung und Ruhe am Wasser', ico: '🧘', typ: { T: 2 } }
+    ]
+  },
+  {
+    text: 'Welche Staude begeistert dich am meisten?',
+    optionen: [
+      { text: 'Wilde Schafgarbe – robust und insektenreich', ico: '🌼', typ: { N: 2 } },
+      { text: 'Rosen-Malve – romantisch und langblühend', ico: '🌷', typ: { B: 2 } },
+      { text: 'Silberwurz-Gras – Struktur und Herbstgold', ico: '🎍', typ: { S: 2 } },
+      { text: 'Gelbe Teichrose – schwimmend im Wasser', ico: '🌕', typ: { T: 2 } }
+    ]
+  }
+];
+
+const TYPEN = {
+  N: {
+    name: 'Naturgärtner',
+    icon: '🌾',
+    farbe: '#2d6a4f',
+    grad: 'linear-gradient(135deg, #1b4332, #40916c)',
+    beschr: 'Ihr Garten ist ein Paradies für Natur, Insekten und heimische Arten. Wildblumenwiesen und natürliche Bepflanzung liegen Ihnen am Herzen.',
+    pflanzen: [
+      { name: 'Achillea millefolium', beschr: 'Gemeine Schafgarbe – bienenfreundlich, trockenresistent' },
+      { name: 'Echinacea purpurea', beschr: 'Sonnenhut – Insektenmagnet, robust und schön' },
+      { name: 'Agastache foeniculum', beschr: 'Duft-Ysop – Schmetterlingspflanze mit langem Flor' }
+    ],
+    cta: '/?standort=Naturwiese+heimische+Stauden+Insekten+Bienen'
+  },
+  B: {
+    name: 'Blumenliebhaber',
+    icon: '🌸',
+    farbe: '#9b2c5d',
+    grad: 'linear-gradient(135deg, #6d1b47, #c2587e)',
+    beschr: 'Romantisch, üppig, blütenreich – Ihr Garten ist ein Fest für die Sinne. Farbe und langer Flor stehen bei Ihnen im Vordergrund.',
+    pflanzen: [
+      { name: 'Phlox paniculata', beschr: 'Sommer-Phlox – duftend, langes Blütefenster, viele Farben' },
+      { name: 'Salvia nemorosa', beschr: 'Steppen-Salbei – Klassiker, bienenliebling, robust' },
+      { name: 'Monarda didyma', beschr: 'Indianernessel – leuchtend rot, Schmetterlingspflanze' }
+    ],
+    cta: '/?standort=Sonnenbeet+romantisch+Blütenstauden+bunt'
+  },
+  S: {
+    name: 'Strukturgärtner',
+    icon: '🏛️',
+    farbe: '#1a3a5c',
+    grad: 'linear-gradient(135deg, #0f2b47, #2563a4)',
+    beschr: 'Klare Linien, Winteraspekt, architektonische Pflanzen – Ihr Garten ist ganzjährig schön und strukturiert.',
+    pflanzen: [
+      { name: 'Miscanthus sinensis', beschr: 'Chinaschilf – imposantes Ziergras mit Winteraspekt' },
+      { name: 'Pennisetum alopecuroides', beschr: 'Lampenputzergras – kompakt, bewegend, herbstgold' },
+      { name: 'Perovskia atriplicifolia', beschr: 'Blauraute – silbrig, duftend, architektonisch' }
+    ],
+    cta: '/?standort=moderner+Garten+Ziergräser+Struktur'
+  },
+  T: {
+    name: 'Teichgärtner',
+    icon: '💧',
+    farbe: '#1a4d6b',
+    grad: 'linear-gradient(135deg, #0c2d3f, #1a6d8a)',
+    beschr: 'Wasser ist das Herzstück Ihres Gartens. Seerosen, Teichrand und Wasserpflanzen faszinieren Sie.',
+    pflanzen: [
+      { name: 'Nymphaea alba', beschr: 'Weiße Seerose – klassische Teichpflanze, großartig' },
+      { name: 'Caltha palustris', beschr: 'Sumpfdotterblume – Frühjahrsblüher am Teichrand' },
+      { name: 'Pontederia cordata', beschr: 'Hechtkraut – blau blühend, Flachwasserzone' }
+    ],
+    cta: '/?standort=Gartenteich+Seerosen+Wasserpflanzen+nasse+Zone'
+  }
+};
+
+let pqAntworten = {}, pqAktuell = 0;
+
+function starteTypQuiz() {
+  pqAntworten = {}; pqAktuell = 0;
+  document.getElementById('pq-ergebnis').classList.remove('sichtbar');
+  renderPqFragen();
+}
+
+function renderPqFragen() {
+  const container = document.getElementById('pq-fragen-container');
+  container.innerHTML = '';
+
+  // Fortschritts-Dots
+  const dots = PQ_FRAGEN.map((_, i) => `<div class="pq-dot ${i === 0 ? 'aktiv' : ''}" id="pq-dot-${i}"></div>`).join('');
+
+  PQ_FRAGEN.forEach((frage, fi) => {
+    const optHtml = frage.optionen.map((o, oi) => `
+      <button class="pq-option ${pqAntworten[fi] === oi ? 'gewaehlt' : ''}" onclick="pqWaehle(${fi}, ${oi})">
+        <span class="ico">${o.ico}</span>
+        <span>${o.text}</span>
+      </button>`).join('');
+
+    container.innerHTML += `
+      <div class="pq-frage ${fi === pqAktuell ? 'aktiv' : ''}" id="pq-frage-${fi}">
+        <div class="card">
+          <div class="pq-frage-nr">Frage ${fi + 1} von ${PQ_FRAGEN.length}</div>
+          <div class="pq-progress">${dots}</div>
+          <div class="pq-frage-text">${frage.text}</div>
+          <div class="pq-optionen">${optHtml}</div>
+          ${fi > 0 ? `<button class="btn-retry" style="margin-top:16px" onclick="pqZurueck(${fi})">← Zurück</button>` : ''}
+        </div>
+      </div>`;
+  });
+}
+
+function pqWaehle(frageIdx, optionIdx) {
+  pqAntworten[frageIdx] = optionIdx;
+
+  // Visuell markieren
+  const container = document.querySelector(`#pq-frage-${frageIdx} .pq-optionen`);
+  container.querySelectorAll('.pq-option').forEach((b, i) => b.classList.toggle('gewaehlt', i === optionIdx));
+
+  // Dot als done markieren
+  const dot = document.getElementById(`pq-dot-${frageIdx}`);
+  if (dot) { dot.classList.remove('aktiv'); dot.classList.add('done'); }
+
+  setTimeout(() => {
+    if (frageIdx + 1 < PQ_FRAGEN.length) {
+      // Nächste Frage zeigen
+      document.querySelectorAll('.pq-frage').forEach(el => el.classList.remove('aktiv'));
+      const next = document.getElementById(`pq-frage-${frageIdx + 1}`);
+      if (next) {
+        next.classList.add('aktiv');
+        const nextDot = document.getElementById(`pq-dot-${frageIdx + 1}`);
+        if (nextDot) nextDot.classList.add('aktiv');
+        pqAktuell = frageIdx + 1;
+        next.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    } else {
+      pqZeigeErgebnis();
+    }
+  }, 300);
+}
+
+function pqZurueck(aktFrage) {
+  const prevFrage = aktFrage - 1;
+  document.querySelectorAll('.pq-frage').forEach(el => el.classList.remove('aktiv'));
+  const prev = document.getElementById(`pq-frage-${prevFrage}`);
+  if (prev) {
+    prev.classList.add('aktiv');
+    const dot = document.getElementById(`pq-dot-${prevFrage}`);
+    if (dot) { dot.classList.remove('done'); dot.classList.add('aktiv'); }
+    const curDot = document.getElementById(`pq-dot-${aktFrage}`);
+    if (curDot) curDot.classList.remove('aktiv');
+    pqAktuell = prevFrage;
+  }
+}
+
+function pqZeigeErgebnis() {
+  // Punkte zählen
+  const punkte = { N: 0, B: 0, S: 0, T: 0 };
+  PQ_FRAGEN.forEach((frage, fi) => {
+    const gew = pqAntworten[fi];
+    if (gew !== undefined) {
+      const opt = frage.optionen[gew];
+      Object.entries(opt.typ || {}).forEach(([k, v]) => { punkte[k] = (punkte[k] || 0) + v; });
+    }
+  });
+
+  const winner = Object.entries(punkte).sort((a, b) => b[1] - a[1])[0][0];
+  const typ = TYPEN[winner];
+
+  document.getElementById('pq-fragen-container').style.display = 'none';
+  const ergebnisDiv = document.getElementById('pq-ergebnis');
+  ergebnisDiv.classList.add('sichtbar');
+
+  document.getElementById('typ-karte').innerHTML = `
+    <div class="typ-header" style="background:${typ.grad};color:#fff">
+      <div class="typ-icon">${typ.icon}</div>
+      <h3>${typ.name}</h3>
+      <p>${typ.beschr}</p>
+    </div>
+    <div class="typ-pflanzen">
+      <h4>Empfohlene Stauden für dich</h4>
+      ${typ.pflanzen.map(p => `
+        <div class="pflanze-empfehlung">
+          <div class="dot"></div>
+          <div><span>${p.name}</span><br><small style="color:#777">${p.beschr}</small></div>
+        </div>`).join('')}
+    </div>
+    <div class="typ-cta">
+      <p>Lass den KI-Planer einen individuellen Pflanzplan für deinen Gartentyp erstellen!</p>
+      <a href="/" class="cta-btn" style="background:${typ.farbe};color:#fff">🌿 Meinen Pflanzplan erstellen</a>
+    </div>`;
+
+  ergebnisDiv.scrollIntoView({ behavior: 'smooth' });
+}
+
+// Init
+starteTypQuiz();
+</script>
+</body>
+</html>

@@ -2347,6 +2347,43 @@ app.post('/admin/update-wissen', async (req, res) => {
   }
 });
 
+// ─── Quiz ─────────────────────────────────────────────────────────────────────
+
+app.get('/api/quiz-fragen', (req, res) => {
+  try {
+    const n = Math.min(parseInt(req.query.n) || 10, 20);
+    const alle = db.prepare(`
+      SELECT id, name_deutsch, name_botanisch, bild_url
+      FROM pflanzen
+      WHERE status='live' AND bild_url IS NOT NULL AND bild_url != ''
+      ORDER BY RANDOM()
+      LIMIT ?
+    `).all(n * 3); // mehr holen für wrong options
+
+    const fragen = [];
+    for (let i = 0; i < Math.min(n, alle.length); i++) {
+      const richtig = alle[i];
+      const falsche = alle.filter((_, j) => j !== i).sort(() => Math.random() - .5).slice(0, 3);
+      const optionen = [richtig, ...falsche].sort(() => Math.random() - .5);
+      fragen.push({
+        id: richtig.id,
+        bild_url: richtig.bild_url,
+        richtig: richtig.name_deutsch,
+        optionen: optionen.map(p => p.name_deutsch)
+      });
+    }
+    res.json(fragen);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/quiz', (req, res) => {
+  let html;
+  try { html = require('fs').readFileSync(path.join(__dirname, 'public/quiz.html'), 'utf8'); } catch { return res.status(404).send('quiz.html nicht gefunden'); }
+  res.send(html);
+});
+
 // ─── Static Files (nach allen Routes!) ────────────────────────────────────────
 app.use(express.static(path.join(__dirname, 'public')));
 
