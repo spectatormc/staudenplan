@@ -453,6 +453,7 @@ app.get('/', (req, res) => {
         <h4>Bepflanzungsplan</h4>
         <ul>
           <li><a href="/">Kostenlosen Plan erstellen</a></li>
+          <li><a href="/beispiele">🌿 Beet-Beispiele</a></li>
           <li><a href="/quiz">🧠 Stauden-Quiz</a></li>
           <li><a href="/pflanzen">Stauden-Lexikon</a></li>
           <li><a href="/ratgeber">Garten-Ratgeber</a></li>
@@ -836,6 +837,9 @@ app.get('/sitemap.xml', (req, res) => {
     `<url><loc>${base}/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>`,
     `<url><loc>${base}/pflanzen</loc><changefreq>weekly</changefreq><priority>0.9</priority></url>`,
     `<url><loc>${base}/ratgeber</loc><changefreq>weekly</changefreq><priority>0.9</priority></url>`,
+    `<url><loc>${base}/beispiele</loc><changefreq>monthly</changefreq><priority>0.9</priority></url>`,
+    `<url><loc>${base}/quiz</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>`,
+    ...BEISPIELE.map(b => `<url><loc>${base}/beispiel/${b.slug}</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>`),
     ...pflanzen.map(p => `<url><loc>${base}/pflanze/${slugify(p.name_botanisch)}</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>`),
     ...wissens.map(w => `<url><loc>${base}/ratgeber/${slugify(w.titel)}</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>`),
   ];
@@ -2390,6 +2394,302 @@ app.get('/ratgeber/:slug', (req, res) => {
 
   ${SITE_FOOTER}
   </body></html>`);
+});
+
+// ─── Beispiele ────────────────────────────────────────────────────────────────
+
+const BEISPIELE = [
+  {
+    slug: 'schattenbeet',
+    title: 'Schattenbeet Beispiel',
+    h1: 'Schattenbeet bepflanzen: Beispiel mit Pflanznamen',
+    icon: '🌿',
+    grad: 'linear-gradient(135deg,#1b4332,#2d6a4f)',
+    flaeche: 6,
+    licht: 'Halbschatten',
+    feuchtigkeit: ['normal','feucht'],
+    badge: 'Halbschatten · 6 m²',
+    intro: 'Ein Schattenbeet muss kein tristes Loch sein. Mit den richtigen Stauden entsteht auch ohne direkte Sonne ein üppiges, grünes Beet mit Blüten von Frühjahr bis Herbst. Dieses Beispiel zeigt einen typischen Halbschattenstandort mit normalem Gartenboden — wie man ihn häufig an Hauswänden, unter Gehölzen oder an der Nordseite von Zäunen findet.',
+    intro2: 'Die Auswahl kombiniert blühende Stauden mit dekorativen Blattschmuckpflanzen. So bleibt das Beet auch außerhalb der Blütezeit interessant. Alle Pflanzen sind winterhart und für Deutschland geeignet.',
+    cta_params: '?licht=Halbschatten+%283%E2%80%936+h%29&standort=Schattenbeet+Halbschatten+normaler+Gartenboden',
+    seo_text: 'Schattenbeet Beispiele mit Pflanzliste helfen dabei, den richtigen Pflanzplan für schwierige Standorte zu entwickeln. Beliebte Pflanzen für Halbschatten sind Funkie (Hosta), Astilbe, Storchschnabel, Waldgeißbart und Elfenblume (Epimedium).',
+  },
+  {
+    slug: 'sonnenbeet',
+    title: 'Sonnenbeet Beispiel',
+    h1: 'Sonnenbeet bepflanzen: Beispiel mit Pflanznamen',
+    icon: '☀️',
+    grad: 'linear-gradient(135deg,#92400e,#d97706)',
+    flaeche: 8,
+    licht: 'Sonne',
+    feuchtigkeit: ['normal'],
+    badge: 'Vollsonne · 8 m²',
+    intro: 'Ein klassisches Staudenbeet in der Sonne gehört zu den dankbarsten Gartenprojekten überhaupt. Mit den richtigen Pflanzen blüht es von Mai bis Oktober ohne Pause. Dieses Beispiel zeigt ein typisches Sonnenbeet mit normalem, humosem Boden — der häufigste Standort in deutschen Gärten.',
+    intro2: 'Die Kombination aus Leitstauden, Begleitstauden und Füllern sorgt für ein lebendiges Beet mit gestaffelter Höhe und langer Blütezeit. Alle Pflanzen sind mehrjährig, winterhart und benötigen wenig Pflege.',
+    cta_params: '?licht=Vollsonne+%286%2B+h%29&standort=Sonnenbeet+Vollsonne+normaler+humoser+Boden',
+    seo_text: 'Sonnenbeet Beispiele mit konkreten Pflanzenlisten sind der beste Einstieg für eigene Beetplanung. Klassiker für sonnige Staudenbeete: Sonnenhut (Echinacea), Salbei (Salvia), Katzenminze (Nepeta), Schafgarbe (Achillea) und Phlox.',
+  },
+  {
+    slug: 'kiesgarten',
+    title: 'Kiesgarten Beispiel',
+    h1: 'Kiesgarten bepflanzen: Beispiel mit Pflanznamen',
+    icon: '🪨',
+    grad: 'linear-gradient(135deg,#78350f,#b45309)',
+    flaeche: 10,
+    licht: 'Sonne',
+    feuchtigkeit: ['trocken'],
+    badge: 'Vollsonne · trocken · 10 m²',
+    intro: 'Kiesgärten und Trockenstaudenbeete sind pflegeleicht, wassersparend und bieten im Hochsommer Farbe, wenn andere Beete bereits verblüht sind. Dieses Beispiel zeigt einen typischen Kiesgarten mit sandig-kiesigem Untergrund — ideal für mediterrane und steppenartige Pflanzen.',
+    intro2: 'Die gewählten Stauden stammen aus trockenen Steppenregionen Europas und Asiens. Sie kommen mit wenig Wasser aus, locken Bienen und Schmetterlinge an und bilden auch im Winter attraktive Samenstände.',
+    cta_params: '?licht=Vollsonne+%286%2B+h%29&boden=Sandig+%2F+durchl%C3%A4ssig&standort=Kiesgarten+Trockenbeet+Vollsonne+sehr+trocken',
+    seo_text: 'Kiesgarten Bepflanzungsbeispiele zeigen, welche Stauden wirklich trockenheitsresistent sind. Bewährt im Kiesgarten: Lavendel, Ziersalbei, Steppen-Salbei, Schafgarbe, Blaustrahlhafer (Helictotrichon) und Katzenminze.',
+  },
+  {
+    slug: 'naturgarten',
+    title: 'Naturgarten Beispiel',
+    h1: 'Naturgarten & Präriegarten: Beispiel mit Pflanznamen',
+    icon: '🌾',
+    grad: 'linear-gradient(135deg,#14532d,#16a34a)',
+    flaeche: 12,
+    licht: 'Sonne',
+    feuchtigkeit: ['normal','feucht'],
+    badge: 'Vollsonne · naturnah · 12 m²',
+    intro: 'Ein naturnaher Garten mit Präriecharakter braucht wenig Pflege und bietet Bienen, Schmetterlingen und Vögeln Lebensraum das ganze Jahr. Dieses Beispiel kombiniert heimische Stauden mit naturnahen Gräsern für ein wildes, aber dennoch strukturiertes Beet.',
+    intro2: 'Alle gewählten Pflanzen sind bienenfreundlich oder heimisch in Deutschland. Die Samenstände bleiben im Winter stehen — ein wichtiger Aspekt für Insekten und die Winteroptik des Gartens.',
+    cta_params: '?licht=Vollsonne+%286%2B+h%29&stil=Natur%2FWildgarten&standort=Naturgarten+Präriecharakter+heimische+Stauden+Insektenparadies',
+    seo_text: 'Naturgarten Beispiele mit heimischen Pflanzen sind besonders gefragt. Für naturnahe Beete eignen sich: Sonnenhut (Echinacea), Schafgarbe (Achillea millefolium), Storchschnabel (Geranium), Ziersalbei (Salvia nemorosa) und Chinaschilf (Miscanthus).',
+  },
+  {
+    slug: 'teichrand',
+    title: 'Teichrand Bepflanzung Beispiel',
+    h1: 'Teichrand bepflanzen: Beispiel mit Pflanznamen',
+    icon: '💧',
+    grad: 'linear-gradient(135deg,#0c4a6e,#0284c7)',
+    flaeche: 4,
+    licht: 'Halbschatten',
+    feuchtigkeit: ['nass','feucht'],
+    badge: 'Teichrand · feucht/nass · 4 m²',
+    intro: 'Der Teichrand ist ein besonders reizvoller Gartenbereich mit eigenem Charakter. Die richtige Bepflanzung verbindet Wasserpflanzen mit Uferpflanzen zu einem natürlichen Übergang. Dieses Beispiel zeigt eine typische Teichrandzone mit dauerhaft feuchtem bis nassem Boden.',
+    intro2: 'Die gewählten Pflanzen kommen mit stehender Nässe und Wassernähe zurecht. Sie bilden einen fließenden Übergang vom Ufer zum Garten und bieten Fröschen, Libellen und Vögeln wichtigen Lebensraum.',
+    cta_params: '?licht=Halbschatten+%283%E2%80%936+h%29&standort=Teichrand+Sumpfbeet+dauerhaft+feucht+nass',
+    seo_text: 'Teichrand Bepflanzungsbeispiele mit Pflanzliste helfen bei der Auswahl der richtigen Ufer- und Feuchtigkeitspflanzen. Klassiker am Teichrand: Sumpfdotterblume (Caltha), Blutweiderich (Lythrum), Schilfgras, Iris (Sumpfschwertlilie) und Vergissmeinnicht.',
+  },
+  {
+    slug: 'nordseite',
+    title: 'Nordseite bepflanzen Beispiel',
+    h1: 'Nordseite bepflanzen: Schattenbeet Beispiel',
+    icon: '🏠',
+    grad: 'linear-gradient(135deg,#1e3a5f,#2563eb)',
+    flaeche: 5,
+    licht: 'Schatten',
+    feuchtigkeit: ['normal','feucht'],
+    badge: 'Dauerschatten · 5 m²',
+    intro: 'Die Nordseite des Hauses gilt als schwierigster Gartenstandort — kein direktes Sonnenlicht, oft feuchte Luft und wenig Wärme. Dennoch gibt es eine Reihe von Stauden, die dort nicht nur überleben, sondern richtig aufblühen. Dieses Beispiel zeigt eine typische Hausseite im Dauerschatten.',
+    intro2: 'Blattschmuckpflanzen spielen hier eine große Rolle: Dunkles Laub, helle Blätter und ausgeprägte Texturen ersetzen das, was Blüten an der Südseite leisten. Einige dieser Pflanzen blühen sogar im tiefen Schatten.',
+    cta_params: '?licht=Schatten+%28unter+3+h%29&standort=Nordseite+Gebäudeschatten+Dauerschatten+kühl+frisch',
+    seo_text: 'Nordseite bepflanzen Beispiele zeigen, welche Stauden im Dauerschatten funktionieren. Robuste Schattenstauden: Funkie (Hosta), Waldgeißbart (Aruncus), Elfenblume (Epimedium), Maiglöckchen (Convallaria) und Farn.',
+  },
+  {
+    slug: 'cottage-garten',
+    title: 'Cottage-Garten Beispiel',
+    h1: 'Cottage-Garten bepflanzen: Romantisches Staudenbeet',
+    icon: '🌸',
+    grad: 'linear-gradient(135deg,#6d1b47,#c2587e)',
+    flaeche: 8,
+    licht: 'Halbschatten',
+    feuchtigkeit: ['normal'],
+    badge: 'Romantisch · Halbschatten/Sonne · 8 m²',
+    intro: 'Der Cottage-Stil steht für üppige, naturnahe Beete mit romantischem Charakter — viele Blütenfarben, weiche Formen und ein wenig kontrolliertes Chaos. Dieses Beispiel zeigt ein typisches Cottage-Garten-Beet in Pastelltönen mit Rosa, Lila und Weiß.',
+    intro2: 'Die Auswahl vereint klassische Englische-Garten-Pflanzen mit robusten Stauden, die auch in Deutschland problemlos gedeihen. Duftende Stauden, Schmetterlingsmagnet-Pflanzen und lange Blütezeiten sind die Merkmale dieser Kombination.',
+    cta_params: '?stil=Cottage%2FEnglisch&standort=Romantischer+Cottage-Garten+Pastelltöne+Rosa+Lila+Weiß',
+    seo_text: 'Cottage-Garten Bepflanzungsbeispiele für romantische Staudenbeete. Typisch für den Cottage-Stil: Phlox, Rittersporn (Delphinium), Fingerhut (Digitalis), Malve (Malva), Frauenmantel (Alchemilla) und Glockenblume (Campanula).',
+  },
+  {
+    slug: 'vorgarten',
+    title: 'Vorgarten Bepflanzung Beispiel',
+    h1: 'Vorgarten bepflanzen: Beispiel mit Pflanznamen',
+    icon: '🏡',
+    grad: 'linear-gradient(135deg,#2d5016,#52b788)',
+    flaeche: 6,
+    licht: 'Halbschatten',
+    feuchtigkeit: ['normal'],
+    badge: 'Vorgarten · Halbschatten · 6 m²',
+    intro: 'Der Vorgarten ist die Visitenkarte des Hauses — er soll das ganze Jahr über ordentlich und ansprechend aussehen. Gleichzeitig muss er pflegeleicht sein, da Vorgärten oft wenig Zeit bekommen. Dieses Beispiel zeigt eine typische Vorgartensituation mit Halbschatten durch Straßenbäume oder das Gebäude selbst.',
+    intro2: 'Die Auswahl setzt auf immergrüne und winterharte Arten mit langem Zierwert. Blüten im Frühjahr, Sommerfarbe und Herbstaspekt sorgen dafür, dass der Vorgarten keine Pause macht.',
+    cta_params: '?standort=Vorgarten+Halbschatten+Straße+repräsentativ+pflegeleicht',
+    seo_text: 'Vorgarten bepflanzen Beispiele mit Pflanzliste. Bewährt im Vorgarten: Storchschnabel (Geranium), Blauschwingel (Festuca), Lavendel, Katzenminze (Nepeta), Wolfsmilch (Euphorbia) und Bergenie (Bergenia).',
+  },
+];
+
+function getPflanzenFuerBeispiel(licht, feuchtigkeiten, limit = 5) {
+  const lichtKw = licht === 'Schatten' ? '%Schatten%' : licht === 'Sonne' ? '%Sonne%' : '%Halbschatten%';
+  const fPlaceholders = feuchtigkeiten.map(() => '?').join(',');
+  return db.prepare(`
+    SELECT id, name_deutsch, name_botanisch, bild_url, licht, farbe,
+           hoehe_cm_min, hoehe_cm_max, bienen_freundlich, beschreibung, bluehzeit
+    FROM pflanzen
+    WHERE status='live' AND bild_url IS NOT NULL AND bild_url != ''
+      AND licht LIKE ? AND feuchtigkeit IN (${fPlaceholders})
+    ORDER BY pflege_sterne DESC, id ASC
+    LIMIT ${limit}
+  `).all(lichtKw, ...feuchtigkeiten);
+}
+
+app.get('/beispiele', (req, res) => {
+  const cardsHtml = BEISPIELE.map(b => `
+    <a href="/beispiel/${b.slug}" style="text-decoration:none;color:inherit;display:block">
+      <div style="background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);transition:transform .15s" onmouseover="this.style.transform='translateY(-3px)'" onmouseout="this.style.transform=''">
+        <div style="background:${b.grad};padding:24px 20px;display:flex;align-items:center;gap:14px">
+          <span style="font-size:2rem">${b.icon}</span>
+          <div>
+            <div style="color:#fff;font-weight:800;font-size:1rem;line-height:1.2">${b.title}</div>
+            <div style="color:rgba(255,255,255,.75);font-size:.78rem;margin-top:3px">${b.badge}</div>
+          </div>
+        </div>
+        <div style="padding:16px 20px">
+          <p style="font-size:.85rem;color:#555;line-height:1.55;margin-bottom:12px">${b.intro.substring(0,120)}…</p>
+          <span style="color:#2d6a4f;font-size:.82rem;font-weight:700">Beispiel ansehen →</span>
+        </div>
+      </div>
+    </a>`).join('');
+
+  res.send(`<!DOCTYPE html><html lang="de"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Staudenbeet Beispiele mit Pflanznamen – 8 fertige Pflanzpläne | Staudenplan.de</title>
+<meta name="description" content="8 konkrete Staudenbeet-Beispiele mit Pflanzliste und Namen: Schattenbeet, Sonnenbeet, Kiesgarten, Naturgarten, Teichrand und mehr. Kostenlos auf Staudenplan.de.">
+<link rel="canonical" href="https://www.staudenplan.de/beispiele">
+${NAV_LINKS}</head><body style="font-family:system-ui,sans-serif;background:#f6faf7;margin:0">
+<div style="background:linear-gradient(135deg,#1b4332,#2d6a4f);padding:48px 20px 36px;text-align:center;color:#fff">
+  <h1 style="font-size:clamp(1.6rem,4vw,2.2rem);font-weight:800;margin-bottom:10px">Staudenbeet Beispiele mit Pflanznamen</h1>
+  <p style="opacity:.85;max-width:560px;margin:0 auto 24px;font-size:1rem;line-height:1.6">8 fertige Bepflanzungsbeispiele für verschiedene Standorte — mit konkreter Pflanzliste, Fotos und Pflanztipps.</p>
+  <a href="/" style="display:inline-block;background:#fff;color:#1b4332;padding:12px 28px;border-radius:30px;font-weight:800;text-decoration:none;font-size:.95rem">🌿 Eigenen Plan erstellen →</a>
+</div>
+<div style="max-width:960px;margin:0 auto;padding:40px 16px">
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:20px">
+    ${cardsHtml}
+  </div>
+  <div style="margin-top:48px;background:#fff;border-radius:14px;padding:28px;box-shadow:0 2px 12px rgba(0,0,0,.07)">
+    <h2 style="font-size:1.2rem;color:#1b4332;margin-bottom:12px">Kein passendes Beispiel dabei?</h2>
+    <p style="color:#555;font-size:.9rem;line-height:1.6;margin-bottom:16px">Unser KI-Gartenplaner erstellt dir in 2 Minuten einen individuellen Bepflanzungsplan — abgestimmt auf deinen genauen Standort, Bodentyp und Stil. Kostenlos und ohne Anmeldung.</p>
+    <a href="/" style="display:inline-block;background:#2d6a4f;color:#fff;padding:12px 28px;border-radius:30px;font-weight:700;text-decoration:none;font-size:.9rem">Individuellem Plan erstellen →</a>
+  </div>
+</div>
+${SITE_FOOTER}</body></html>`);
+});
+
+app.get('/beispiel/:slug', (req, res) => {
+  const b = BEISPIELE.find(x => x.slug === req.params.slug);
+  if (!b) return res.status(404).send('Nicht gefunden');
+
+  const pflanzen = getPflanzenFuerBeispiel(b.licht, b.feuchtigkeit, 5);
+  if (!pflanzen.length) return res.status(404).send('Keine Pflanzen gefunden');
+
+  const pflanzenHtml = pflanzen.map((p, i) => {
+    const hoehe = p.hoehe_cm_min && p.hoehe_cm_max ? `${p.hoehe_cm_min}–${p.hoehe_cm_max} cm` : p.hoehe_cm_max ? `bis ${p.hoehe_cm_max} cm` : '';
+    return `
+    <div style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.07)">
+      <img src="${p.bild_url}" alt="${p.name_deutsch}" style="width:100%;height:180px;object-fit:cover" loading="lazy">
+      <div style="padding:14px 16px">
+        <div style="font-size:.7rem;color:#52b788;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Pflanze ${i+1}</div>
+        <h3 style="font-size:.95rem;color:#1b4332;font-weight:800;margin-bottom:2px"><a href="/pflanze/${slugify(p.name_botanisch)}" style="color:inherit;text-decoration:none">${p.name_deutsch}</a></h3>
+        <div style="font-size:.78rem;font-style:italic;color:#888;margin-bottom:8px">${p.name_botanisch}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:5px">
+          ${p.farbe ? `<span style="background:#f0faf3;color:#2d6a4f;border-radius:4px;padding:2px 8px;font-size:.72rem;font-weight:600">${p.farbe.split(',')[0]}</span>` : ''}
+          ${hoehe ? `<span style="background:#f0faf3;color:#2d6a4f;border-radius:4px;padding:2px 8px;font-size:.72rem;font-weight:600">${hoehe}</span>` : ''}
+          ${p.bienen_freundlich ? `<span style="background:#fef9c3;color:#854d0e;border-radius:4px;padding:2px 8px;font-size:.72rem;font-weight:600">🐝 Bienenfreundlich</span>` : ''}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  const steckbriefHtml = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin:24px 0">
+      <div style="background:#f0faf3;border-radius:10px;padding:14px;text-align:center">
+        <div style="font-size:1.3rem;margin-bottom:4px">📐</div>
+        <div style="font-size:.75rem;color:#888;margin-bottom:2px">Fläche</div>
+        <div style="font-weight:700;color:#1b4332">${b.flaeche} m²</div>
+      </div>
+      <div style="background:#f0faf3;border-radius:10px;padding:14px;text-align:center">
+        <div style="font-size:1.3rem;margin-bottom:4px">${b.licht === 'Sonne' ? '☀️' : b.licht === 'Schatten' ? '🌑' : '⛅'}</div>
+        <div style="font-size:.75rem;color:#888;margin-bottom:2px">Licht</div>
+        <div style="font-weight:700;color:#1b4332">${b.licht}</div>
+      </div>
+      <div style="background:#f0faf3;border-radius:10px;padding:14px;text-align:center">
+        <div style="font-size:1.3rem;margin-bottom:4px">🌱</div>
+        <div style="font-size:.75rem;color:#888;margin-bottom:2px">Pflanzen</div>
+        <div style="font-weight:700;color:#1b4332">${pflanzen.length} Arten</div>
+      </div>
+      <div style="background:#f0faf3;border-radius:10px;padding:14px;text-align:center">
+        <div style="font-size:1.3rem;margin-bottom:4px">💧</div>
+        <div style="font-size:.75rem;color:#888;margin-bottom:2px">Feuchtigkeit</div>
+        <div style="font-weight:700;color:#1b4332">${b.feuchtigkeit[0]}</div>
+      </div>
+    </div>`;
+
+  const breadcrumb = JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      { "@type": "ListItem", "position": 1, "name": "Startseite", "item": "https://www.staudenplan.de/" },
+      { "@type": "ListItem", "position": 2, "name": "Beet-Beispiele", "item": "https://www.staudenplan.de/beispiele" },
+      { "@type": "ListItem", "position": 3, "name": b.title, "item": `https://www.staudenplan.de/beispiel/${b.slug}` }
+    ]
+  });
+
+  res.send(`<!DOCTYPE html><html lang="de"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${b.h1} | Staudenplan.de</title>
+<meta name="description" content="${b.intro.substring(0,155)}">
+<link rel="canonical" href="https://www.staudenplan.de/beispiel/${b.slug}">
+<script type="application/ld+json">${breadcrumb}</script>
+${NAV_LINKS}</head><body style="font-family:system-ui,sans-serif;background:#f6faf7;margin:0">
+
+<div style="background:${b.grad};padding:48px 20px 36px;color:#fff;text-align:center">
+  <div style="font-size:2.5rem;margin-bottom:10px">${b.icon}</div>
+  <div style="display:inline-block;background:rgba(255,255,255,.2);color:#fff;border-radius:20px;padding:4px 14px;font-size:.78rem;font-weight:700;margin-bottom:12px">${b.badge}</div>
+  <h1 style="font-size:clamp(1.4rem,4vw,2rem);font-weight:800;margin-bottom:10px;line-height:1.25">${b.h1}</h1>
+  <p style="opacity:.85;max-width:520px;margin:0 auto;font-size:.95rem;line-height:1.6">${b.intro.substring(0,120)}…</p>
+</div>
+
+<nav style="background:#fff;border-bottom:1px solid #eee;padding:10px 20px;font-size:.82rem">
+  <a href="/" style="color:#2d6a4f;text-decoration:none">Startseite</a> ›
+  <a href="/beispiele" style="color:#2d6a4f;text-decoration:none">Beet-Beispiele</a> ›
+  <span style="color:#888">${b.title}</span>
+</nav>
+
+<div style="max-width:860px;margin:0 auto;padding:32px 16px 60px">
+
+  <div style="background:#fff;border-radius:14px;padding:28px;box-shadow:0 2px 12px rgba(0,0,0,.07);margin-bottom:24px">
+    <h2 style="font-size:1.1rem;color:#1b4332;margin-bottom:12px">Standort auf einen Blick</h2>
+    ${steckbriefHtml}
+    <p style="color:#444;line-height:1.75;margin-bottom:10px">${b.intro}</p>
+    <p style="color:#444;line-height:1.75">${b.intro2}</p>
+  </div>
+
+  <h2 style="font-size:1.2rem;color:#1b4332;margin-bottom:16px">Pflanzen für dieses Beet</h2>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;margin-bottom:32px">
+    ${pflanzenHtml}
+  </div>
+
+  <div style="background:linear-gradient(135deg,#1b4332,#2d6a4f);border-radius:14px;padding:28px;color:#fff;margin-bottom:32px">
+    <h2 style="font-size:1.1rem;margin-bottom:8px">Diesen Plan für deinen Garten anpassen</h2>
+    <p style="opacity:.85;font-size:.9rem;line-height:1.6;margin-bottom:18px">Unser KI-Planer erstellt dir einen individuellen Bepflanzungsplan — abgestimmt auf deine genaue Fläche, deinen Boden und deine Vorlieben. Kostenlos und in 2 Minuten.</p>
+    <a href="/${b.cta_params}" style="display:inline-block;background:#fff;color:#1b4332;padding:13px 28px;border-radius:30px;font-weight:800;text-decoration:none;font-size:.95rem">🌿 Meinen Plan erstellen →</a>
+  </div>
+
+  <div style="background:#fff;border-radius:14px;padding:24px;box-shadow:0 2px 12px rgba(0,0,0,.07);margin-bottom:24px">
+    <p style="color:#555;font-size:.88rem;line-height:1.7">${b.seo_text}</p>
+  </div>
+
+  <h3 style="font-size:1rem;color:#1b4332;margin-bottom:14px">Weitere Beet-Beispiele</h3>
+  <div style="display:flex;flex-wrap:wrap;gap:10px">
+    ${BEISPIELE.filter(x => x.slug !== b.slug).map(x => `
+      <a href="/beispiel/${x.slug}" style="display:flex;align-items:center;gap:8px;background:#fff;border-radius:30px;padding:8px 16px;text-decoration:none;color:#1b4332;font-size:.85rem;font-weight:600;box-shadow:0 1px 6px rgba(0,0,0,.08)">
+        ${x.icon} ${x.title}
+      </a>`).join('')}
+  </div>
+</div>
+${SITE_FOOTER}</body></html>`);
 });
 
 // ─── Admin ────────────────────────────────────────────────────────────────────
