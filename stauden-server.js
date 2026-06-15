@@ -1805,12 +1805,32 @@ app.get('/pflanze/:slug', (req, res) => {
       "category": "Gartenstauden",
       "brand": { "@type": "Brand", "name": "Staudenplan.de" },
       "additionalProperty": additionalProps,
+      "mpn": pflanze.name_botanisch,
       "offers": {
         "@type": "Offer",
         "priceCurrency": "EUR",
         "price": pflanze.preis_stueck_eur || 0,
         "availability": "https://schema.org/InStock",
-        "url": `https://www.staudenplan.de/pflanze/${slug}`
+        "url": `https://www.staudenplan.de/pflanze/${slug}`,
+        "seller": { "@type": "Organization", "name": "Staudenplan.de" },
+        "shippingDetails": {
+          "@type": "OfferShippingDetails",
+          "shippingRate": { "@type": "MonetaryAmount", "value": "4.95", "currency": "EUR" },
+          "shippingDestination": { "@type": "DefinedRegion", "addressCountry": "DE" },
+          "deliveryTime": {
+            "@type": "ShippingDeliveryTime",
+            "handlingTime": { "@type": "QuantitativeValue", "minValue": 1, "maxValue": 2, "unitCode": "DAY" },
+            "transitTime": { "@type": "QuantitativeValue", "minValue": 2, "maxValue": 5, "unitCode": "DAY" }
+          }
+        },
+        "hasMerchantReturnPolicy": {
+          "@type": "MerchantReturnPolicy",
+          "applicableCountry": "DE",
+          "returnPolicyCategory": "https://schema.org/MerchantReturnFiniteReturnWindow",
+          "merchantReturnDays": 14,
+          "returnMethod": "https://schema.org/ReturnByMail",
+          "returnFees": "https://schema.org/FreeReturn"
+        }
       }
     },
     {
