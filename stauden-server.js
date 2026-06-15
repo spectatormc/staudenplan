@@ -2521,7 +2521,24 @@ const BEISPIELE = [
   },
 ];
 
-function getPflanzenFuerBeispiel(licht, feuchtigkeiten, limit = 5) {
+const BEISPIEL_PFLANZEN_IDS = (() => {
+  try { return JSON.parse(require('fs').readFileSync(path.join(__dirname, 'scripts/beispiel-pflanzen.json'), 'utf8')); }
+  catch { return {}; }
+})();
+
+function getPflanzenFuerBeispiel(slug, licht, feuchtigkeiten) {
+  const ids = BEISPIEL_PFLANZEN_IDS[slug];
+  if (ids && ids.length) {
+    const placeholders = ids.map(() => '?').join(',');
+    const pflanzen = db.prepare(`
+      SELECT id, name_deutsch, name_botanisch, bild_url, licht, farbe,
+             hoehe_cm_min, hoehe_cm_max, bienen_freundlich, beschreibung, bluehzeit
+      FROM pflanzen WHERE id IN (${placeholders})
+    `).all(...ids);
+    // Reihenfolge der IDs beibehalten
+    return ids.map(id => pflanzen.find(p => p.id === id)).filter(Boolean);
+  }
+  // Fallback: dynamisch aus DB
   const lichtKw = licht === 'Schatten' ? '%Schatten%' : licht === 'Sonne' ? '%Sonne%' : '%Halbschatten%';
   const fPlaceholders = feuchtigkeiten.map(() => '?').join(',');
   return db.prepare(`
@@ -2530,8 +2547,7 @@ function getPflanzenFuerBeispiel(licht, feuchtigkeiten, limit = 5) {
     FROM pflanzen
     WHERE status='live' AND bild_url IS NOT NULL AND bild_url != ''
       AND licht LIKE ? AND feuchtigkeit IN (${fPlaceholders})
-    ORDER BY pflege_sterne DESC, id ASC
-    LIMIT ${limit}
+    ORDER BY pflege_sterne DESC, id ASC LIMIT 5
   `).all(lichtKw, ...feuchtigkeiten);
 }
 
@@ -2581,7 +2597,7 @@ app.get('/beispiel/:slug', (req, res) => {
   const b = BEISPIELE.find(x => x.slug === req.params.slug);
   if (!b) return res.status(404).send('Nicht gefunden');
 
-  const pflanzen = getPflanzenFuerBeispiel(b.licht, b.feuchtigkeit, 5);
+  const pflanzen = getPflanzenFuerBeispiel(b.slug, b.licht, b.feuchtigkeit);
   if (!pflanzen.length) return res.status(404).send('Keine Pflanzen gefunden');
 
   const pflanzenHtml = pflanzen.map((p, i) => {
