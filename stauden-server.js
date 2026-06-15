@@ -391,6 +391,58 @@ app.get('/', (req, res) => {
     </div>
   </section>
 
+  <!-- Beispiele Teaser -->
+  <section class="seo-beispiele">
+    <div class="seo-section-inner">
+      <div class="seo-section-header">
+        <h2>Fertige Beet-Beispiele mit Pflanznamen</h2>
+        <a href="/beispiele" class="seo-mehr-link">Alle 8 Beispiele →</a>
+      </div>
+      <div class="seo-beispiele-grid">
+        <a href="/beispiel/schattenbeet" class="seo-beispiel-card">
+          <div class="sbc-icon" style="background:linear-gradient(135deg,#1b4332,#2d6a4f)">🌿</div>
+          <div class="sbc-body"><div class="sbc-titel">Schattenbeet</div><div class="sbc-sub">Halbschatten · 6 m²</div></div>
+          <div class="sbc-arrow">→</div>
+        </a>
+        <a href="/beispiel/sonnenbeet" class="seo-beispiel-card">
+          <div class="sbc-icon" style="background:linear-gradient(135deg,#92400e,#d97706)">☀️</div>
+          <div class="sbc-body"><div class="sbc-titel">Sonnenbeet</div><div class="sbc-sub">Vollsonne · 8 m²</div></div>
+          <div class="sbc-arrow">→</div>
+        </a>
+        <a href="/beispiel/kiesgarten" class="seo-beispiel-card">
+          <div class="sbc-icon" style="background:linear-gradient(135deg,#78350f,#b45309)">🪨</div>
+          <div class="sbc-body"><div class="sbc-titel">Kiesgarten</div><div class="sbc-sub">Trocken · 10 m²</div></div>
+          <div class="sbc-arrow">→</div>
+        </a>
+        <a href="/beispiel/naturgarten" class="seo-beispiel-card">
+          <div class="sbc-icon" style="background:linear-gradient(135deg,#14532d,#16a34a)">🌾</div>
+          <div class="sbc-body"><div class="sbc-titel">Naturgarten</div><div class="sbc-sub">Naturnah · 12 m²</div></div>
+          <div class="sbc-arrow">→</div>
+        </a>
+        <a href="/beispiel/teichrand" class="seo-beispiel-card">
+          <div class="sbc-icon" style="background:linear-gradient(135deg,#0c4a6e,#0284c7)">💧</div>
+          <div class="sbc-body"><div class="sbc-titel">Teichrand</div><div class="sbc-sub">Feucht/nass · 4 m²</div></div>
+          <div class="sbc-arrow">→</div>
+        </a>
+        <a href="/beispiel/nordseite" class="seo-beispiel-card">
+          <div class="sbc-icon" style="background:linear-gradient(135deg,#1e3a5f,#2563eb)">🏠</div>
+          <div class="sbc-body"><div class="sbc-titel">Nordseite</div><div class="sbc-sub">Dauerschatten · 5 m²</div></div>
+          <div class="sbc-arrow">→</div>
+        </a>
+        <a href="/beispiel/cottage-garten" class="seo-beispiel-card">
+          <div class="sbc-icon" style="background:linear-gradient(135deg,#6d1b47,#c2587e)">🌸</div>
+          <div class="sbc-body"><div class="sbc-titel">Cottage-Garten</div><div class="sbc-sub">Romantisch · 8 m²</div></div>
+          <div class="sbc-arrow">→</div>
+        </a>
+        <a href="/beispiel/vorgarten" class="seo-beispiel-card">
+          <div class="sbc-icon" style="background:linear-gradient(135deg,#2d5016,#52b788)">🏡</div>
+          <div class="sbc-body"><div class="sbc-titel">Vorgarten</div><div class="sbc-sub">Repräsentativ · 6 m²</div></div>
+          <div class="sbc-arrow">→</div>
+        </a>
+      </div>
+    </div>
+  </section>
+
   <!-- Quiz Teaser -->
   <section class="seo-quiz-teaser">
     <div class="seo-section-inner">
@@ -509,6 +561,15 @@ app.get('/', (req, res) => {
 .spc-name { font-weight:700; font-size:.9rem; color:#1b4332; }
 .spc-bot { font-size:.73rem; font-style:italic; color:#888; }
 .spc-tag { font-size:.7rem; background:#e0f0e8; color:#2d6a4f; border-radius:4px; padding:1px 7px; align-self:flex-start; margin-top:2px; }
+.seo-beispiele { background:#f0fdf4; padding:48px 20px; }
+.seo-beispiele-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px; }
+.seo-beispiel-card { display:flex; align-items:center; gap:12px; background:#fff; border-radius:12px; padding:12px 14px; text-decoration:none; color:inherit; box-shadow:0 2px 8px rgba(0,0,0,.07); transition:transform .12s,box-shadow .12s; }
+.seo-beispiel-card:hover { transform:translateY(-2px); box-shadow:0 4px 16px rgba(0,0,0,.12); }
+.sbc-icon { width:42px; height:42px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:1.25rem; flex-shrink:0; }
+.sbc-body { flex:1; min-width:0; }
+.sbc-titel { font-weight:700; font-size:.9rem; color:#1b4332; }
+.sbc-sub { font-size:.75rem; color:#888; margin-top:1px; }
+.sbc-arrow { color:#52b788; font-weight:700; font-size:1rem; flex-shrink:0; }
 .seo-quiz-teaser { background:linear-gradient(135deg, #1b4332 0%, #2d6a4f 60%, #40916c 100%); padding:56px 20px; }
 .quiz-teaser-inner { max-width:960px; margin:0 auto; display:grid; grid-template-columns:1fr 1fr; gap:48px; align-items:center; }
 .quiz-teaser-left .quiz-teaser-icon { font-size:2.8rem; margin-bottom:12px; }
