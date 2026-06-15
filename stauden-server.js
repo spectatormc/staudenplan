@@ -2614,8 +2614,9 @@ function generateBeispielSVG(plan) {
   }
   function getRow(p) {
     const r = (p.rolle || '').toLowerCase();
-    if (r.includes('leit') || r.includes('hinter')) return 0;
-    if (r.includes('begleit') || r.includes('mitte')) return 1;
+    const s = (p.standort || '').toLowerCase();
+    if (r.includes('leit') || s.includes('hinter')) return 0;
+    if (r.includes('begleit') || s.includes('mitte')) return 1;
     return 2;
   }
 
@@ -2638,7 +2639,8 @@ function generateBeispielSVG(plan) {
     const slotW = (W - 60) / plants.length;
 
     plants.forEach((p, ci) => {
-      const r = Math.min(rMax, Math.max(14, (p.pflanzabstand_cm || 40) * 0.38));
+      const abstand = p.pflanzabstand_cm || Math.min(Math.max(p.hoehe_cm || 60, 30), 120) * 0.55;
+      const r = Math.min(rMax, Math.max(14, abstand * 0.38));
       const xc = 30 + slotW * ci + slotW / 2;
       const col = getCol(p.farbe);
       const strokeCol = (col === '#d4d4d4' || col === '#d9bc82') ? '#bbb' : 'rgba(0,0,0,.15)';
@@ -2893,7 +2895,7 @@ ${NAV_LINKS}</head><body style="font-family:system-ui,sans-serif;background:#f6f
           <th style="text-align:left;padding:10px 12px;border-radius:8px 0 0 8px">Pflanze</th>
           <th style="padding:10px 8px;text-align:center">Rolle</th>
           <th style="padding:10px 8px;text-align:center">Anzahl</th>
-          <th style="padding:10px 8px;text-align:center">Abstand</th>
+          <th style="padding:10px 8px;text-align:center">Höhe</th>
           <th style="padding:10px 12px;text-align:right;border-radius:0 8px 8px 0">Preis ca.</th>
         </tr>
       </thead>
@@ -2908,8 +2910,8 @@ ${NAV_LINKS}</head><body style="font-family:system-ui,sans-serif;background:#f6f
             <span style="background:${p.rolle==='Leitstaude'?'#dcfce7':p.rolle==='Begleitstaude'?'#fef9c3':'#f0f4ff'};color:${p.rolle==='Leitstaude'?'#15803d':p.rolle==='Begleitstaude'?'#854d0e':'#3730a3'};border-radius:4px;padding:2px 7px;font-size:.72rem;font-weight:700">${p.rolle||'—'}</span>
           </td>
           <td style="padding:10px 8px;text-align:center;font-weight:600">${p.stueckzahl||'—'}</td>
-          <td style="padding:10px 8px;text-align:center;color:#666">${p.pflanzabstand_cm?p.pflanzabstand_cm+' cm':'—'}</td>
-          <td style="padding:10px 12px;text-align:right;color:#444">${p.preis_stueck_eur && p.stueckzahl ? (p.preis_stueck_eur*p.stueckzahl).toFixed(0)+' €' : p.preis_stueck_eur ? '~'+p.preis_stueck_eur+' €' : '—'}</td>
+          <td style="padding:10px 8px;text-align:center;color:#666">${p.hoehe_cm ? p.hoehe_cm+' cm' : '—'}</td>
+          <td style="padding:10px 12px;text-align:right;color:#444">${p.preis_stueck_eur && p.stueckzahl ? '~'+(p.preis_stueck_eur*p.stueckzahl).toFixed(0)+' €' : p.preis_stueck_eur ? '~'+p.preis_stueck_eur+' €' : '—'}</td>
         </tr>`).join('')}
       </tbody>
       <tfoot>
