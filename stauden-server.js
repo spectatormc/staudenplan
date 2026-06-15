@@ -5,6 +5,7 @@ const nodemailer = require('nodemailer');
 const rateLimit = require('express-rate-limit');
 const { OpenAI } = require('openai');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -2583,9 +2584,134 @@ const BEISPIELE = [
 ];
 
 const BEISPIEL_PFLANZEN_IDS = (() => {
-  try { return JSON.parse(require('fs').readFileSync(path.join(__dirname, 'scripts/beispiel-pflanzen.json'), 'utf8')); }
+  try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'scripts/beispiel-pflanzen.json'), 'utf8')); }
   catch { return {}; }
 })();
+
+function loadBeispielPlan(slug) {
+  try {
+    const p = path.join(__dirname, 'scripts', `beispiel-plan-${slug}.json`);
+    return JSON.parse(fs.readFileSync(p, 'utf8'));
+  } catch { return null; }
+}
+
+function generateBeispielSVG(plan) {
+  const W = 760, H = 310;
+  const pflanzen = (plan.pflanzen || []).filter(p => !p.fehler);
+
+  const FARBEN = {
+    'blau': '#4f7fc9', 'lila': '#8b5cf6', 'violett': '#7c3aed', 'purpur': '#a21caf',
+    'rosa': '#e879a0', 'pink': '#ec4899', 'rot': '#ef4444', 'orange': '#f97316',
+    'gelb': '#ca8a04', 'creme': '#d9bc82', 'beige': '#c2a069', 'weiss': '#d4d4d4',
+    'weiß': '#d4d4d4', 'grün': '#22c55e', 'gruen': '#16a34a', 'bordeaux': '#9f1239',
+    'magenta': '#d946ef', 'silber': '#9ca3af', 'bronze': '#a16207',
+  };
+  function getCol(farbe) {
+    if (!farbe) return '#52b788';
+    const f = farbe.toLowerCase();
+    for (const [k, v] of Object.entries(FARBEN)) { if (f.includes(k)) return v; }
+    return '#52b788';
+  }
+  function getRow(p) {
+    const r = (p.rolle || '').toLowerCase();
+    if (r.includes('leit') || r.includes('hinter')) return 0;
+    if (r.includes('begleit') || r.includes('mitte')) return 1;
+    return 2;
+  }
+
+  const rows = [[], [], []];
+  pflanzen.forEach(p => rows[getRow(p)].push(p));
+  // Rows without plants: redistribute
+  if (!rows[0].length && rows[1].length) { rows[0].push(...rows[1].splice(0,1)); }
+  if (!rows[2].length && rows[1].length > 1) { rows[2].push(...rows[1].splice(-1,1)); }
+
+  const ROW_Y = [82, 182, 265];
+  const ROW_R  = [38, 28, 20];
+  const ROW_LBL = ['Hintergrund', 'Mitte', 'Vordergrund'];
+
+  let svgCircles = '', svgLabels = '', svgRowLbls = '';
+
+  rows.forEach((plants, ri) => {
+    if (!plants.length) return;
+    const yc = ROW_Y[ri];
+    const rMax = ROW_R[ri];
+    const slotW = (W - 60) / plants.length;
+
+    plants.forEach((p, ci) => {
+      const r = Math.min(rMax, Math.max(14, (p.pflanzabstand_cm || 40) * 0.38));
+      const xc = 30 + slotW * ci + slotW / 2;
+      const col = getCol(p.farbe);
+      const strokeCol = (col === '#d4d4d4' || col === '#d9bc82') ? '#bbb' : 'rgba(0,0,0,.15)';
+      svgCircles += `<circle cx="${xc.toFixed(1)}" cy="${yc}" r="${r}" fill="${col}" fill-opacity=".88" stroke="${strokeCol}" stroke-width="1.5"/>`;
+
+      // Extra specimens wenn stueckzahl > 1
+      const n = Math.min(p.stueckzahl || 1, 4);
+      if (n > 1) {
+        const sr = r * 0.55, gap = r * 1.35;
+        for (let j = 0; j < Math.min(n - 1, 3); j++) {
+          const ang = (j / Math.max(n - 1, 1)) * Math.PI + Math.PI * 0.3;
+          const sx = (xc + Math.cos(ang) * gap).toFixed(1);
+          const sy = (yc + Math.sin(ang) * gap * 0.45).toFixed(1);
+          svgCircles += `<circle cx="${sx}" cy="${sy}" r="${sr}" fill="${col}" fill-opacity=".55" stroke="${strokeCol}" stroke-width="1"/>`;
+        }
+      }
+
+      const label = p.name_deutsch.split(' ')[0];
+      svgLabels += `<text x="${xc.toFixed(1)}" y="${yc + r + 13}" text-anchor="middle" font-family="system-ui,sans-serif" font-size="9.5" fill="#333" font-weight="600">${label}</text>`;
+    });
+    svgRowLbls += `<text x="8" y="${yc + 3}" text-anchor="start" font-family="system-ui,sans-serif" font-size="9" fill="#a0916e">${ROW_LBL[ri]}</text>`;
+  });
+
+  // Legend rows
+  const perRow = 3;
+  const legRows = Math.ceil(pflanzen.length / perRow);
+  const LH = H + 18, legH = legRows * 24 + 30;
+  const legend = pflanzen.map((p, i) => {
+    const col = getCol(p.farbe);
+    const lx = 24 + (i % perRow) * (W / perRow);
+    const ly = LH + Math.floor(i / perRow) * 24 + 16;
+    const rolle = p.rolle ? ` · ${p.rolle}` : '';
+    const stk = p.stueckzahl ? ` (${p.stueckzahl}×)` : '';
+    return `<circle cx="${lx+7}" cy="${ly-4}" r="7" fill="${col}" fill-opacity=".88"/>
+<text x="${lx+20}" y="${ly}" font-family="system-ui,sans-serif" font-size="10.5" fill="#333">${p.name_deutsch}${stk}<tspan fill="#999" font-size="9.5">${rolle}</tspan></text>`;
+  }).join('');
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H + legH}" width="100%" style="max-width:760px;display:block">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#b5a07a"/>
+      <stop offset="100%" stop-color="#d4c89a"/>
+    </linearGradient>
+    <linearGradient id="grassGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#5c9e50"/>
+      <stop offset="100%" stop-color="#3d7a35"/>
+    </linearGradient>
+  </defs>
+  <!-- Bed bg -->
+  <rect x="0" y="0" width="${W}" height="${H}" fill="url(#bgGrad)" rx="10"/>
+  <!-- Back wall hint -->
+  <rect x="0" y="0" width="${W}" height="16" fill="#8a7355" rx="10"/>
+  <rect x="0" y="0" width="${W}" height="8" fill="#7a6445" rx="10"/>
+  <!-- Front grass -->
+  <rect x="0" y="${H-18}" width="${W}" height="18" fill="url(#grassGrad)" rx="10"/>
+  <!-- Divider dashes -->
+  <line x1="0" y1="${ROW_Y[1]-44}" x2="${W}" y2="${ROW_Y[1]-44}" stroke="#c5b08a" stroke-width="1" stroke-dasharray="5,5" opacity=".6"/>
+  <line x1="0" y1="${ROW_Y[2]-38}" x2="${W}" y2="${ROW_Y[2]-38}" stroke="#c5b08a" stroke-width="1" stroke-dasharray="5,5" opacity=".6"/>
+  <!-- Row labels -->
+  ${svgRowLbls}
+  <!-- Circles -->
+  ${svgCircles}
+  <!-- Plant labels -->
+  ${svgLabels}
+  <!-- Compass arrow -->
+  <text x="${W-22}" y="20" font-family="system-ui,sans-serif" font-size="11" fill="#fff" text-anchor="middle" font-weight="700">N</text>
+  <text x="${W-22}" y="${H-8}" font-family="system-ui,sans-serif" font-size="11" fill="#fff" text-anchor="middle" font-weight="700">S</text>
+  <!-- Legend bg -->
+  <rect x="0" y="${H}" width="${W}" height="${legH}" fill="#fafaf7"/>
+  <text x="16" y="${LH+8}" font-family="system-ui,sans-serif" font-size="10" fill="#aaa" font-weight="700" letter-spacing=".08em">LEGENDE</text>
+  ${legend}
+</svg>`;
+}
 
 function getPflanzenFuerBeispiel(slug, licht, feuchtigkeiten) {
   const ids = BEISPIEL_PFLANZEN_IDS[slug];
@@ -2660,6 +2786,7 @@ app.get('/beispiel/:slug', (req, res) => {
 
   const pflanzen = getPflanzenFuerBeispiel(b.slug, b.licht, b.feuchtigkeit);
   if (!pflanzen.length) return res.status(404).send('Keine Pflanzen gefunden');
+  const plan = loadBeispielPlan(b.slug);
 
   const pflanzenHtml = pflanzen.map((p, i) => {
     const hoehe = p.hoehe_cm_min && p.hoehe_cm_max ? `${p.hoehe_cm_min}–${p.hoehe_cm_max} cm` : p.hoehe_cm_max ? `bis ${p.hoehe_cm_max} cm` : '';
@@ -2747,6 +2874,72 @@ ${NAV_LINKS}</head><body style="font-family:system-ui,sans-serif;background:#f6f
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;margin-bottom:32px">
     ${pflanzenHtml}
   </div>
+
+  ${plan ? `
+  <div style="background:#fff;border-radius:14px;padding:28px 20px;box-shadow:0 2px 12px rgba(0,0,0,.07);margin-bottom:24px">
+    <h2 style="font-size:1.15rem;color:#1b4332;margin-bottom:6px">Pflanzplan · Draufsicht (Schematisch)</h2>
+    <p style="color:#777;font-size:.82rem;margin-bottom:16px;line-height:1.5">Anordnung der Stauden im Beet — Hintergrund (groß) bis Vordergrund (klein). Kreisgrößen entsprechen ca. dem Pflanzabstand.</p>
+    <div style="border-radius:10px;overflow:hidden;border:1px solid #eee">
+      ${generateBeispielSVG(plan)}
+    </div>
+  </div>
+
+  <div style="background:#fff;border-radius:14px;padding:24px 20px;box-shadow:0 2px 12px rgba(0,0,0,.07);margin-bottom:24px">
+    <h2 style="font-size:1.1rem;color:#1b4332;margin-bottom:14px">Stückliste & Kosten</h2>
+    <div style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+      <thead>
+        <tr style="background:#f0faf3;color:#1b4332">
+          <th style="text-align:left;padding:10px 12px;border-radius:8px 0 0 8px">Pflanze</th>
+          <th style="padding:10px 8px;text-align:center">Rolle</th>
+          <th style="padding:10px 8px;text-align:center">Anzahl</th>
+          <th style="padding:10px 8px;text-align:center">Abstand</th>
+          <th style="padding:10px 12px;text-align:right;border-radius:0 8px 8px 0">Preis ca.</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${(plan.pflanzen||[]).filter(p=>!p.fehler).map((p,i) => `
+        <tr style="border-top:1px solid #f0f0f0;background:${i%2?'#fafafa':'#fff'}">
+          <td style="padding:10px 12px">
+            <div style="font-weight:700;color:#1b4332">${p.name_deutsch}</div>
+            <div style="font-size:.75rem;color:#888;font-style:italic">${p.name_botanisch||''}</div>
+          </td>
+          <td style="padding:10px 8px;text-align:center">
+            <span style="background:${p.rolle==='Leitstaude'?'#dcfce7':p.rolle==='Begleitstaude'?'#fef9c3':'#f0f4ff'};color:${p.rolle==='Leitstaude'?'#15803d':p.rolle==='Begleitstaude'?'#854d0e':'#3730a3'};border-radius:4px;padding:2px 7px;font-size:.72rem;font-weight:700">${p.rolle||'—'}</span>
+          </td>
+          <td style="padding:10px 8px;text-align:center;font-weight:600">${p.stueckzahl||'—'}</td>
+          <td style="padding:10px 8px;text-align:center;color:#666">${p.pflanzabstand_cm?p.pflanzabstand_cm+' cm':'—'}</td>
+          <td style="padding:10px 12px;text-align:right;color:#444">${p.preis_stueck_eur && p.stueckzahl ? (p.preis_stueck_eur*p.stueckzahl).toFixed(0)+' €' : p.preis_stueck_eur ? '~'+p.preis_stueck_eur+' €' : '—'}</td>
+        </tr>`).join('')}
+      </tbody>
+      <tfoot>
+        <tr style="border-top:2px solid #e0e0e0;background:#f9f9f9">
+          <td colspan="4" style="padding:10px 12px;font-weight:700;color:#1b4332">Gesamt geschätzt</td>
+          <td style="padding:10px 12px;text-align:right;font-weight:800;color:#1b4332;font-size:1rem">${plan.gesamtkosten_geschaetzt||'—'} €</td>
+        </tr>
+      </tfoot>
+    </table>
+    </div>
+  </div>
+
+  <div style="background:#fff;border-radius:14px;padding:24px 20px;box-shadow:0 2px 12px rgba(0,0,0,.07);margin-bottom:24px">
+    <h2 style="font-size:1.1rem;color:#1b4332;margin-bottom:12px">Über dieses Beet</h2>
+    <p style="color:#444;line-height:1.75;font-size:.92rem">${plan.beetbeschreibung||''}</p>
+    ${plan.pflanzkalender ? `
+    <h3 style="font-size:.95rem;color:#1b4332;margin:18px 0 10px">Pflanzkalender</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px">
+      ${Object.entries(plan.pflanzkalender).map(([monat,akt]) => `
+      <div style="background:#f0faf3;border-radius:8px;padding:10px 12px">
+        <div style="font-size:.72rem;color:#52b788;font-weight:700;text-transform:uppercase;margin-bottom:3px">${monat}</div>
+        <div style="font-size:.82rem;color:#444;line-height:1.4">${akt}</div>
+      </div>`).join('')}
+    </div>` : ''}
+    ${plan.tipps && plan.tipps.length ? `
+    <h3 style="font-size:.95rem;color:#1b4332;margin:18px 0 10px">Pflegetipps</h3>
+    <ul style="margin:0;padding-left:20px;color:#444;font-size:.88rem;line-height:1.8">
+      ${plan.tipps.map(t => `<li>${t}</li>`).join('')}
+    </ul>` : ''}
+  </div>` : ''}
 
   <div style="background:linear-gradient(135deg,#1b4332,#2d6a4f);border-radius:14px;padding:28px;color:#fff;margin-bottom:32px">
     <h2 style="font-size:1.1rem;margin-bottom:8px">Diesen Plan für deinen Garten anpassen</h2>
