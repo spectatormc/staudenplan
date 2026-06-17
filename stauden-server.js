@@ -2836,8 +2836,7 @@ ${SITE_FOOTER}
         const c=bc(p.farbe);
         const st=p.pflege_sterne||1;
         const top=p.bild_url
-          ? \`<img src="\${p.bild_url}" alt="\${p.name_deutsch}" style="width:100%;height:100%;object-fit:cover;display:block" loading="lazy"
-               onerror="this.parentElement.innerHTML='<div style=\\"font-size:2.2rem;display:flex;align-items:center;justify-content:center;height:100%\\">\${emojis[i%10]}</div>'">\`
+          ? \`<img src="\${p.bild_url}" alt="\${p.name_deutsch}" style="width:100%;height:100%;object-fit:cover;display:block" loading="lazy">\`
           : \`<div style="font-size:2.2rem;display:flex;align-items:center;justify-content:center;height:100%">\${emojis[i%10]}</div>\`;
         return \`<div class="pflanze-card">
           <div class="pflanze-card-top" style="background:linear-gradient(135deg,\${hl(c,40)},\${c})">\${top}</div>
