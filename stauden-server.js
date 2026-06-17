@@ -2613,7 +2613,105 @@ function hexLightenSSR(hex, amt) {
 }
 function hexDarkenSSR(hex, amt) { return hexLightenSSR(hex, -amt); }
 
-function renderBeispielPlanSSR(plan) {
+function renderGrafischSSR(pflanzen, flaeche) {
+  const W = 720, H = Math.round(720 * 0.48), PAD = 16;
+  const bedW = W - PAD * 2, bedH = H - PAD * 2;
+  const gartW = parseFloat(Math.sqrt(flaeche * 3).toFixed(1));
+  const gartH = parseFloat((flaeche / gartW).toFixed(1));
+
+  const all = [];
+  pflanzen.forEach((p, pi) => {
+    const n = p.stueckzahl || 1;
+    const h = p.hoehe_cm || 50;
+    const yZone = 1 - Math.min(0.85, (h / 160) * 0.7 + 0.15);
+    for (let i = 0; i < n; i++) {
+      const seed = pi * 37 + i * 19;
+      const xRand = (Math.sin(seed * 127.1 + 0.3) * 0.5 + 0.5);
+      const yRand = (Math.sin(seed * 311.7 + 1.1) * 0.5 + 0.5) * 0.28 - 0.14;
+      const xBase = (pi / pflanzen.length) + (i + 0.5) / (pflanzen.length * n);
+      const x = (xBase + (xRand - 0.5) * 0.12) * bedW;
+      const y = (yZone + yRand) * bedH;
+      all.push({
+        x: Math.max(0.06 * bedW, Math.min(0.94 * bedW, x)),
+        y: Math.max(0.06 * bedH, Math.min(0.94 * bedH, y)),
+        pflanze: p, pi
+      });
+    }
+  });
+
+  const gradDefs = pflanzen.map((p, pi) => {
+    const c = bloomColorSSR(p.farbe);
+    return `<radialGradient id="pg${pi}" cx="35%" cy="35%" r="65%">
+      <stop offset="0%" stop-color="${hexLightenSSR(c,50)}"/>
+      <stop offset="60%" stop-color="${c}"/>
+      <stop offset="100%" stop-color="${hexDarkenSSR(c,30)}"/>
+    </radialGradient>`;
+  }).join('');
+
+  const soilDots = Array.from({length:120}, (_,i) => {
+    const sx = 20 + (i * 73.1) % (bedW - 30);
+    const sy = 10 + (i * 47.3) % (bedH - 20);
+    return `<circle cx="${PAD+sx}" cy="${PAD+sy}" r="1.2" fill="rgba(0,0,0,.12)"/>`;
+  }).join('');
+
+  const meterPxX = bedW / gartW, meterPxY = bedH / gartH;
+  const gridLines = [];
+  for (let x = meterPxX; x < bedW; x += meterPxX)
+    gridLines.push(`<line x1="${(PAD+x).toFixed(1)}" y1="${PAD}" x2="${(PAD+x).toFixed(1)}" y2="${PAD+bedH}" stroke="rgba(255,255,255,.12)" stroke-width="1" stroke-dasharray="4,4"/>`);
+  for (let y = meterPxY; y < bedH; y += meterPxY)
+    gridLines.push(`<line x1="${PAD}" y1="${(PAD+y).toFixed(1)}" x2="${PAD+bedW}" y2="${(PAD+y).toFixed(1)}" stroke="rgba(255,255,255,.12)" stroke-width="1" stroke-dasharray="4,4"/>`);
+
+  const circles = [...all].sort((a,b) => a.y - b.y).map(({x, y, pflanze, pi}) => {
+    const r = Math.max(11, Math.min(26, (pflanze.hoehe_cm || 50) / 5.5));
+    const num = pflanzen.findIndex(pp => pp.name_botanisch === pflanze.name_botanisch) + 1;
+    return `<g>
+      <circle cx="${(PAD+x).toFixed(1)}" cy="${(PAD+y).toFixed(1)}" r="${(r+2).toFixed(1)}" fill="rgba(0,0,0,.2)"/>
+      <circle cx="${(PAD+x).toFixed(1)}" cy="${(PAD+y).toFixed(1)}" r="${r.toFixed(1)}" fill="url(#pg${pi})" stroke="rgba(255,255,255,.6)" stroke-width="1.5"/>
+      <text x="${(PAD+x).toFixed(1)}" y="${(PAD+y+4).toFixed(1)}" text-anchor="middle" font-size="${Math.max(8, r*0.55).toFixed(1)}px" font-weight="800" fill="rgba(0,0,0,.6)" font-family="system-ui">${num}</text>
+    </g>`;
+  }).join('');
+
+  const scaleY = PAD + bedH + 8;
+  const svg = `<svg width="${W}" height="${H+24}" xmlns="http://www.w3.org/2000/svg" style="max-width:100%;border-radius:12px;display:block">
+    <defs>
+      ${gradDefs}
+      <linearGradient id="soilGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#7a5230"/>
+        <stop offset="100%" stop-color="#4e3019"/>
+      </linearGradient>
+      <clipPath id="bedClip"><rect x="${PAD}" y="${PAD}" width="${bedW}" height="${bedH}" rx="8"/></clipPath>
+    </defs>
+    <rect x="${PAD}" y="${PAD}" width="${bedW}" height="${bedH}" rx="8" fill="url(#soilGrad)"/>
+    <g clip-path="url(#bedClip)">${soilDots}${gridLines.join('')}</g>
+    <rect x="${PAD}" y="${PAD}" width="${bedW}" height="${bedH}" rx="8" fill="none" stroke="#a0714f" stroke-width="2.5"/>
+    <g clip-path="url(#bedClip)">${circles}</g>
+    <text x="${W/2}" y="${PAD-4}" text-anchor="middle" font-size="10" fill="#888" font-family="system-ui">↑ Hinten (${gartW} m)</text>
+    <text x="8" y="${PAD+bedH/2}" text-anchor="middle" font-size="10" fill="#888" font-family="system-ui" transform="rotate(-90,8,${PAD+bedH/2})">${gartH} m</text>
+    <rect x="${PAD+10}" y="${scaleY}" width="${Math.round(meterPxX)}" height="5" rx="2" fill="#666"/>
+    <text x="${PAD+10}" y="${scaleY+14}" font-size="10" fill="#888" font-family="system-ui">1 m</text>
+    <text x="${W/2}" y="${scaleY+14}" text-anchor="middle" font-size="10" fill="#aaa" font-family="system-ui">Vorne (${gartW} m)</text>
+  </svg>`;
+
+  const legend = pflanzen.map((p, i) => {
+    const c = bloomColorSSR(p.farbe);
+    return `<div class="vl-item">
+      <span class="vl-num">${i+1}</span>
+      <span class="vl-dot" style="background:${c}"></span>
+      <span>${p.name_deutsch}</span>
+      ${p.bluehzeit ? `<span style="color:#999;font-size:.72rem">${p.bluehzeit}</span>` : ''}
+    </div>`;
+  }).join('');
+
+  return `<div class="viz-card">
+    <div class="viz-card-title">🎨 Grafischer Bepflanzungsplan — Draufsicht</div>
+    <div class="viz-card-body">
+      <div class="viz-svg-wrap">${svg}</div>
+      <div class="viz-legend">${legend}</div>
+    </div>
+  </div>`;
+}
+
+function renderBeispielPlanSSR(plan, flaeche) {
   if (!plan || !plan.pflanzen) return '';
   const emojis = ['🌸','🌺','🌼','🌻','🌹','💐','🌷','🌿','🍃','🌾'];
   const jez = {'Frühling':'🌱','Sommer':'☀️','Herbst':'🍂','Winter':'❄️'};
@@ -2668,9 +2766,12 @@ function renderBeispielPlanSSR(plan) {
   const tippsAll = (plan.tipps||[]).concat(plan.pflanzabstand_hinweis ? [plan.pflanzabstand_hinweis] : []);
   const tippsList = tippsAll.map(t => `<li>${t}</li>`).join('');
 
+  const grafisch = flaeche ? renderGrafischSSR(pflanzen, flaeche) : '';
+
   return `<div class="card-wrap">
     <h2 class="sec-title">🌿 KI-Pflanzplan für dieses Beet</h2>
     ${meta}
+    ${grafisch}
     <p class="sec-title" style="font-size:.95rem;margin-top:8px">Pflanzenauswahl</p>
     <div class="pflanzen-grid">${cards}</div>
     ${kal ? `<p class="sec-title" style="font-size:.95rem">Jahreskalender</p><div class="kalender-grid">${kal}</div>` : ''}
@@ -2834,6 +2935,14 @@ ${NAV_LINKS}
 .em-item strong{display:block;font-size:1.1rem;color:var(--gd)}
 .sec-title{font-size:1.1rem;font-weight:700;color:var(--gd);margin:0 0 16px;display:flex;align-items:center;gap:8px}
 .card-wrap{background:#fff;border-radius:14px;padding:28px 20px;box-shadow:0 2px 12px rgba(0,0,0,.07);margin-bottom:24px}
+.viz-card{background:#fff;border-radius:var(--r);box-shadow:var(--sh);overflow:hidden;margin-bottom:20px}
+.viz-card-title{background:var(--gd);color:#fff;padding:12px 20px;font-size:.9rem;font-weight:700}
+.viz-card-body{padding:20px}
+.viz-svg-wrap{overflow-x:auto}
+.viz-legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px;padding-top:16px;border-top:1px solid var(--gp)}
+.vl-item{display:flex;align-items:center;gap:6px;font-size:.8rem;color:var(--tx);background:var(--gp);border-radius:6px;padding:4px 10px}
+.vl-num{background:var(--gm);color:#fff;border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;font-size:.68rem;font-weight:700;flex-shrink:0}
+.vl-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0;border:1.5px solid rgba(0,0,0,.15)}
 </style>
 </head><body style="font-family:system-ui,sans-serif;background:#f6faf7;margin:0">
 
@@ -2859,7 +2968,7 @@ ${NAV_LINKS}
     <p style="color:#444;line-height:1.75">${b.intro2}</p>
   </div>
 
-  ${renderBeispielPlanSSR(plan)}
+  ${renderBeispielPlanSSR(plan, b.flaeche)}
 
   <div style="background:linear-gradient(135deg,#1b4332,#2d6a4f);border-radius:14px;padding:28px;color:#fff;margin-bottom:32px">
     <h2 style="font-size:1.1rem;margin-bottom:8px">Diesen Plan für deinen Garten anpassen</h2>
