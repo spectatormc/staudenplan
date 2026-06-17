@@ -2617,7 +2617,7 @@ function renderBeispielPlanSSR(plan) {
   if (!plan || !plan.pflanzen) return '';
   const emojis = ['🌸','🌺','🌼','🌻','🌹','💐','🌷','🌿','🍃','🌾'];
   const jez = {'Frühling':'🌱','Sommer':'☀️','Herbst':'🍂','Winter':'❄️'};
-  const pflanzen = plan.pflanzen.filter(p => !p.fehler);
+  const pflanzen = plan.pflanzen;
 
   const gesamt = pflanzen.reduce((s,p) => s + (p.stueckzahl||0), 0);
   const meta = `<div class="em-bar">
