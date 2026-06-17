@@ -2595,6 +2595,90 @@ function loadBeispielPlan(slug) {
   } catch { return null; }
 }
 
+const BLOOM_COLORS_SSR = {
+  'Rosa':'#f472b6','Pink':'#f472b6','Purpur':'#a855f7','Lila':'#a855f7','Violett':'#818cf8',
+  'Blau':'#3b82f6','Weiß':'#e2e8f0','Weiss':'#e2e8f0','Creme':'#fef3c7',
+  'Gelb':'#facc15','Orange':'#fb923c','Rot':'#ef4444','Weinrot':'#b91c1c',
+  'Grün':'#4ade80','Gruen':'#4ade80','Silber':'#d1d5db','Bronze':'#d97706',
+};
+function bloomColorSSR(farbe) {
+  if (!farbe) return '#86efac';
+  const k = (farbe.split(/[|,]/)[0] || '').trim();
+  return BLOOM_COLORS_SSR[k] || '#86efac';
+}
+function hexLightenSSR(hex, amt) {
+  const n = parseInt(hex.replace('#',''), 16);
+  return '#' + [n>>16, (n>>8)&0xff, n&0xff]
+    .map(v => Math.min(255, v+amt).toString(16).padStart(2,'0')).join('');
+}
+function hexDarkenSSR(hex, amt) { return hexLightenSSR(hex, -amt); }
+
+function renderBeispielPlanSSR(plan) {
+  if (!plan || !plan.pflanzen) return '';
+  const emojis = ['🌸','🌺','🌼','🌻','🌹','💐','🌷','🌿','🍃','🌾'];
+  const jez = {'Frühling':'🌱','Sommer':'☀️','Herbst':'🍂','Winter':'❄️'};
+  const pflanzen = plan.pflanzen.filter(p => !p.fehler);
+
+  const gesamt = pflanzen.reduce((s,p) => s + (p.stueckzahl||0), 0);
+  const meta = `<div class="em-bar">
+    <div class="em-item"><strong>${pflanzen.length}</strong> Pflanzenarten</div>
+    <div class="em-item"><strong>${gesamt}</strong> Pflanzen gesamt</div>
+    <div class="em-item"><strong>${plan.gesamtkosten_geschaetzt||'–'} €</strong> Gesamtkosten ca.</div>
+  </div>`;
+
+  const cards = pflanzen.map((p, i) => {
+    const c = bloomColorSSR(p.farbe);
+    const cLight = hexLightenSSR(c, 40);
+    const farbenTag = p.farbe
+      ? `<span class="tag" style="background:${hexLightenSSR(c,50)};color:${hexDarkenSSR(c,40)}">${p.farbe}</span>` : '';
+    const st = Math.min(p.pflege_sterne || 1, 3);
+    const stars = '★'.repeat(st) + '☆'.repeat(3 - st);
+    const preis = ((p.preis_stueck_eur||0) * (p.stueckzahl||1)).toFixed(2);
+    const imgTop = p.bild_url
+      ? `<img src="${p.bild_url}" alt="${p.name_deutsch}" style="width:100%;height:100%;object-fit:cover;display:block" loading="lazy">`
+      : `<div style="font-size:2.2rem;display:flex;align-items:center;justify-content:center;height:100%">${emojis[i%10]}</div>`;
+    return `<div class="pflanze-card">
+      <div class="pflanze-card-top" style="background:linear-gradient(135deg,${cLight},${c})">${imgTop}</div>
+      <div class="pflanze-card-body">
+        <div class="pflanze-name">${p.name_deutsch}</div>
+        <div class="pflanze-botanisch">${p.name_botanisch||''}</div>
+        <div class="pflanze-beschreibung">${p.beschreibung||''}</div>
+        <div class="pflanze-tags">
+          <span class="tag">☀️ ${p.standort||''}</span>
+          <span class="tag">🌸 ${p.bluehzeit||''}</span>
+          ${farbenTag}
+          <span class="tag tag-erde">↕ ${p.hoehe_cm||'?'} cm</span>
+          <span class="tag tag-stueck">× ${p.stueckzahl||1} Stück</span>
+        </div>
+        <div class="pflanze-preis">
+          <span>Pflege: <span class="pflege-sterne">${stars}</span></span>
+          <strong>${preis} €</strong>
+        </div>
+        <a class="btn-kaufen" href="${p.kauflink||'/'}" target="_blank" rel="noopener">Kaufen →</a>
+      </div>
+    </div>`;
+  }).join('');
+
+  const kal = Object.entries(plan.pflanzkalender || {}).map(([jz, items]) => {
+    const icon = jez[jz] || '📅';
+    const liItems = (Array.isArray(items) ? items : [items]).map(it => `<li>${it}</li>`).join('');
+    return `<div class="kalender-card"><h4>${icon} ${jz}</h4><ul>${liItems}</ul></div>`;
+  }).join('');
+
+  const tippsAll = (plan.tipps||[]).concat(plan.pflanzabstand_hinweis ? [plan.pflanzabstand_hinweis] : []);
+  const tippsList = tippsAll.map(t => `<li>${t}</li>`).join('');
+
+  return `<div class="card-wrap">
+    <h2 class="sec-title">🌿 KI-Pflanzplan für dieses Beet</h2>
+    ${meta}
+    <p class="sec-title" style="font-size:.95rem;margin-top:8px">Pflanzenauswahl</p>
+    <div class="pflanzen-grid">${cards}</div>
+    ${kal ? `<p class="sec-title" style="font-size:.95rem">Jahreskalender</p><div class="kalender-grid">${kal}</div>` : ''}
+    ${tippsList ? `<p class="sec-title" style="font-size:.95rem">Pflegetipps</p><ul class="tipps-list">${tippsList}</ul>` : ''}
+    ${plan.beetbeschreibung ? `<p style="color:#444;line-height:1.75;font-size:.92rem;margin-top:16px;padding-top:16px;border-top:1px solid #eee">${plan.beetbeschreibung}</p>` : ''}
+  </div>`;
+}
+
 function getPflanzenFuerBeispiel(slug, licht, feuchtigkeiten) {
   const ids = BEISPIEL_PFLANZEN_IDS[slug];
   if (ids && ids.length) {
@@ -2674,6 +2758,7 @@ app.get('/beispiel/:slug', (req, res) => {
 
   const pflanzen = getPflanzenFuerBeispiel(b.slug, b.licht, b.feuchtigkeit);
   if (!pflanzen.length) return res.status(404).send('Keine Pflanzen gefunden');
+  const plan = loadBeispielPlan(b.slug);
 
   const steckbriefHtml = `
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin:24px 0">
@@ -2749,9 +2834,6 @@ ${NAV_LINKS}
 .em-item strong{display:block;font-size:1.1rem;color:var(--gd)}
 .sec-title{font-size:1.1rem;font-weight:700;color:var(--gd);margin:0 0 16px;display:flex;align-items:center;gap:8px}
 .card-wrap{background:#fff;border-radius:14px;padding:28px 20px;box-shadow:0 2px 12px rgba(0,0,0,.07);margin-bottom:24px}
-#ki-plan-loading{text-align:center;padding:48px 20px;color:var(--tl);font-size:.9rem}
-.spinner{width:36px;height:36px;border:3px solid #d1fae5;border-top-color:var(--gm);border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 12px}
-@keyframes spin{to{transform:rotate(360deg)}}
 </style>
 </head><body style="font-family:system-ui,sans-serif;background:#f6faf7;margin:0">
 
@@ -2777,13 +2859,7 @@ ${NAV_LINKS}
     <p style="color:#444;line-height:1.75">${b.intro2}</p>
   </div>
 
-  <!-- KI-Pflanzplan: client-side gerendert -->
-  <div id="ki-plan">
-    <div id="ki-plan-loading">
-      <div class="spinner"></div>
-      KI-Pflanzplan wird geladen…
-    </div>
-  </div>
+  ${renderBeispielPlanSSR(plan)}
 
   <div style="background:linear-gradient(135deg,#1b4332,#2d6a4f);border-radius:14px;padding:28px;color:#fff;margin-bottom:32px">
     <h2 style="font-size:1.1rem;margin-bottom:8px">Diesen Plan für deinen Garten anpassen</h2>
@@ -2804,85 +2880,6 @@ ${NAV_LINKS}
   </div>
 </div>
 ${SITE_FOOTER}
-
-<script>
-(function(){
-  const BLOOM={
-    'Rosa':'#f472b6','Pink':'#f472b6','Purpur':'#a855f7','Lila':'#a855f7','Violett':'#818cf8',
-    'Blau':'#3b82f6','Weiß':'#e2e8f0','Weiss':'#e2e8f0','Creme':'#fef3c7','Weiß / Creme':'#fef3c7',
-    'Gelb':'#facc15','Orange':'#fb923c','Gelb / Orange':'#fbbf24',
-    'Rot':'#ef4444','Weinrot':'#b91c1c','Rot / Weinrot':'#dc2626',
-    'Grün':'#4ade80','Gruen':'#4ade80','Silber':'#d1d5db','Bronze':'#d97706',
-  };
-  function bc(f){if(!f)return'#86efac';const k=(f.split(/[|,]/)[0]||'').trim();return BLOOM[k]||'#86efac';}
-  function hl(h,a){const n=parseInt(h.replace('#',''),16);return'#'+[n>>16,(n>>8)&0xff,n&0xff].map(v=>Math.min(255,v+a).toString(16).padStart(2,'0')).join('');}
-  function hd(h,a){return hl(h,-a);}
-
-  fetch('/api/beispiel-plan/${b.slug}')
-    .then(r=>r.json())
-    .then(data=>{
-      if(!data.success||!data.plan){document.getElementById('ki-plan').innerHTML='';return;}
-      const plan=data.plan;
-      const emojis=['🌸','🌺','🌼','🌻','🌹','💐','🌷','🌿','🍃','🌾'];
-      const jez={'Frühling':'🌱','Sommer':'☀️','Herbst':'🍂','Winter':'❄️'};
-
-      const meta=\`<div class="em-bar">
-        <div class="em-item"><strong>\${plan.pflanzen.length}</strong> Pflanzenarten</div>
-        <div class="em-item"><strong>\${plan.pflanzen.reduce((s,p)=>s+(p.stueckzahl||0),0)}</strong> Pflanzen gesamt</div>
-        <div class="em-item"><strong>\${plan.gesamtkosten_geschaetzt||'–'} €</strong> Gesamtkosten ca.</div>
-      </div>\`;
-
-      const cards=plan.pflanzen.filter(p=>!p.fehler).map((p,i)=>{
-        const c=bc(p.farbe);
-        const st=p.pflege_sterne||1;
-        const top=p.bild_url
-          ? \`<img src="\${p.bild_url}" alt="\${p.name_deutsch}" style="width:100%;height:100%;object-fit:cover;display:block" loading="lazy">\`
-          : \`<div style="font-size:2.2rem;display:flex;align-items:center;justify-content:center;height:100%">\${emojis[i%10]}</div>\`;
-        return \`<div class="pflanze-card">
-          <div class="pflanze-card-top" style="background:linear-gradient(135deg,\${hl(c,40)},\${c})">\${top}</div>
-          <div class="pflanze-card-body">
-            <div class="pflanze-name">\${p.name_deutsch}</div>
-            <div class="pflanze-botanisch">\${p.name_botanisch||''}</div>
-            <div class="pflanze-beschreibung">\${p.beschreibung||''}</div>
-            <div class="pflanze-tags">
-              <span class="tag">☀️ \${p.standort||''}</span>
-              <span class="tag">🌸 \${p.bluehzeit||''}</span>
-              \${p.farbe?'<span class="tag" style="background:'+hl(c,50)+';color:'+hd(c,40)+'">'+p.farbe+'</span>':''}
-              <span class="tag tag-erde">↕ \${p.hoehe_cm||'?'} cm</span>
-              <span class="tag tag-stueck">× \${p.stueckzahl||1} Stück</span>
-            </div>
-            <div class="pflanze-preis">
-              <span>Pflege: <span class="pflege-sterne">\${'★'.repeat(st)}\${'☆'.repeat(3-st)}</span></span>
-              <strong>\${((p.preis_stueck_eur||0)*(p.stueckzahl||1)).toFixed(2)} €</strong>
-            </div>
-            <a class="btn-kaufen" href="\${p.kauflink||'/'}" target="_blank" rel="noopener">Kaufen →</a>
-          </div>
-        </div>\`;
-      }).join('');
-
-      const kal=Object.entries(plan.pflanzkalender||{}).map(([jz,items])=>\`
-        <div class="kalender-card">
-          <h4>\${jez[jz]||'📅'} \${jz}</h4>
-          <ul>\${(Array.isArray(items)?items:[items]).map(it=>\`<li>\${it}</li>\`).join('')}</ul>
-        </div>\`).join('');
-
-      const tipps=(plan.tipps||[]).concat(plan.pflanzabstand_hinweis?[plan.pflanzabstand_hinweis]:[])
-        .map(t=>\`<li>\${t}</li>\`).join('');
-
-      document.getElementById('ki-plan').innerHTML=\`
-        <div class="card-wrap">
-          <h2 class="sec-title">🌿 KI-Pflanzplan für dieses Beet</h2>
-          \${meta}
-          <p class="sec-title" style="font-size:.95rem;margin-top:8px">Pflanzenauswahl</p>
-          <div class="pflanzen-grid">\${cards}</div>
-          \${kal?'<p class="sec-title" style="font-size:.95rem">Jahreskalender</p><div class="kalender-grid">'+kal+'</div>':''}
-          \${tipps?'<p class="sec-title" style="font-size:.95rem">Pflegetipps</p><ul class="tipps-list">'+tipps+'</ul>':''}
-          \${plan.beetbeschreibung?'<p style="color:#444;line-height:1.75;font-size:.92rem;margin-top:16px;padding-top:16px;border-top:1px solid #eee">'+plan.beetbeschreibung+'</p>':''}
-        </div>\`;
-    })
-    .catch(()=>{document.getElementById('ki-plan').innerHTML='';});
-})();
-</script>
 </body></html>`);
 });
 
