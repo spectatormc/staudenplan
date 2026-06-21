@@ -259,7 +259,22 @@ function getRelevantesWissen(stil, licht, feuchtigkeit) {
   }
 }
 
-function buildSystemPrompt(kandidaten, wissen) {
+function getGeophytenKandidaten(licht) {
+  const lichtTerm = LICHT_MAP[licht] || licht.split(' ')[0];
+  const GENERA = ['Tulipa', 'Narcissus', 'Allium', 'Muscari', 'Crocus', 'Galanthus', 'Scilla', 'Camassia', 'Nectaroscordum'];
+  const clause = GENERA.map(() => 'name_botanisch LIKE ?').join(' OR ');
+  try {
+    return db.prepare(
+      `SELECT name_deutsch, name_botanisch, bluehzeit, farbe, hoehe_cm_min, hoehe_cm_max, preis_stueck_eur, licht
+       FROM pflanzen
+       WHERE (${clause}) AND licht LIKE ?
+         AND (wuchs IS NULL OR wuchs != 'invasiv') AND (status IS NULL OR status = 'live')
+       ORDER BY RANDOM() LIMIT 10`
+    ).all(...GENERA.map(g => `${g}%`), `%${lichtTerm}%`);
+  } catch { return []; }
+}
+
+function buildSystemPrompt(kandidaten, wissen, geophytenKandidaten = []) {
   let prompt = `Du bist ein erfahrener Staudenspezialist und Gartenplaner aus Deutschland mit 20 Jahren Erfahrung. \
 Du empfiehlst ausschließlich in Deutschland winterharte Pflanzen. Antworte immer als valides JSON ohne Markdown-Formatierung.
 
@@ -304,6 +319,15 @@ Du empfiehlst ausschließlich in Deutschland winterharte Pflanzen. Antworte imme
   if (wissen.length > 0) {
     prompt += '\n\n## EXPERTENWISSEN BEPFLANZUNGSPLANUNG:\n';
     prompt += wissen.map(w => `### ${w.titel}\n${w.inhalt.substring(0, 600)}`).join('\n\n');
+  }
+
+  if (geophytenKandidaten.length > 0) {
+    prompt += '\n\n## GEOPHYTEN-AUSWAHL (Zwiebelpflanzen für die Frühjahrsschicht):\n';
+    prompt += 'Diese Zwiebeln werden ZUSÄTZLICH zu den Stauden eingeplant — als eigene unterirdische Schicht. Sie ersetzen KEINE Staude und fließen NICHT in die Pflanzdichte ein.\n';
+    prompt += geophytenKandidaten.map(p => {
+      const hoehe = (p.hoehe_cm_min && p.hoehe_cm_max) ? `${p.hoehe_cm_min}–${p.hoehe_cm_max}cm` : '';
+      return `- [Geophyt] ${p.name_deutsch} (${p.name_botanisch}): Blüte ${p.bluehzeit || '?'} | ${p.farbe || '?'} | ${hoehe} | ${p.preis_stueck_eur || '?'}€`;
+    }).join('\n');
   }
 
   return prompt;
@@ -645,7 +669,7 @@ function getKlimaregion(plz) {
 
 app.post('/api/plan', planLimiter, async (req, res) => {
   const { gartenflaeche, licht, boden, standort_beschreibung, stil, sichtseite, farbe, saison,
-          lieblingspflanzen, budget, nutzung, pflegezeit, vielfalt, dichte, plz } = req.body;
+          lieblingspflanzen, budget, nutzung, pflegezeit, vielfalt, dichte, plz, geophyten } = req.body;
 
   if (!gartenflaeche || !licht || !boden || !stil) {
     return res.status(400).json({ error: 'Bitte alle Pflichtfelder ausfüllen.' });
@@ -656,11 +680,13 @@ app.post('/api/plan', planLimiter, async (req, res) => {
   const kandidaten = getPflanzenkandidaten(licht, boden, stil, standort_beschreibung);
   const wissen = getRelevantesWissen(stil, licht, feuchtigkeit);
 
+  const geophytenKandidaten = geophyten ? getGeophytenKandidaten(licht) : [];
+
   if (kandidaten.length > 0) {
-    console.log(`RAG: ${kandidaten.length} Pflanzenkandidaten (feuchtigkeit=${feuchtigkeit}), ${wissen.length} Wissensdokumente`);
+    console.log(`RAG: ${kandidaten.length} Pflanzenkandidaten (feuchtigkeit=${feuchtigkeit}), ${wissen.length} Wissensdokumente${geophytenKandidaten.length > 0 ? `, ${geophytenKandidaten.length} Geophyten` : ''}`);
   }
 
-  const systemPrompt = buildSystemPrompt(kandidaten, wissen);
+  const systemPrompt = buildSystemPrompt(kandidaten, wissen, geophytenKandidaten);
 
   const lieblingsList = Array.isArray(lieblingspflanzen) && lieblingspflanzen.length > 0
     ? lieblingspflanzen.map(p => `${p.name_deutsch} (${p.name_botanisch})`).join(', ')
@@ -699,6 +725,7 @@ ${lieblingsList ? `WICHTIG ZU DEN LIEBLINGSPFLANZEN: Prüfe ob die gewünschten 
 ${vielfaltAnweisung} ${dichteAnweisung} Berechne Stückzahlen für ${gartenflaeche} m².
 STÜCKZAHLBERECHNUNG: Nutze das Feld "Ø[X]cm" (Ausbreitung) aus der Pflanzenliste für realistische Abstände. Formel: Stückzahl = zugewiesene Fläche / (Ø_cm/100)². Leitstauden erhalten 25–35% der Fläche geteilt durch ihre Stückzahl. Füllstauden füllen die restliche Fläche lückenlos.
 ROLLENPFLICHT — dein Plan ist ungültig ohne: mind. 2 Füllstauden-Arten (z.B. Storchschnabel, Katzenminze, Frauenmantel, Elfenblume, Immergrün, Gundermann, Waldsteinia) die alle freien Flächen lückenlos schließen; mind. 3 Begleitstauden-Arten (mittlere Höhe, rahmen Leitstauden ein).
+${geophytenKandidaten.length > 0 ? `GEOPHYTEN-SCHICHT (ZUSÄTZLICH, PFLICHT da angefordert): Wähle 2–4 Geophyten aus der bereitgestellten Geophyten-Liste. Diese kommen ON TOP zu allen Stauden dazu — sie ersetzen KEINE Staude, reduzieren NICHT deren Stückzahl und fließen NICHT in die Pflanzdichte-Berechnung ein. Vergib ihnen Rolle "Geophyt". Stückzahl pro Art: ${Math.round((gartenflaeche || 10) * 5)} ÷ Anzahl Geophyten-Arten (mind. 5 Stk/Art, in Gruppen à 7–15 gepflanzt). Pflanzzeit: Oktober–November im Herbst als Zwiebeln in den Boden zwischen die Stauden.` : ''}
 ${lieblingsList ? 'Die genannten Lieblingspflanzen MÜSSEN im Plan enthalten sein.' : ''}${budget ? ` Halte die Gesamtkosten unter ${budget} €.` : ''}
 ${kandidaten.length > 0 ? 'Wähle primär aus der bereitgestellten Pflanzenliste.' : ''}
 
@@ -718,7 +745,7 @@ JSON-Format:
     "farbe": "...",
     "hoehe_cm": 0,
     "pflege_sterne": 1,
-    "rolle": "Leitstaude",
+    "rolle": "Leitstaude",  // Leitstaude | Begleitstaude | Füllstaude | Geophyt
     "stueckzahl": 0,
     "preis_stueck_eur": 0.00,
     "kauflink": "https://www.amazon.de/s?k=...&tag=gartenbaukosten-21"

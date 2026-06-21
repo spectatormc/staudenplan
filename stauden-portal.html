@@ -297,6 +297,12 @@
     .dichte-btn:hover { border-color:#2d6a4f;color:#1b4332 }
     .dichte-btn.active { background:#1b4332;border-color:#1b4332;color:#fff }
 
+    .geo-toggle { display:flex;align-items:flex-start;gap:12px;padding:14px 16px;background:#f8f4ef;border-radius:10px;cursor:pointer;border:2px solid #e5e0d8;transition:all .15s }
+    .geo-toggle.active { border-color:#9d174d;background:#fdf2f8 }
+    .geo-check { width:20px;height:20px;min-width:20px;border:2px solid #d4c9bb;border-radius:4px;background:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:700;color:#9d174d;transition:all .15s;flex-shrink:0;margin-top:1px;font-size:.85rem }
+    .geo-toggle.active .geo-check::after { content:'✓' }
+    .geo-toggle.active .geo-check { background:#fdf2f8;border-color:#9d174d }
+
     .section-title {
       font-size: 1.2rem;
       font-weight: 700;
@@ -1338,6 +1344,16 @@
       </div>
     </div>
 
+    <div class="form-group">
+      <label class="field-label">Frühjahrs-Geophyten <span class="optional-tag">(optional)</span></label>
+      <div class="geo-toggle" id="geo-toggle-p" onclick="toggleGeophyten('geo-toggle-p')">
+        <span class="geo-check" id="geo-check-p"></span>
+        <div>
+          <div style="font-weight:700;color:#9d174d;font-size:.9rem">🌷 Zwiebeln & Knollen einplanen</div>
+          <div style="font-size:.8rem;color:#6b7280;margin-top:3px">Tulpen, Narzissen, Allium & Co. als Frühjahrs-Zusatzschicht — kommen on top zu den Stauden, ersetzen keine und werden separat berechnet (5–8 Zwiebeln/m²).</div>
+        </div>
+      </div>
+    </div>
     <div class="btn-row">
       <button class="btn-back" onclick="proGoStep(5)">← Zurück</button>
       <button class="btn-next" onclick="proPlanErstellen()">🌿 Plan erstellen</button>
@@ -1615,6 +1631,16 @@
         <div class="pz-card" onclick="selectDichte('locker',this,'.dichte-grid-s')"><div class="pz-icon">🌾</div><div class="pz-label">Locker</div><div class="pz-sub">2–3 Pfl./m²</div></div>
         <div class="pz-card selected" onclick="selectDichte('normal',this,'.dichte-grid-s')"><div class="pz-icon">🌿</div><div class="pz-label">Normal</div><div class="pz-sub">3–5 Pfl./m²</div></div>
         <div class="pz-card" onclick="selectDichte('dicht',this,'.dichte-grid-s')"><div class="pz-icon">🌼</div><div class="pz-label">Dicht</div><div class="pz-sub">6–8 Pfl./m²</div></div>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="field-label">Frühjahrs-Geophyten <span class="optional-tag">(optional)</span></label>
+      <div class="geo-toggle" id="geo-toggle-s" onclick="toggleGeophyten('geo-toggle-s')">
+        <span class="geo-check" id="geo-check-s"></span>
+        <div>
+          <div style="font-weight:700;color:#9d174d;font-size:.9rem">🌷 Zwiebeln & Knollen einplanen</div>
+          <div style="font-size:.8rem;color:#6b7280;margin-top:3px">Tulpen, Narzissen, Allium & Co. als Frühjahrs-Zusatzschicht — kommen on top zu den Stauden, ersetzen keine und werden separat berechnet (5–8 Zwiebeln/m²).</div>
+        </div>
       </div>
     </div>
     <div class="btn-row">
@@ -2129,6 +2155,12 @@
     formData.dichte = val;
   }
 
+  function toggleGeophyten(toggleId) {
+    const el = document.getElementById(toggleId);
+    const active = el.classList.toggle('active');
+    formData.geophyten = active;
+  }
+
   function setDimMode(mode, scope) {
     document.getElementById(`dim-qm-btn-${scope}`).classList.toggle('active', mode === 'qm');
     document.getElementById(`dim-lxb-btn-${scope}`).classList.toggle('active', mode === 'lxb');
@@ -2595,7 +2627,8 @@
         pflegezeit: formData.pflegezeit,
         vielfalt: formData.vielfalt || 'ausgewogen',
         dichte: formData.dichte || 'normal',
-        plz: formData.plz || null
+        plz: formData.plz || null,
+        geophyten: formData.geophyten || false
       };
       const res = await fetch('/api/plan', {
         method: 'POST',
@@ -3883,6 +3916,7 @@
     document.querySelectorAll('.dichte-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     currentPlan.pflanzen.forEach((p, i) => {
+      if (p.rolle === 'Geophyt') return; // Geophyten haben eigene Dichte, nicht vom Slider ändern
       p.stueckzahl = Math.max(1, Math.round(_baseStueck[i] * factor));
       const se = document.getElementById('stueck-' + i);
       const pe = document.getElementById('preis-' + i);
@@ -3943,10 +3977,13 @@
     document.getElementById('ergebnis-subtitle').textContent =
       `${plan.pflanzen.length} Pflanzenarten · ${formData.gartenflaeche} m² · ${formData.licht} · ${formData.stil}`;
 
+    const stauden = plan.pflanzen.filter(p => p.rolle !== 'Geophyt');
+    const geos = plan.pflanzen.filter(p => p.rolle === 'Geophyt');
     const meta = document.getElementById('ergebnis-meta');
     meta.innerHTML = `
-      <div class="em-item"><strong>${plan.pflanzen.length}</strong> Pflanzenarten</div>
-      <div class="em-item"><strong>${plan.pflanzen.reduce((s,p)=>s+p.stueckzahl,0)}</strong> Pflanzen gesamt</div>
+      <div class="em-item"><strong>${stauden.length}</strong> Staudenarten</div>
+      <div class="em-item"><strong>${stauden.reduce((s,p)=>s+p.stueckzahl,0)}</strong> Stauden</div>
+      ${geos.length > 0 ? `<div class="em-item" style="background:rgba(157,23,77,.15)"><strong>${geos.reduce((s,p)=>s+p.stueckzahl,0)}</strong> 🌷 Zwiebeln (${geos.length} Arten)</div>` : ''}
       <div class="em-item"><strong>${typeof plan.gesamtkosten_geschaetzt === 'number' ? plan.gesamtkosten_geschaetzt.toFixed(0) + ' €' : plan.gesamtkosten_geschaetzt || '—'}</strong> Gesamtkosten</div>
     `;
 
@@ -3967,7 +4004,7 @@
           <div class="pflanze-botanisch">${p.name_botanisch}</div>
           <div class="pflanze-beschreibung">${p.beschreibung || ''}</div>
           <div class="pflanze-tags">
-            ${p.rolle === 'Leitstaude' ? '<span class="tag" style="background:#fef3c7;color:#92400e;font-weight:700">⭐ Leitstaude</span>' : p.rolle === 'Begleitstaude' ? '<span class="tag" style="background:#f0fdf4;color:#166534">🌿 Begleitstaude</span>' : '<span class="tag" style="background:#f8fafc;color:#64748b">· Füllstaude</span>'}
+            ${p.rolle === 'Leitstaude' ? '<span class="tag" style="background:#fef3c7;color:#92400e;font-weight:700">⭐ Leitstaude</span>' : p.rolle === 'Begleitstaude' ? '<span class="tag" style="background:#f0fdf4;color:#166534">🌿 Begleitstaude</span>' : p.rolle === 'Geophyt' ? '<span class="tag" style="background:#fdf2f8;color:#9d174d;font-weight:700">🌷 Geophyt</span>' : '<span class="tag" style="background:#f8fafc;color:#64748b">· Füllstaude</span>'}
             <span class="tag">☀️ ${p.standort || ''}</span>
             <span class="tag">🌸 ${p.bluehzeit || ''}</span>
             ${p.farbe ? `<span class="tag" style="background:${hexLighten(c,50)};color:${hexDarken(c,40)}">${p.farbe}</span>` : ''}
