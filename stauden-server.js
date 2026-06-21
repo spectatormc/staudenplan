@@ -180,42 +180,60 @@ function getPflanzenkandidaten(licht, boden, stil, standortBeschr) {
            lebensbereich, breite_cm_max, rolle_empfehlung,
            kombinationspartner, winteraspekt, trockenheitstoleranz`;
 
-  // Vollständiger Match mit Feuchtigkeit
-  let kandidaten = db.prepare(`
-    SELECT ${COLS}
-    FROM pflanzen
-    WHERE licht LIKE ? AND (boden LIKE ? OR boden LIKE ?) AND stil LIKE ?
+  // WHERE-Varianten (Vollmatch → Licht+Feucht → nur Licht)
+  const FULL_WHERE  = `licht LIKE ? AND (boden LIKE ? OR boden LIKE ?) AND stil LIKE ?
       AND (feuchtigkeit IN (${feuchPlaceholders}) OR feuchtigkeit IS NULL)
-      AND (wuchs IS NULL OR wuchs != 'invasiv')
-      AND (status IS NULL OR status = 'live')
-    ORDER BY RANDOM() LIMIT 35
-  `).all(`%${lichtTerm}%`, `%${bodenTerm}%`, '%normal%', `%${stilTerm}%`, ...feuchTerms);
+      AND (wuchs IS NULL OR wuchs != 'invasiv') AND (status IS NULL OR status = 'live')`;
+  const FULL_ARGS   = [`%${lichtTerm}%`, `%${bodenTerm}%`, '%normal%', `%${stilTerm}%`, ...feuchTerms];
 
-  // Fallback: nur Licht + Feuchtigkeit
-  if (kandidaten.length < 10) {
-    kandidaten = db.prepare(`
-      SELECT ${COLS}
-      FROM pflanzen
-      WHERE licht LIKE ?
-        AND (feuchtigkeit IN (${feuchPlaceholders}) OR feuchtigkeit IS NULL)
-        AND (wuchs IS NULL OR wuchs != 'invasiv')
-        AND (status IS NULL OR status = 'live')
-      ORDER BY RANDOM() LIMIT 35
-    `).all(`%${lichtTerm}%`, ...feuchTerms);
+  const LICHT_WHERE = `licht LIKE ?
+      AND (feuchtigkeit IN (${feuchPlaceholders}) OR feuchtigkeit IS NULL)
+      AND (wuchs IS NULL OR wuchs != 'invasiv') AND (status IS NULL OR status = 'live')`;
+  const LICHT_ARGS  = [`%${lichtTerm}%`, ...feuchTerms];
+
+  const LAST_WHERE  = `licht LIKE ? AND (wuchs IS NULL OR wuchs != 'invasiv') AND (status IS NULL OR status = 'live')`;
+  const LAST_ARGS   = [`%${lichtTerm}%`];
+
+  // Rollen-Filter (spiegelt die Logik aus buildSystemPrompt Zeile ~269)
+  const LEIT_F    = `(rolle_empfehlung = 'Leitstaude'    OR (rolle_empfehlung IS NULL AND COALESCE(hoehe_cm_max,50) >= 100))`;
+  const BEGLEIT_F = `(rolle_empfehlung = 'Begleitstaude' OR (rolle_empfehlung IS NULL AND COALESCE(hoehe_cm_max,50) >= 50 AND COALESCE(hoehe_cm_max,50) < 100))`;
+  const FUELL_F   = `(rolle_empfehlung = 'Füllstaude'    OR (rolle_empfehlung IS NULL AND COALESCE(hoehe_cm_max,50) < 50))`;
+
+  function roleQuery(where, args, roleFilter, n) {
+    return db.prepare(
+      `SELECT ${COLS} FROM pflanzen WHERE ${where} AND ${roleFilter} ORDER BY RANDOM() LIMIT ${n}`
+    ).all(...args);
   }
 
-  // Letzter Fallback: nur Licht
-  if (kandidaten.length < 8) {
-    kandidaten = db.prepare(`
-      SELECT ${COLS}
-      FROM pflanzen WHERE licht LIKE ?
-        AND (wuchs IS NULL OR wuchs != 'invasiv')
-        AND (status IS NULL OR status = 'live')
-      ORDER BY RANDOM() LIMIT 35
-    `).all(`%${lichtTerm}%`);
-  }
+  // Rollenausgewogene Selektion: Leit / Begleit / Füll separat abfragen
+  let leit    = roleQuery(FULL_WHERE, FULL_ARGS, LEIT_F,    8);
+  let begleit = roleQuery(FULL_WHERE, FULL_ARGS, BEGLEIT_F, 15);
+  let fuell   = roleQuery(FULL_WHERE, FULL_ARGS, FUELL_F,   10);
 
-  return kandidaten;
+  // Fallback pro Rolle auf Licht+Feuchtigkeit wenn zu wenige Treffer
+  if (leit.length    < 3) leit    = roleQuery(LICHT_WHERE, LICHT_ARGS, LEIT_F,    8);
+  if (begleit.length < 5) begleit = roleQuery(LICHT_WHERE, LICHT_ARGS, BEGLEIT_F, 15);
+  if (fuell.length   < 3) fuell   = roleQuery(LICHT_WHERE, LICHT_ARGS, FUELL_F,   10);
+
+  // Letzter Fallback nur auf Licht
+  if (leit.length    < 2) leit    = roleQuery(LAST_WHERE, LAST_ARGS, LEIT_F,    8);
+  if (begleit.length < 3) begleit = roleQuery(LAST_WHERE, LAST_ARGS, BEGLEIT_F, 15);
+  if (fuell.length   < 2) fuell   = roleQuery(LAST_WHERE, LAST_ARGS, FUELL_F,   10);
+
+  // Deduplizieren und zusammenführen (Leit → Begleit → Füll)
+  const seen = new Set();
+  const kandidaten = [...leit, ...begleit, ...fuell].filter(p => {
+    if (seen.has(p.name_botanisch)) return false;
+    seen.add(p.name_botanisch);
+    return true;
+  });
+
+  if (kandidaten.length >= 8) return kandidaten;
+
+  // Absoluter Fallback: alle passenden Pflanzen nach Licht
+  return db.prepare(
+    `SELECT ${COLS} FROM pflanzen WHERE ${LAST_WHERE} ORDER BY RANDOM() LIMIT 35`
+  ).all(...LAST_ARGS);
 }
 
 function getRelevantesWissen(stil, licht, feuchtigkeit) {
@@ -247,10 +265,11 @@ Du empfiehlst ausschließlich in Deutschland winterharte Pflanzen. Antworte imme
 
 ## PLANUNGSREGELN (strikt einhalten):
 1. HÖHENSTAFFELUNG: Hohe Stauden (>100cm) in den Hintergrund, Mittelhohe (50–100cm) in die Mitte, Niedrige (<50cm) und Bodendecker in den Vordergrund.
-2. SCHICHTEN: Plane nach dem Drei-Schichten-Prinzip: 15% Leitstauden, 55% Begleitstauden, 30% Füllstauden/Bodendecker.
+2. SCHICHTEN (PFLICHT): Dein Plan MUSS enthalten: 1–3 Leitstauden-Arten (visuelle Ankerpunkte), mind. 3 Begleitstauden-Arten (Rahmen und Übergänge), mind. 2 Füllstauden-Arten (Bodendecker/Lückenfüller). Ein Plan ohne Füllstauden ist unvollständig und wird abgelehnt.
 3. BLÜTENFOLGE: Verteile die Blütezeiten — immer mind. 2 Arten pro Saison (Frühjahr/Sommer/Herbst) einplanen.
 4. FARBHARMONIE: Maximal 3–4 Hauptfarben, Weiß oder Silber als Verbinder nutzen.
-5. LEITSTAUDEN: Jede Leitstaude mind. 3 Exemplare einplanen — Einzelsetzung wirkt verloren und entspricht nicht der Profipraxis.`;
+5. LEITSTAUDEN: Jede Leitstaude mind. 3 Exemplare einplanen — Einzelsetzung wirkt verloren und entspricht nicht der Profipraxis.
+6. KONZEPT (PFLICHT): Schreibe ZUERST das Feld "konzept" — ein einziger prägnanter Satz der das Thema und den Charakter des Beetes benennt (z.B. "Romantisches Pastell-Staudenbeet in Rosa-Weiß-Lavendel mit Blütefolge von Mai bis Oktober"). Alle Pflanzenwahl folgt konsequent diesem Konzept.`;
 
   if (kandidaten.length > 0) {
     // Warnliste für ausbreitende Arten
@@ -679,16 +698,17 @@ app.post('/api/plan', planLimiter, async (req, res) => {
 ${lieblingsList ? `WICHTIG ZU DEN LIEBLINGSPFLANZEN: Prüfe ob die gewünschten Pflanzen zum angegebenen Standort (${licht}, ${boden}, Feuchtigkeit: ${feuchtigkeit}) passen. Falls eine Pflanze nicht passt, weise im "tipps"-Feld explizit darauf hin und schlage eine Alternative vor. Dennoch: Baue alle Lieblingspflanzen ein, sofern irgendwie vertretbar.\n` : ''}${sichtseite && sichtseite.includes('Einseitig') ? 'ANORDNUNG: Einseitig einsehbares Beet — hohe Pflanzen (>80 cm) im Hintergrund, mittlere in der Mitte, niedrige (<40 cm) im Vordergrund. Im Feld "standort" jeder Pflanze angeben: "Hintergrund", "Mitte" oder "Vordergrund".' : ''}${sichtseite && sichtseite.includes('Rundbeet') ? 'ANORDNUNG: Rundbeet / Inselbeet — höchste Pflanzen in der Mitte, nach außen abnehmende Höhen. Im Feld "standort" angeben: "Mitte", "Mittelzone" oder "Rand".' : ''}${sichtseite && sichtseite.includes('Eckbeet') ? 'ANORDNUNG: Eckbeet — höchste Pflanzen an der Ecke/Rückwand, diagonal nach vorne-links und vorne-rechts abfallend. Im Feld "standort" angeben: "Ecke/Hintergrund", "Mitte" oder "Vordergrund".' : ''}
 ${vielfaltAnweisung} ${dichteAnweisung} Berechne Stückzahlen für ${gartenflaeche} m².
 STÜCKZAHLBERECHNUNG: Nutze das Feld "Ø[X]cm" (Ausbreitung) aus der Pflanzenliste für realistische Abstände. Formel: Stückzahl = zugewiesene Fläche / (Ø_cm/100)². Leitstauden erhalten 25–35% der Fläche geteilt durch ihre Stückzahl. Füllstauden füllen die restliche Fläche lückenlos.
-Plane IMMER auch 3–4 schnellwüchsige Füllstauden oder Bodendecker ein (z.B. Storchschnabel, Katzenminze, Frauenmantel, Elfenblume, Immergrün), die freie Flächen zwischen Hauptstauden schließen. Diese sollen einen Großteil der Fläche bedecken.
+ROLLENPFLICHT — dein Plan ist ungültig ohne: mind. 2 Füllstauden-Arten (z.B. Storchschnabel, Katzenminze, Frauenmantel, Elfenblume, Immergrün, Gundermann, Waldsteinia) die alle freien Flächen lückenlos schließen; mind. 3 Begleitstauden-Arten (mittlere Höhe, rahmen Leitstauden ein).
 ${lieblingsList ? 'Die genannten Lieblingspflanzen MÜSSEN im Plan enthalten sein.' : ''}${budget ? ` Halte die Gesamtkosten unter ${budget} €.` : ''}
 ${kandidaten.length > 0 ? 'Wähle primär aus der bereitgestellten Pflanzenliste.' : ''}
 
-Vergib jeder Pflanze eine Rolle nach Hansen & Stahl: "Leitstaude" (1–3 auffällige Strukturpflanzen, max. 3 Arten), "Begleitstaude" (rahmt Leitstauden ein, 3–5 Arten), "Füllstaude" (Bodendecker/Lückenfüller, Rest). Leitstauden sind die visuellen Ankerpunkte des Beetes.
+Vergib jeder Pflanze eine Rolle nach Hansen & Stahl: "Leitstaude" (1–3 auffällige Strukturpflanzen, max. 3 Arten), "Begleitstaude" (rahmt Leitstauden ein, mind. 3 Arten), "Füllstaude" (Bodendecker/Lückenfüller, mind. 2 Arten). Leitstauden sind visuelle Ankerpunkte, Begleitstauden der Rahmen, Füllstauden schließen alle Lücken lückenlos.
 
 PFLANZKALENDER-HINWEIS: Im Feld "pflanzkalender" stehen nicht nur Blühzeiten, sondern auch Winterschmuck-Pflanzen. Im Abschnitt "Winter" alle Pflanzen aus dem Plan auflisten, die im Winter Zierwert haben: Gräser mit dekorativen Samenständen (z.B. Miscanthus, Pennisetum, Panicum, Calamagrostis), Stauden mit stehenbleibenden Fruchtständen oder markanter Silhouette (z.B. Rudbeckia, Echinacea, Sedum/Hylotelephium, Eryngium) sowie wintergrüne Bodendecker. Auch wenn keine Pflanze blüht — die Winter-Liste soll immer mindestens 2–3 Einträge haben, sofern solche Pflanzen im Plan enthalten sind.
 
 JSON-Format:
 {
+  "konzept": "Ein prägnanter Satz der das Thema und den Stil des Beetes benennt (z.B. 'Naturnahes Blütenparadies in Blau-Violett mit Schmetterlingspflanzen und gestaffelter Höhe').",
   "pflanzen": [{
     "name_deutsch": "...",
     "name_botanisch": "...",

@@ -1646,8 +1646,11 @@
     <div id="saison-warnung" style="display:none;margin:12px 0 4px;padding:10px 14px;background:#fef9c3;border:1px solid #fde047;border-radius:8px;font-size:.85rem;color:#854d0e"></div>
   </div>
 
+  <!-- Beetkonzept -->
+  <div id="beet-konzept" style="display:none;margin:14px 0 0;padding:12px 18px;background:#1b4332;border-radius:10px;font-size:1rem;color:#fff;font-weight:600;letter-spacing:.01em">🌿 <span id="beet-konzept-text"></span></div>
+
   <!-- Beet-Charakter -->
-  <div id="beet-beschreibung" style="display:none;margin:14px 0 6px;padding:14px 18px;background:#f0fdf4;border-left:3px solid var(--green-mid);border-radius:0 8px 8px 0;font-size:.92rem;color:#374151;line-height:1.6;font-style:italic"></div>
+  <div id="beet-beschreibung" style="display:none;margin:6px 0 6px;padding:14px 18px;background:#f0fdf4;border-left:3px solid var(--green-mid);border-radius:0 8px 8px 0;font-size:.92rem;color:#374151;line-height:1.6;font-style:italic"></div>
 
   <!-- Pflanzendichte -->
   <div class="dichte-toggle">
@@ -3714,6 +3717,13 @@
       theme: 'plain' });
     y = doc.lastAutoTable.finalY + 6;
 
+    // ── Konzept ──
+    if (plan.konzept) {
+      doc.setFontSize(10); doc.setFont('helvetica', 'bolditalic'); doc.setTextColor(27, 67, 50);
+      const konzeptLines = doc.splitTextToSize('Konzept: ' + plan.konzept, CW);
+      doc.text(konzeptLines, MARGIN, y); y += konzeptLines.length * 5 + 4;
+    }
+
     // ── Grafischer Plan ──
     const svgEl = document.getElementById('grafisch-svg');
     if (svgEl) {
@@ -3924,6 +3934,15 @@
     const tipps = document.getElementById('tipps-list');
     tipps.innerHTML = (plan.tipps || []).map(t => `<li>${t}</li>`).join('');
     if (plan.pflanzabstand_hinweis) tipps.innerHTML += `<li>${plan.pflanzabstand_hinweis}</li>`;
+
+    // Beetkonzept
+    const konzeptEl = document.getElementById('beet-konzept');
+    if (plan.konzept) {
+      document.getElementById('beet-konzept-text').textContent = plan.konzept;
+      konzeptEl.style.display = 'block';
+    } else {
+      konzeptEl.style.display = 'none';
+    }
 
     // Beet-Charakter Text
     const beetBeschrEl = document.getElementById('beet-beschreibung');
