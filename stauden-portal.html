@@ -3037,15 +3037,17 @@
       });
       recalc();
 
-      for (let xIter = 0; xIter < 30; xIter++) {
+      for (let xIter = 0; xIter < 40; xIter++) {
         grps.sort((a, b) => a.cx - b.cx);
 
-        if (!hasConstraint && grps.length >= 2) {
-          // Rechteck-Beete: Randgruppen sanft zur Beetkante ziehen
+        if (grps.length >= 2) {
+          // Randgruppen zur Beetkante ziehen: stark für Rechteck, sanft für Freihand
+          // (Freihand: snapInsidePolygon hält Pflanzen an Polygon-Rand statt Mitte)
+          const edgePull = hasConstraint ? 0.025 : 0.06;
           const r0 = grps[0].pls.reduce((m, p) => Math.max(m, p.r), 0);
           const rL = grps[grps.length-1].pls.reduce((m, p) => Math.max(m, p.r), 0);
-          grps[0].cx += (r0 * 2.5 - grps[0].cx) * 0.06;
-          grps[grps.length-1].cx += (bedW - rL * 2.5 - grps[grps.length-1].cx) * 0.06;
+          grps[0].cx += (r0 * 2.5 - grps[0].cx) * edgePull;
+          grps[grps.length-1].cx += (bedW - rL * 2.5 - grps[grps.length-1].cx) * edgePull;
         }
 
         // Alle: innere Gruppen gleichmäßig zwischen Nachbarn interpolieren
