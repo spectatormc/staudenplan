@@ -2866,7 +2866,7 @@
         const zone = yZone(p);
         const nfi = nonFuellXIdx[pi] ?? 0;
         drifts = Array.from({ length: nDrifts }, (_, di) => {
-          const rawX = (nfi * PHI + di * 0.31 + 0.05) % 1;
+          const rawX = 0.12 + ((nfi * PHI + di * 0.31) % 0.76);
           return {
             xFrac: (pX !== null && di === 0) ? rawX * 0.5 + pX * 0.5 : rawX,
             yFrac: zone.yMin + pseudoRand(pi * 53 + di * 31 + 5) * (zone.yMax - zone.yMin),
@@ -3009,42 +3009,55 @@
     }
 
 
-    // ── X-Verteilungspass: Artengruppen gleichmäßig über die Beetbreite verteilen ──
-    // (nur für einseitige Beete — Rundbeet wird radial verteilt)
+    // ── Artengruppen-Spread: paarweise Abstoßung zwischen Gruppen-Zentroiden ──
+    // Kein Randkanten-Ziehen (wäre schlecht für spitze/unregelmäßige Polygone),
+    // stattdessen sanfte Abstoßung damit Arten nicht übereinander klumpen.
     if (!isRund && all.length >= 2) {
-      // Pflanzen nach Artengruppe (pi) gruppieren
       const xGroups = {};
       all.forEach(pl => {
         const key = pl.pi;
-        if (!xGroups[key]) xGroups[key] = { pls: [], cx: 0 };
+        if (!xGroups[key]) xGroups[key] = { pls: [], cx: 0, cy: 0 };
         xGroups[key].pls.push(pl);
       });
       const grps = Object.values(xGroups);
-      const recalcCx = () => grps.forEach(g => { g.cx = g.pls.reduce((s, p) => s + p.x, 0) / g.pls.length; });
-      recalcCx();
+      const recalc = () => grps.forEach(g => {
+        g.cx = g.pls.reduce((s, p) => s + p.x, 0) / g.pls.length;
+        g.cy = g.pls.reduce((s, p) => s + p.y, 0) / g.pls.length;
+      });
+      recalc();
 
-      for (let xIter = 0; xIter < 25; xIter++) {
-        grps.sort((a, b) => a.cx - b.cx);
-        if (grps.length >= 2) {
-          // Rand-Gruppen zur Beetkante ziehen
-          const rEdge = grps[0].pls.reduce((mx, p) => Math.max(mx, p.r), 0);
-          const lEdge = grps[grps.length - 1].pls.reduce((mx, p) => Math.max(mx, p.r), 0);
-          grps[0].cx += (rEdge * 1.5 - grps[0].cx) * 0.06;
-          grps[grps.length - 1].cx += (bedW - lEdge * 1.5 - grps[grps.length - 1].cx) * 0.06;
-          // Innere Gruppen zum Mittelpunkt zwischen Nachbarn ziehen
-          for (let i = 1; i < grps.length - 1; i++) {
-            const ideal = (grps[i - 1].cx + grps[i + 1].cx) / 2;
-            grps[i].cx += (ideal - grps[i].cx) * 0.09;
+      // Mindestabstand zwischen Gruppen-Zentroiden (proportional zur Beetdiagonale)
+      const diagPx = Math.hypot(bedW, bedH);
+      const minGrpDist = Math.min(bedW, bedH) * 0.55 / Math.max(1, grps.length - 1);
+
+      for (let xIter = 0; xIter < 30; xIter++) {
+        // Paarweise Abstoßung zwischen Gruppen
+        for (let a = 0; a < grps.length; a++) {
+          for (let b = a + 1; b < grps.length; b++) {
+            const dx = grps[b].cx - grps[a].cx;
+            const dy = grps[b].cy - grps[a].cy;
+            const dist = Math.hypot(dx, dy) || 0.1;
+            if (dist < minGrpDist) {
+              const push = (minGrpDist - dist) / 2 * 0.10;
+              const nx = dx / dist, ny = dy / dist;
+              grps[a].cx -= nx * push; grps[a].cy -= ny * push;
+              grps[b].cx += nx * push; grps[b].cy += ny * push;
+            }
           }
         }
-        // Pflanzen um delta ihrer Gruppenzentrums verschieben (Gruppe bleibt zusammen)
+        // Pflanzen um Delta des Gruppenzentrums verschieben (Gruppe bleibt zusammen)
         grps.forEach(g => {
           const currCx = g.pls.reduce((s, p) => s + p.x, 0) / g.pls.length;
-          const delta = g.cx - currCx;
-          g.pls.forEach(pl => { pl.x = Math.max(pl.r, Math.min(bedW - pl.r, pl.x + delta)); });
+          const currCy = g.pls.reduce((s, p) => s + p.y, 0) / g.pls.length;
+          const dx = g.cx - currCx, dy = g.cy - currCy;
+          g.pls.forEach(pl => {
+            pl.x = Math.max(pl.r, Math.min(bedW - pl.r, pl.x + dx));
+            pl.y = Math.max(pl.r, Math.min(bedH - pl.r, pl.y + dy));
+          });
         });
-        recalcCx();
-        // Mini-Separation um Überlappungen nach Verschiebung zu verhindern
+        all.forEach(p => { if (hasConstraint) snapInsidePolygon(p, constraintPolys); });
+        recalc();
+        // Mini-Separation nach Verschiebung
         for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) {
           const dx = all[j].x - all[i].x, dy = all[j].y - all[i].y;
           const d2 = dx * dx + dy * dy, md = all[i].r + all[j].r + GAP;
@@ -3055,7 +3068,7 @@
           }
         }
         all.forEach(p => { p.x = Math.max(p.r, Math.min(bedW - p.r, p.x)); p.y = Math.max(p.r, Math.min(bedH - p.r, p.y)); if (hasConstraint) snapInsidePolygon(p, constraintPolys); });
-        recalcCx();
+        recalc();
       }
     }
 
