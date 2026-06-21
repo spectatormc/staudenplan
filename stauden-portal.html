@@ -2732,12 +2732,26 @@
 
   function snapInsidePolygon(plant, constraintPolys) {
     if (pointInAnyPolygon(plant.x, plant.y, constraintPolys)) return;
-    // Centroid of all polygon vertices
+    // Snap to nearest point on any polygon edge (preserves x-position, avoids centroid-pull)
+    let bestX = plant.x, bestY = plant.y, bestDist = Infinity;
+    constraintPolys.forEach(poly => {
+      const pts = poly.svgPoints;
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        const [ax, ay] = pts[j], [bx, by] = pts[i];
+        const edx = bx - ax, edy = by - ay, len2 = edx*edx + edy*edy;
+        if (len2 < 0.001) continue;
+        const t = Math.max(0, Math.min(1, ((plant.x-ax)*edx + (plant.y-ay)*edy) / len2));
+        const nx = ax + t * edx, ny = ay + t * edy;
+        const d = Math.hypot(plant.x - nx, plant.y - ny);
+        if (d < bestDist) { bestDist = d; bestX = nx; bestY = ny; }
+      }
+    });
+    plant.x = bestX; plant.y = bestY;
+    // Pull just enough toward centroid to land inside (max 8 steps, not 60)
     let cx = 0, cy = 0, n = 0;
     constraintPolys.forEach(p => p.svgPoints.forEach(([x, y]) => { cx += x; cy += y; n++; }));
     cx /= n; cy /= n;
-    // Iteratively move towards centroid until inside
-    for (let s = 0; s < 60; s++) {
+    for (let s = 0; s < 8; s++) {
       plant.x += (cx - plant.x) * 0.12;
       plant.y += (cy - plant.y) * 0.12;
       if (pointInAnyPolygon(plant.x, plant.y, constraintPolys)) return;
@@ -2898,12 +2912,10 @@
               : (yFrac + (pseudoRand(s2 + 9) - 0.5) * 0.2) * bedH;
             if (pointInAnyPolygonWithMargin(cx, cy, constraintPolys, r * 0.5)) { x = cx; y = cy; placed = true; }
           }
-          // Pass 2: ganze Breite, aber Zone in y behalten
+          // Pass 2: Ziel-x beibehalten, y komplett aufmachen (findet Platz in schmalen Polygon-Bereichen)
           if (!placed) for (let att = 0; att < 60 && !placed; att++) {
-            const cx = pseudoRand(seed + att * 53 + 300) * bedW;
-            const cy = pZone
-              ? (pZone.yMin + pseudoRand(seed + att * 31 + 300) * (pZone.yMax - pZone.yMin)) * bedH
-              : pseudoRand(seed + att * 31) * bedH;
+            const cx = Math.max(0, Math.min(bedW, (xFrac + (pseudoRand(seed + att * 53 + 300) - 0.5) * 0.22) * bedW));
+            const cy = pseudoRand(seed + att * 31 + 300) * bedH;
             if (pointInAnyPolygonWithMargin(cx, cy, constraintPolys, r * 0.5)) { x = cx; y = cy; placed = true; }
           }
           // Pass 3: letzter Ausweg — irgendwo im Polygon (sehr schmale Polygone)
@@ -3009,54 +3021,51 @@
     }
 
 
-    // ── Artengruppen-Spread: paarweise Abstoßung zwischen Gruppen-Zentroiden ──
-    // Kein Randkanten-Ziehen (wäre schlecht für spitze/unregelmäßige Polygone),
-    // stattdessen sanfte Abstoßung damit Arten nicht übereinander klumpen.
+    // ── Artengruppen-Spread: Mittelpunkt-Interpolation ──────────────────────────
+    // Für Rechteck-Beete: Rand-Gruppen zur Kante ziehen + innere Gruppen gleichmäßig verteilen.
+    // Für Freihand-Polygone: nur innere Gruppen interpolieren (kein Rand-Ziehen in schmale Spitzen).
     if (!isRund && all.length >= 2) {
       const xGroups = {};
       all.forEach(pl => {
         const key = pl.pi;
-        if (!xGroups[key]) xGroups[key] = { pls: [], cx: 0, cy: 0 };
+        if (!xGroups[key]) xGroups[key] = { pls: [], cx: 0 };
         xGroups[key].pls.push(pl);
       });
       const grps = Object.values(xGroups);
       const recalc = () => grps.forEach(g => {
         g.cx = g.pls.reduce((s, p) => s + p.x, 0) / g.pls.length;
-        g.cy = g.pls.reduce((s, p) => s + p.y, 0) / g.pls.length;
       });
       recalc();
 
-      // Mindestabstand zwischen Gruppen-Zentroiden (proportional zur Beetdiagonale)
-      const diagPx = Math.hypot(bedW, bedH);
-      const minGrpDist = Math.min(bedW, bedH) * 0.55 / Math.max(1, grps.length - 1);
-
       for (let xIter = 0; xIter < 30; xIter++) {
-        // Paarweise Abstoßung zwischen Gruppen
-        for (let a = 0; a < grps.length; a++) {
-          for (let b = a + 1; b < grps.length; b++) {
-            const dx = grps[b].cx - grps[a].cx;
-            const dy = grps[b].cy - grps[a].cy;
-            const dist = Math.hypot(dx, dy) || 0.1;
-            if (dist < minGrpDist) {
-              const push = (minGrpDist - dist) / 2 * 0.10;
-              const nx = dx / dist, ny = dy / dist;
-              grps[a].cx -= nx * push; grps[a].cy -= ny * push;
-              grps[b].cx += nx * push; grps[b].cy += ny * push;
-            }
-          }
+        grps.sort((a, b) => a.cx - b.cx);
+
+        if (!hasConstraint && grps.length >= 2) {
+          // Rechteck-Beete: Randgruppen sanft zur Beetkante ziehen
+          const r0 = grps[0].pls.reduce((m, p) => Math.max(m, p.r), 0);
+          const rL = grps[grps.length-1].pls.reduce((m, p) => Math.max(m, p.r), 0);
+          grps[0].cx += (r0 * 2.5 - grps[0].cx) * 0.06;
+          grps[grps.length-1].cx += (bedW - rL * 2.5 - grps[grps.length-1].cx) * 0.06;
         }
-        // Pflanzen um Delta des Gruppenzentrums verschieben (Gruppe bleibt zusammen)
+
+        // Alle: innere Gruppen gleichmäßig zwischen Nachbarn interpolieren
+        for (let i = 1; i < grps.length - 1; i++) {
+          const ideal = (grps[i-1].cx + grps[i+1].cx) / 2;
+          grps[i].cx += (ideal - grps[i].cx) * 0.09;
+        }
+
+        // Delta auf Pflanzen übertragen (nur x; y bleibt bei Zone-Kraft)
         grps.forEach(g => {
           const currCx = g.pls.reduce((s, p) => s + p.x, 0) / g.pls.length;
-          const currCy = g.pls.reduce((s, p) => s + p.y, 0) / g.pls.length;
-          const dx = g.cx - currCx, dy = g.cy - currCy;
+          const dx = g.cx - currCx;
           g.pls.forEach(pl => {
             pl.x = Math.max(pl.r, Math.min(bedW - pl.r, pl.x + dx));
-            pl.y = Math.max(pl.r, Math.min(bedH - pl.r, pl.y + dy));
           });
         });
-        all.forEach(p => { if (hasConstraint) snapInsidePolygon(p, constraintPolys); });
+
+        if (hasConstraint) all.forEach(p => snapInsidePolygon(p, constraintPolys));
         recalc();
+
         // Mini-Separation nach Verschiebung
         for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) {
           const dx = all[j].x - all[i].x, dy = all[j].y - all[i].y;
