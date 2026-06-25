@@ -75,6 +75,100 @@ db.exec(`
   );
 `);
 
+// ─── SEO-Migrationen (läuft bei jedem Start, idempotent) ─────────────────────
+(function runSeoMigrations() {
+  // Ratgeber-Titel auf Keywords optimieren
+  const titelUpdates = [
+    ['Planungsprozess für ein Staudenbeet', 'Staudenbeet planen: Schritt-für-Schritt Anleitung mit Pflanzplan'],
+    ['Schattenbeete unter Bäumen und Sträuchern', 'Stauden für Schatten: Die besten Arten für schattige Beete'],
+    ['Halbschattige Staudenbeete am Gehölzrand', 'Halbschatten-Stauden: Schöne Beete am Gehölzrand'],
+    ['Bienenweide-Stauden und Insektenförderung', 'Bienenfreundliche Stauden: Top 15 Trachtpflanzen für deinen Garten'],
+    ['Cottage-Garten und englischer Gartenstil', 'Cottage-Garten anlegen: Romantische Bepflanzung nach englischem Vorbild'],
+    ['Sonnige trockene Staudenbeete und Kiesgärten', 'Kiesgarten & Trockenbeet: Stauden für sonnige, trockene Standorte'],
+    ['Feuchte Standorte, Teichrand und Sumpfbeete', 'Teichrand & Sumpfbeet bepflanzen: Stauden für feuchte Standorte'],
+    ['Stauden richtig pflanzen — Zeitpunkt und Technik', 'Stauden pflanzen: Zeitpunkt, Pflanzabstand & Technik'],
+    ['Pflanzdichte und Stückzahlberechnung im Staudenbeet', 'Pflanzdichte berechnen: Wie viele Stauden pro m²?'],
+    ['Farbgestaltung im Staudenbeet', 'Staudenbeet Farbgestaltung: Harmonische Farbkombinationen planen'],
+    ['Ganzjahres-Attraktivität und saisonale Abfolge', 'Ganzjährig blühendes Staudenbeet: Saisonale Abfolge planen'],
+    ['Ziergräser als Staudenbegleiter', 'Ziergräser im Staudenbeet: Die besten Arten & Kombinationen'],
+    ['Winteraspekte und Struktur im Staudenbeet', 'Winteraspekte im Staudenbeet: Schönheit auch in der kalten Jahreszeit'],
+    ['Lebendige Böden und Bodenbiologie im Staudenbeet', 'Bodenbiologie im Staudenbeet: Gesunden Boden aufbauen'],
+    ['Bodenvorbereitung und Standortverbesserung', 'Bodenvorbereitung für Staudenbeete: Standort richtig vorbereiten'],
+    ['Heimische vs. gartenwürdige Exoten', 'Heimische Stauden vs. Exoten: Was ist besser für deinen Garten?'],
+  ];
+  try {
+    for (const [alt, neu] of titelUpdates) {
+      const row = db.prepare('SELECT rowid FROM wissen WHERE titel = ? LIMIT 1').get(alt);
+      if (row) db.prepare('UPDATE wissen SET titel = ? WHERE rowid = ?').run(neu, row.rowid);
+    }
+  } catch {}
+
+  // Neue SEO-Cluster-Artikel einfügen (idempotent)
+  const neueArtikel = [
+    {
+      titel: 'Heiligenkraut pflanzen und pflegen — Santolina chamaecyparissus',
+      kategorie: 'Pflanzenportraits',
+      inhalt: `Heiligenkraut (Santolina chamaecyparissus) ist ein immergrüner Halbstrauch aus der Familie der Korbblütler und stammt ursprünglich aus dem westlichen Mittelmeerraum. Der botanische Name Santolina chamaecyparissus bedeutet sinngemäß „kleine Zypresse am Boden" — eine Anspielung auf die feingliedrigen, silbrig-grauen Blättchen, die an Zypressen-Laub erinnern. Durch seine silbrige Laubfarbe, die langen Blütezeiten und die extreme Trockenheitstoleranz hat sich Heiligenkraut in deutschen Gärten als zuverlässige Dauerstaude für sonnige Standorte bewährt.
+
+Standort und Boden: Heiligenkraut benötigt zwingend einen vollsonnigen bis sonnigen Standort mit sehr gut durchlässigem Boden. Sandige, kalkhaltige oder steinige Böden sind ideal. Staunässe ist sein größter Feind — wer in lehmigen oder humusreichen Gärten gärtnert, sollte Heiligenkraut auf einem erhöhten Beet oder in einem Kiesbett pflanzen. In nährstoffreichen, feuchten Böden wächst Heiligenkraut zu üppig und verliert seine kompakte Polsterform. Als typische Kiesgartenpflanze eignet sich Heiligenkraut hervorragend für mediterrane Gärten, Steppenpflanzungen und Steingärten.
+
+Pflege und Rückschnitt: Etabliertes Heiligenkraut ist ausgesprochen pflegeleicht. Weder regelmäßige Bewässerung noch Düngung sind nötig. Der entscheidende Pflegeschritt ist der zweimalige Rückschnitt pro Jahr: Im März oder April direkt nach dem Neuaustrieb und nach der Blüte im August kräftig ins ältere Holz schneiden, um eine kompakte Polsterform zu erhalten. Ohne Rückschnitt verholzt die Basis und die Pflanze öffnet sich unattraktiv auseinander. Wer besonders kompaktes Wachstum wünscht, schneidet die Blütenstiele bereits im Knospenstadium zurück.
+
+Blüte und Blütezeit: Von Juni bis August erscheinen leuchtend gelbe, kugelrunde Blütenköpfchen auf langen Stielen. Die Blüten sind einfach gebaut und werden gerne von Bienen und Schwebfliegen besucht. Santolina rosmarinifolia, eine verwandte Art mit grünem Laub, blüht ebenfalls gelb; Santolina serratifolia zeigt gezähnte Blätter und ist etwas kompakter.
+
+Heiligenkraut Verwendung: Als silbriger Kontrastpartner zu blau-violetten Stauden wie Lavendel (Lavandula angustifolia), Ziersalbei (Salvia nemorosa) oder Katzenminze (Nepeta x faassenii) ist Heiligenkraut unübertroffen. Klassisch als Beetbegleitung, niedriger Heckensaum, Beetkante oder Bodendecker in trockenen Staudenbeeten verwendet.
+
+Ist Heiligenkraut essbar? Historisch wurden die aromatischen Blätter mit ihren ätherischen Ölen als Gewürz eingesetzt, heute gilt Heiligenkraut jedoch nicht als Speisepflanze. In größeren Mengen können die ätherischen Öle reizend wirken. Als Räucherpflanze oder für Duftsträuße wird Heiligenkraut manchmal noch genutzt.
+
+Botanischer Name und Winterhärte: Der botanische Name lautet Santolina chamaecyparissus. Heiligenkraut ist bis circa -15°C winterhart (Zone 7). In rauen Lagen oder auf schweren, feuchten Böden kann ein leichter Reisigschutz sinnvoll sein. Überwinterungsfeind Nummer eins ist nicht der Frost, sondern nasse Bodenverhältnisse im Winter.`
+    },
+    {
+      titel: 'Kaiserkrone pflanzen und pflegen — Fritillaria imperialis',
+      kategorie: 'Pflanzenportraits',
+      inhalt: `Die Kaiserkrone (Fritillaria imperialis) gehört zu den imposantesten Frühjahrsblühern im deutschen Garten. Auf 80 bis 120 cm hohen Stielen trägt sie einen einzigartigen Blütenkranz aus hängenden, glockenförmigen Blüten in Orange, Gelb, Rot oder Weiß — gekrönt von einem Büschel aufrechter Hochblätter, das der Pflanze ihren majestätischen Namen eingebracht hat. Die Kaiserkrone blüht April bis Mai und ist eine der ersten großen Frühlingserscheinungen im Staudenbeet.
+
+Kaiserkrone pflanzen — Wann und wie: Die Zwiebeln werden im September und Oktober gesetzt, sobald sie im Handel erhältlich sind. Möglichst frisch kaufen — weiche, schrumplige Zwiebeln nicht verwenden. Pflanztiefe: 15–20 cm (ca. dreifache Zwiebelbreite). Wichtiger Trick: Die Zwiebeln leicht schräg (45 Grad) einlegen, damit kein Wasser in der natürlichen Vertiefung auf der Zwiebelspitze stehenbleibt, was zu Fäulnis führen kann. Pflanzabstand: 30–40 cm. Kaiserkronen wirken am stärksten in Gruppen von 3–7 Zwiebeln.
+
+Standort und Boden: Kaiserkronen bevorzugen einen sonnigen bis halbschattigen Standort mit tiefgründigem, humusreichem und gut durchlässigem Boden. Frisch-feuchter Boden ist ideal, Staunässe führt schnell zu Zwiebelfäule. Auf sandigem Boden Kompost einarbeiten, um Wasserhaltefähigkeit zu erhöhen.
+
+Pflege und Düngung: Beim Austrieb im Frühjahr und nach der Blüte mit einem organischen Volldünger versorgen — Kaiserkronen sind Starkzehrer. Das Laub nach der Blüte vollständig einziehen lassen (mindestens 6 Wochen), da die Zwiebel in dieser Phase Reservestoffe für die nächste Saison einlagert. Erst wenn das Laub vollständig eingetrocknet ist, zurückschneiden.
+
+Kaiserkrone Sorten: 'Aurora' (orangerot, sehr robust), 'Lutea' (reingelb, beliebt), 'Rubra' (dunkelrot), 'The Premier' (leuchtend goldorange), 'Prolifera' (mehrstöckige Blütenkrone, besonders spektakulär). Weiße Sorten wie 'White Beauty' sind seltener erhältlich.
+
+Kaiserkronen und der Geruch: Kaiserkronen verströmen einen eigentümlichen, mäuseartigen Geruch aus Blüten und Zwiebeln. Dieser soll Wühlmäuse und Maulwürfe fernhalten — in der Praxis ist die Wirkung begrenzt. Beim Pflanzen Handschuhe tragen, da der Geruch intensiv an Händen haftet.
+
+Winterhärte und Überwinterung: Kaiserkronen sind sehr winterhart (bis –28°C, Zone 5) und brauchen keinen Winterschutz. Frostschäden können allenfalls an bereits austreibenden Blättern im zeitigen Frühjahr auftreten — ein einfaches Vlies reicht zum Schutz. Den Boden im Winter trocken halten, um Zwiebelfäule zu vermeiden.
+
+Pflanzpartner: Vergissmeinnicht (Myosotis), Tulpen, Narzissen, Geranium phaeum, Waldsteinia ternata als Bodendecker. Im Bauerngarten oder Cottage-Garten kombiniert die Kaiserkrone wunderbar mit Pfingstrosen und Rittersporn.`
+    },
+    {
+      titel: 'Geranium Rozanne — Der Storchschnabel mit der längsten Blütezeit',
+      kategorie: 'Pflanzenportraits',
+      inhalt: `Geranium 'Rozanne' ist eine der beliebtesten Gartenstauden der letzten Jahrzehnte. Von Mai bis zum ersten Frost erscheinen ununterbrochen großzügige, violettblaue Blüten mit weißem Zentrum — eine Blütezeit, die kaum eine andere winterharte Staude übertreffen kann. 'Rozanne' wurde 1989 in einem privaten englischen Garten in Somerset entdeckt, als natürlicher Hybrid zwischen Geranium himalayense und Geranium wallichianum. Heute ist dieser Storchschnabel weltweit eine der meistverkauften Gartenstauden.
+
+Standort und Boden: Geranium 'Rozanne' ist ausgesprochen anpassungsfähig. Von vollsonnig bis halbschattig gedeiht die Pflanze problemlos. Im tiefen Schatten lässt die Blütenintensität nach. Der Boden sollte durchlässig und mäßig nährstoffreich sein; Staunässe ist zu vermeiden. Normaler Gartenboden genügt — Düngung ist in der Regel nicht nötig.
+
+Wuchs und Pflanzabstand: Der Wuchs ist locker ausgebreitet bis hängend, ideal als Bodendecker zwischen höheren Stauden. 'Rozanne' wird 40–50 cm hoch und 60–90 cm breit. Pflanzabstand: 40–50 cm. Pflanzzeit: März bis Mai oder September bis Oktober.
+
+Storchschnabel Rozanne Rückschnitt: Im Hochsommer, wenn eine kurze Blühpause eintritt, lohnt ein kräftiger Rückschnitt auf 10–15 cm — innerhalb von zwei Wochen treibt 'Rozanne' frisch durch und blüht bis in den November. Dieser „Chelsea-Chop"-Schnitt im Juni verlängert die Blühsaison erheblich. Im Herbst einziehen lassen, im Frühjahr altes Material entfernen.
+
+Winterhärte: Geranium 'Rozanne' ist sehr winterhart (bis –25°C, Zone 5). Der oberirdische Teil zieht im Winter ein, im Frühjahr treibt die Staude zuverlässig neu aus.
+
+Kombination und Verwendung: Die violettblaue Blüte harmoniert hervorragend mit Gelb (Achillea 'Moonshine'), Weiß (Phlox), Rosa (Rosen) und Violett (Salvia nemorosa). Als Unterpflanzung von Rosen ist 'Rozanne' eine klassische Kombination. Auch unter Laubgehölzen, als Beeteinfassung oder zwischen Gräsern eingesetzt zeigt der Storchschnabel Rozanne seine Qualitäten.
+
+Kaufhinweis: Geranium 'Rozanne' ist eine eingetragene Schutzsorte (Handelsname 'Rozanne', Sortenbezeichnung 'Gerwat'). Im Handel unter dem Namen Geranium 'Rozanne' oder Geranium 'Gerwat' erhältlich. Günstigere „Rozanne-ähnliche" Produkte sind häufig andere Arten (z.B. Geranium x magnificum) mit deutlich kürzerer Blütezeit.`
+    },
+  ];
+
+  try {
+    const insertStmt = db.prepare('INSERT INTO wissen(titel, inhalt, kategorie, quelle, datum) VALUES (?, ?, ?, ?, ?)');
+    for (const art of neueArtikel) {
+      const exists = db.prepare('SELECT COUNT(*) as n FROM wissen WHERE titel = ?').get(art.titel).n;
+      if (!exists) insertStmt.run(art.titel, art.inhalt, art.kategorie, 'Staudenplan.de Redaktion', '2026-06-25');
+    }
+  } catch {}
+})();
+
 // ─── OpenAI (lazy) ────────────────────────────────────────────────────────────
 let openai = null;
 function getOpenAI() {
@@ -398,6 +492,7 @@ app.get('/', (req, res) => {
       <h2>Bepflanzungsplan online kostenlos erstellen — KI-gestützt & individuell</h2>
       <p>Ein professioneller <strong>Bepflanzungsplan</strong> ist die Grundlage für ein schönes, pflegeleichtes Staudenbeet. Unser KI-Gartenplaner erstellt dir in wenigen Minuten einen maßgeschneiderten Plan — abgestimmt auf Standort, Bodentyp, Gartenstil und deine persönlichen Wünsche. Mit über <strong>${pflanzenCount} geprüften, winterharten Stauden</strong> für deutsche Gärten.</p>
       <p>Anders als generische KI-Tools nutzt unser Planer eine kuratierte Pflanzendatenbank mit echten Staudenexperten-Wissen: Lebensbereiche nach Hansen &amp; Stahl, ökologisch wertvolle Heimische, bewährte Pflanzenkombinationen. Das Ergebnis ist ein <strong>Bepflanzungsplan der wirklich funktioniert</strong> — mit Stückliste, grafischem Plan und direkter Bestellmöglichkeit.</p>
+      <p style="margin-top:16px;font-size:.88rem;color:#666;border-top:1px solid #dde8e0;padding-top:14px">💡 <strong>Was kostet Gartenplanung?</strong> Einen Überblick über typische Kosten für Gartenplanung findest du bei <a href="https://gartenbau-kosten.de/gartenplanung/gartenplanung-kosten/" target="_blank" rel="noopener" style="color:#2d6a4f;font-weight:600">gartenbau-kosten.de →</a></p>
     </div>
   </section>
 
@@ -946,6 +1041,12 @@ app.get('/sitemap.xml', (req, res) => {
     `<url><loc>${base}/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>`,
     `<url><loc>${base}/pflanzen</loc><changefreq>weekly</changefreq><priority>0.9</priority></url>`,
     `<url><loc>${base}/ratgeber</loc><changefreq>weekly</changefreq><priority>0.9</priority></url>`,
+    `<url><loc>${base}/stauden-fuer-schatten</loc><changefreq>monthly</changefreq><priority>0.85</priority></url>`,
+    `<url><loc>${base}/stauden-fuer-sonne</loc><changefreq>monthly</changefreq><priority>0.85</priority></url>`,
+    `<url><loc>${base}/pflegeleichte-stauden</loc><changefreq>monthly</changefreq><priority>0.85</priority></url>`,
+    `<url><loc>${base}/bienenfreundliche-stauden</loc><changefreq>monthly</changefreq><priority>0.85</priority></url>`,
+    `<url><loc>${base}/staudenbeet-planen</loc><changefreq>monthly</changefreq><priority>0.85</priority></url>`,
+    `<url><loc>${base}/stauden-kombinieren</loc><changefreq>monthly</changefreq><priority>0.85</priority></url>`,
     `<url><loc>${base}/beispiele</loc><changefreq>monthly</changefreq><priority>0.9</priority></url>`,
     `<url><loc>${base}/quiz</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>`,
     ...BEISPIELE.map(b => `<url><loc>${base}/beispiel/${b.slug}</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>`),
@@ -1963,6 +2064,61 @@ app.get('/pflanze/:slug', (req, res) => {
     WHERE (licht LIKE ? OR stil LIKE ?) AND id != ? ORDER BY RANDOM() LIMIT 6
   `).all(`%${(pflanze.licht||'').split('|')[0]}%`, `%${(pflanze.stil||'').split('|')[0]}%`, pflanze.id);
 
+  // Inhalt-Lang vorab parsen (für FAQ + Verlinkung)
+  const inhaltLang = pflanze.inhalt_lang
+    ? (() => { try { return JSON.parse(pflanze.inhalt_lang); } catch { return null; } })()
+    : null;
+
+  // FAQ automatisch aus DB-Feldern generieren
+  const faqItems = [
+    pflanze.bluehzeit     && { q: `Wann blüht ${pflanze.name_deutsch}?`, a: `${pflanze.name_deutsch} blüht ${pflanze.bluehzeit}.` },
+    pflanze.licht         && { q: `Welchen Standort braucht ${pflanze.name_deutsch}?`, a: `${pflanze.name_deutsch} (${pflanze.name_botanisch}) bevorzugt ${pflanze.licht.replace(/\|/g, '- und ')}-Standorte.` },
+    (pflanze.hoehe_cm_min || pflanze.hoehe_cm_max) && { q: `Wie hoch wird ${pflanze.name_deutsch}?`, a: `${pflanze.name_deutsch} erreicht eine Wuchshöhe von ${hoehe}.` },
+    inhaltLang?.pflanzabstand && { q: `Welchen Pflanzabstand empfiehlt man für ${pflanze.name_deutsch}?`, a: inhaltLang.pflanzabstand },
+    inhaltLang?.pflanzzeit    && { q: `Wann pflanzt man ${pflanze.name_deutsch}?`, a: inhaltLang.pflanzzeit },
+    inhaltLang?.rueckschnitt  && { q: `Wann und wie schneidet man ${pflanze.name_deutsch} zurück?`, a: inhaltLang.rueckschnitt },
+    inhaltLang?.ueberwinterung && { q: `Ist ${pflanze.name_deutsch} winterhart?`, a: inhaltLang.ueberwinterung },
+    pflanze.bienen_freundlich  && { q: `Ist ${pflanze.name_deutsch} bienenfreundlich?`, a: `Ja, ${pflanze.name_deutsch} ist eine wertvolle Trachtpflanze und zieht Bienen, Hummeln und andere Bestäuber zuverlässig an.` },
+  ].filter(Boolean).slice(0, 7);
+
+  const faqSchema = faqItems.length > 0 ? JSON.stringify({
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    'mainEntity': faqItems.map(item => ({
+      '@type': 'Question',
+      'name': item.q,
+      'acceptedAnswer': { '@type': 'Answer', 'text': item.a }
+    }))
+  }) : null;
+
+  const faqHtml = faqItems.length > 0 ? `
+    <section style="background:#fff;border-radius:14px;padding:24px;box-shadow:0 2px 12px rgba(0,0,0,.07);margin-bottom:24px">
+      <h2 style="font-size:1.15rem;color:#1b4332;margin-bottom:20px;font-weight:700">❓ Häufige Fragen zu ${pflanze.name_deutsch}</h2>
+      <div>
+        ${faqItems.map((item, i) => `<details style="border-bottom:${i < faqItems.length - 1 ? '1px solid #f0ede8' : 'none'};padding:14px 0"${i === 0 ? ' open' : ''}>
+          <summary style="font-weight:700;font-size:.92rem;color:#1b4332;cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center">${item.q}<span style="color:#2d6a4f;flex-shrink:0;margin-left:8px;font-size:.75rem">▼</span></summary>
+          <p style="font-size:.88rem;color:#555;line-height:1.65;margin-top:10px;padding-right:8px">${item.a}</p>
+        </details>`).join('')}
+      </div>
+    </section>` : '';
+
+  // Passende Ratgeber für interne Verlinkung
+  let passendArtikel = [];
+  try {
+    const genus = (pflanze.name_botanisch || '').split(' ')[0];
+    const lichtKey = (pflanze.licht || '').split('|')[0];
+    passendArtikel = db.prepare(`SELECT titel FROM wissen WHERE inhalt LIKE ? OR inhalt LIKE ? OR inhalt LIKE ? LIMIT 3`)
+      .all(`%${pflanze.name_deutsch}%`, `%${genus}%`, `%${lichtKey}%`);
+  } catch {}
+
+  const passendArtikelHtml = passendArtikel.length > 0 ? `
+    <section style="background:#f0fdf4;border-radius:14px;padding:20px 24px;margin-bottom:24px">
+      <h2 style="font-size:1rem;color:#1b4332;margin-bottom:14px;font-weight:700">📚 Weiterführende Ratgeber</h2>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${passendArtikel.map(a => `<a href="/ratgeber/${slugify(a.titel)}" style="display:flex;align-items:center;gap:10px;color:#2d6a4f;text-decoration:none;font-size:.88rem;font-weight:600;padding:8px 12px;background:#fff;border-radius:8px;transition:background .12s" onmouseover="this.style.background='#d8f3dc'" onmouseout="this.style.background='#fff'">→ ${a.titel}</a>`).join('')}
+      </div>
+    </section>` : '';
+
   res.send(`<!DOCTYPE html><html lang="de"><head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>${pflanze.name_deutsch} (${pflanze.name_botanisch}) — Pflege, Standort & Verwendung | Staudenplan.de</title>
@@ -1975,7 +2131,8 @@ app.get('/pflanze/:slug', (req, res) => {
   <meta property="og:url" content="https://www.staudenplan.de/pflanze/${slug}">
   <meta property="og:type" content="product">
   <script type="application/ld+json">${schemaOrg}</script>
-  <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',system-ui,sans-serif;background:#f8f4ef;color:#1a1a1a}@media(max-width:680px){.pflanz-grid{grid-template-columns:1fr!important}.pflanz-hero-inner{flex-direction:column!important}}</style>
+  ${faqSchema ? `<script type="application/ld+json">${faqSchema}</script>` : ''}
+  <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',system-ui,sans-serif;background:#f8f4ef;color:#1a1a1a}@media(max-width:680px){.pflanz-grid{grid-template-columns:1fr!important}.pflanz-hero-inner{flex-direction:column!important}}details>summary::-webkit-details-marker{display:none}</style>
   </head><body>
   ${NAV_LINKS}
 
@@ -2060,7 +2217,7 @@ app.get('/pflanze/:slug', (req, res) => {
     </section>
 
     ${(() => {
-      const d = pflanze.inhalt_lang ? (() => { try { return JSON.parse(pflanze.inhalt_lang); } catch { return null; } })() : null;
+      const d = inhaltLang;
       if (!d) return '';
       return `
     <!-- Pflege im Detail -->
@@ -2163,6 +2320,9 @@ app.get('/pflanze/:slug', (req, res) => {
       </div>
     </section>` : ''}
 
+    ${faqHtml}
+    ${passendArtikelHtml}
+
     <!-- Plan CTA -->
     <div style="background:linear-gradient(135deg,#1b4332,#2d6a4f);color:#fff;border-radius:14px;padding:28px;margin-top:32px;text-align:center">
       <h3 style="font-size:1.15rem;margin-bottom:8px">Passt ${pflanze.name_deutsch} in deinen Garten?</h3>
@@ -2172,6 +2332,190 @@ app.get('/pflanze/:slug', (req, res) => {
   </main>
   ${SITE_FOOTER}
   </body></html>`);
+});
+
+// ─── Statische Kategorie-Seiten (SEO) ────────────────────────────────────────
+
+function kategorieSeitenHTML({ titel, metaDesc, h1, intro, pflanzen, artikelLinks, slug }) {
+  const pflanzenHtml = pflanzen.map(p => `
+    <a href="/pflanze/${pflanzeToSlug(p.name_botanisch)}" style="background:#fff;border-radius:12px;text-decoration:none;color:inherit;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.07);transition:transform .12s;display:flex;flex-direction:column" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
+      ${p.bild_url
+        ? `<div style="height:120px;overflow:hidden"><img src="${p.bild_url}" alt="${p.name_deutsch}" loading="lazy" style="width:100%;height:100%;object-fit:cover"></div>`
+        : `<div style="height:120px;background:linear-gradient(135deg,#d8f3dc,#b7e4c7);display:flex;align-items:center;justify-content:center;font-size:3rem">🌿</div>`}
+      <div style="padding:12px">
+        <div style="font-size:.88rem;font-weight:700;color:#1b4332;line-height:1.3;margin-bottom:3px">${p.name_deutsch}</div>
+        <div style="font-size:.73rem;color:#aaa;font-style:italic;margin-bottom:6px">${p.name_botanisch}</div>
+        ${p.bluehzeit ? `<div style="font-size:.72rem;color:#2d6a4f">🌸 ${p.bluehzeit}</div>` : ''}
+      </div>
+    </a>`).join('');
+
+  const artikelHtml = artikelLinks.length > 0 ? `
+    <div style="margin-top:48px;padding-top:32px;border-top:2px solid #d8f3dc">
+      <h2 style="font-size:1.15rem;color:#1b4332;margin-bottom:16px;font-weight:700">📚 Ratgeber-Artikel zum Thema</h2>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        ${artikelLinks.map(a => `<a href="/ratgeber/${slugify(a.titel)}" style="display:flex;align-items:center;gap:10px;background:#fff;border-radius:10px;padding:14px 18px;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.06);transition:background .12s" onmouseover="this.style.background='#f0fdf4'" onmouseout="this.style.background='#fff'">
+          <span style="font-size:1.2rem;flex-shrink:0">📖</span>
+          <span style="font-size:.9rem;font-weight:600;color:#1b4332">${a.titel}</span>
+          <span style="margin-left:auto;color:#2d6a4f;font-weight:700;font-size:.82rem;white-space:nowrap">Lesen →</span>
+        </a>`).join('')}
+      </div>
+    </div>` : '';
+
+  return `<!DOCTYPE html><html lang="de"><head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>${titel} | Staudenplan.de</title>
+  <meta name="description" content="${metaDesc}">
+  <link rel="canonical" href="https://www.staudenplan.de/${slug}">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">
+  <meta property="og:title" content="${titel}">
+  <meta property="og:description" content="${metaDesc}">
+  <meta property="og:type" content="website">
+  <script type="application/ld+json">${JSON.stringify({
+    '@context':'https://schema.org','@type':'CollectionPage',
+    'name': titel, 'description': metaDesc,
+    'url': `https://www.staudenplan.de/${slug}`,
+    'breadcrumb': {'@type':'BreadcrumbList','itemListElement':[
+      {'@type':'ListItem','position':1,'name':'Startseite','item':'https://www.staudenplan.de/'},
+      {'@type':'ListItem','position':2,'name':'Stauden-Lexikon','item':'https://www.staudenplan.de/pflanzen'},
+      {'@type':'ListItem','position':3,'name':h1,'item':`https://www.staudenplan.de/${slug}`}
+    ]}
+  })}</script>
+  <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',system-ui,sans-serif;background:#f8f4ef;color:#1a1a1a}</style>
+  </head><body>
+  ${NAV_LINKS}
+  <div style="background:linear-gradient(160deg,#1b4332,#2d6a4f);color:#fff;padding:48px 24px 40px;text-align:center">
+    <div style="font-size:.8rem;opacity:.7;margin-bottom:8px"><a href="/" style="color:rgba(255,255,255,.7);text-decoration:none">Startseite</a> › <a href="/pflanzen" style="color:rgba(255,255,255,.7);text-decoration:none">Stauden-Lexikon</a> › <span>${h1}</span></div>
+    <h1 style="font-size:clamp(1.5rem,4vw,2rem);font-weight:800;line-height:1.25;margin-bottom:12px">${h1}</h1>
+    <p style="opacity:.88;max-width:600px;margin:0 auto;font-size:.95rem;line-height:1.6">${pflanzen.length} passende Stauden gefunden</p>
+  </div>
+  <main style="max-width:1060px;margin:0 auto;padding:40px 20px 60px">
+    <div style="background:#fff;border-radius:14px;padding:24px 28px;box-shadow:0 2px 12px rgba(0,0,0,.07);margin-bottom:36px">
+      ${intro.split('\n\n').map(p => `<p style="line-height:1.78;color:#333;font-size:.97rem;margin-bottom:16px">${p}</p>`).join('')}
+      <p style="margin-bottom:0"><a href="/" style="display:inline-block;background:#1b4332;color:#fff;border-radius:50px;padding:10px 24px;text-decoration:none;font-weight:700;font-size:.88rem;margin-top:8px">Kostenlosen Bepflanzungsplan erstellen →</a></p>
+    </div>
+    <h2 style="font-size:1.2rem;color:#1b4332;margin-bottom:20px;font-weight:700">${pflanzen.length} Stauden für diesen Standort</h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:14px">
+      ${pflanzenHtml}
+    </div>
+    ${artikelHtml}
+    <div style="background:linear-gradient(135deg,#1b4332,#2d6a4f);color:#fff;border-radius:14px;padding:28px;margin-top:48px;text-align:center">
+      <h2 style="font-size:1.2rem;margin-bottom:8px">KI-Bepflanzungsplan für deinen Garten</h2>
+      <p style="opacity:.88;font-size:.9rem;margin-bottom:18px">Unser KI-Planer wählt aus ${pflanzen.length}+ passenden Stauden die besten für deinen Standort — kostenlos und in 2 Minuten.</p>
+      <a href="/" style="background:#fff;color:#1b4332;border-radius:50px;padding:12px 30px;text-decoration:none;font-weight:700;font-size:.9rem;display:inline-block">Kostenlosen Plan erstellen →</a>
+    </div>
+  </main>
+  ${SITE_FOOTER}
+  </body></html>`;
+}
+
+app.get('/stauden-fuer-schatten', (req, res) => {
+  const pflanzen = db.prepare(`SELECT name_deutsch, name_botanisch, bild_url, bluehzeit, licht FROM pflanzen WHERE licht LIKE '%Schatten%' ORDER BY name_deutsch`).all();
+  let artikel = [];
+  try { artikel = db.prepare(`SELECT titel FROM wissen WHERE titel LIKE '%Schatten%' OR inhalt LIKE '%Schattenbeet%' LIMIT 4`).all(); } catch {}
+  res.send(kategorieSeitenHTML({
+    slug: 'stauden-fuer-schatten',
+    titel: 'Stauden für Schatten — Die besten Schattenstauden für deutsche Gärten',
+    metaDesc: `${pflanzen.length} winterharte Stauden für schattige Beete: Welche Pflanzen gedeihen unter Bäumen, an der Nordseite oder im tiefen Schatten? Mit Pflanzplan-Tool.`,
+    h1: 'Stauden für Schatten',
+    intro: `Schattige Gartenbereiche gelten als Herausforderung — dabei bieten sie eine einzigartige Möglichkeit für elegante, ruhige Pflanzungen. Unter Bäumen, an schattigen Hauswänden oder in nordexponierten Beeten gedeihen zahlreiche winterharte Stauden, die dort ihre beste Qualität zeigen: satte Blattstrukturen, kühle Blautöne, zarte Frühlingsblüher.\n\nDie wichtigsten Schattenstauden teilen sich in zwei Gruppen: Halbschatten-Pflanzen (2–4 Stunden direktes Sonnenlicht) wie Astilbe, Hosta, Geranium oder Rodgersia — und echte Tiefschatten-Pflanzen (unter 2 Stunden Sonne) wie Elfenblume (Epimedium), Waldsteinia oder Bärlauch-Verwandte. Entscheidend ist außerdem der Boden: Unter Bäumen herrscht oft Wurzelkonkurrenz und Trockenheit, was robuste Arten wie Epimedium oder Waldsteinia bevorzugt.\n\nMit unserem kostenlosen KI-Bepflanzungsplan gibst du einfach deinen Standort ein — Halbschatten oder tiefer Schatten, Bodentyp, Größe — und erhältst einen maßgeschneiderten Plan mit winterharten Schattenstauden für genau deinen Garten.`,
+    pflanzen,
+    artikelLinks: artikel,
+  }));
+});
+
+app.get('/stauden-fuer-sonne', (req, res) => {
+  const pflanzen = db.prepare(`SELECT name_deutsch, name_botanisch, bild_url, bluehzeit, licht FROM pflanzen WHERE licht LIKE '%Sonne%' ORDER BY name_deutsch`).all();
+  let artikel = [];
+  try { artikel = db.prepare(`SELECT titel FROM wissen WHERE titel LIKE '%sonn%' OR titel LIKE '%Kiesgarten%' OR titel LIKE '%trocken%' LIMIT 4`).all(); } catch {}
+  res.send(kategorieSeitenHTML({
+    slug: 'stauden-fuer-sonne',
+    titel: 'Stauden für Sonne — Sonnenpflanzen für das Staudenbeet',
+    metaDesc: `${pflanzen.length} winterharte Stauden für vollsonnige Standorte: Von pflegeleicht bis üppig blühend — die besten Sonnenpflanzen für deinen Garten.`,
+    h1: 'Stauden für Sonne',
+    intro: `Vollsonnige Standorte sind im deutschen Garten am häufigsten — und bieten die größte Auswahl an winterharten Stauden. Vom pflegeleichten Kiesgarten bis zum üppigen Bauerngarten: Sonnenpflanzen bilden das Rückgrat des klassischen Staudenbeetes.\n\nBesonders bewährt haben sich für sonnige Beete: Ziersalbei (Salvia nemorosa) mit langen Blütezeiten, Sonnenhut (Echinacea) als Schmetterlingspflanze, Schafgarbe (Achillea) in vielen Farben, Lavendel für mediterranes Flair und Katzenminze (Nepeta) als vielseitiger Beeteinfasser. Für trockene, sandige Böden eignen sich außerdem Sedum, Stachys byzantina und Santolina.\n\nUnser KI-Planer hilft dir, aus über ${pflanzen.length} sonnigen Staudenarten die beste Kombination für dein Beet zu erstellen — abgestimmt auf Größe, Bodentyp und deinen Gartenstil.`,
+    pflanzen,
+    artikelLinks: artikel,
+  }));
+});
+
+app.get('/pflegeleichte-stauden', (req, res) => {
+  const pflanzen = db.prepare(`SELECT name_deutsch, name_botanisch, bild_url, bluehzeit, licht, pflege_sterne FROM pflanzen WHERE pflege_sterne = 1 ORDER BY name_deutsch`).all();
+  let artikel = [];
+  try { artikel = db.prepare(`SELECT titel FROM wissen WHERE titel LIKE '%pflegeleicht%' OR inhalt LIKE '%pflegeleicht%' LIMIT 4`).all(); } catch {}
+  res.send(kategorieSeitenHTML({
+    slug: 'pflegeleichte-stauden',
+    titel: 'Pflegeleichte Stauden — Wenig Arbeit, viel Wirkung im Garten',
+    metaDesc: `${pflanzen.length} winterharte Stauden mit minimalem Pflegeaufwand: Einmal pflanzen, dauerhaft schön — die besten pflegeleichten Gartenstauden.`,
+    h1: 'Pflegeleichte Stauden',
+    intro: `Pflegeleichte Stauden sind die ehrlichste Investition im Garten: Einmal gut gepflanzt, gedeihen sie Jahr für Jahr ohne großen Aufwand. Kein Gießen in trockenen Sommern, kein aufwendiger Rückschnitt, keine jährliche Neubepflanzung.\n\nDie pflegeleichtesten Gartenstauden vereinen drei Eigenschaften: Sie sind trockenheitstolerant, behaupten sich gegen Unkraut und sind robust gegen Schädlinge. Zu den bewährtesten Kandidaten zählen Storchschnabel (Geranium), Elfenblume (Epimedium), Schafgarbe (Achillea), Herbst-Fettblatt (Sedum), Katzenminze (Nepeta) und Stauden-Geranium (Geranium macrorrhizum).\n\nFür das "Einmal pflanzen, fertig"-Konzept empfiehlt sich außerdem, Bodendecker wie Waldsteinia oder Lamium mit höherwachsenden Strukturstauden zu kombinieren: Das unterdrückt Unkraut und schafft ein dauerhaft attraktives Beet ohne Wochenendeinsatz.`,
+    pflanzen,
+    artikelLinks: artikel,
+  }));
+});
+
+app.get('/bienenfreundliche-stauden', (req, res) => {
+  const pflanzen = db.prepare(`SELECT name_deutsch, name_botanisch, bild_url, bluehzeit, licht FROM pflanzen WHERE bienen_freundlich = 1 ORDER BY name_deutsch`).all();
+  let artikel = [];
+  try { artikel = db.prepare(`SELECT titel FROM wissen WHERE titel LIKE '%Bien%' OR titel LIKE '%Insekt%' OR inhalt LIKE '%Trachtpflanze%' LIMIT 4`).all(); } catch {}
+  res.send(kategorieSeitenHTML({
+    slug: 'bienenfreundliche-stauden',
+    titel: 'Bienenfreundliche Stauden — Trachtpflanzen für den Garten',
+    metaDesc: `${pflanzen.length} winterharte Stauden für Bienen, Hummeln und Schmetterlinge — die besten Trachtpflanzen für einen insektenfreundlichen Garten.`,
+    h1: 'Bienenfreundliche Stauden',
+    intro: `Ein bienenfreundlicher Garten ist mehr als ein ökologisches Zeichen — er ist attraktiver, lebendiger und oft einfacher zu pflegen, da heimische Bestäuber das ökologische Gleichgewicht stützen. Entscheidend für den Bienenwert einer Staude ist die Blütenstruktur: Einfache, offene Blüten mit sichtbaren Staubblättern sind Nektar- und Pollenquellen, während gefüllte Zuchtformen oft wertlos für Insekten sind.\n\nDie besten Bienenstauden decken die ganze Saison ab: Lungenkraut (Pulmonaria) im Frühjahr, Salvia nemorosa und Katzenminze im Frühsommer, Sonnenhut (Echinacea) und Flockenblume (Centaurea) im Sommer, Herbstaster und Fetthenne (Sedum) im Herbst. Dieses "Nektarband" von März bis Oktober ist das Ziel eines echten Bienengartens.\n\nUnser KI-Bepflanzungsplan wählt automatisch bienenfreundliche Kombinationen aus, wenn du "Bienengarten" als Gartennutzung angibst — abgestimmt auf deinen Standort und Gartenstil.`,
+    pflanzen,
+    artikelLinks: artikel,
+  }));
+});
+
+app.get('/staudenbeet-planen', (req, res) => {
+  const pflanzenCount = db.prepare("SELECT COUNT(*) as n FROM pflanzen").get().n;
+  let artikel = [];
+  try { artikel = db.prepare(`SELECT titel FROM wissen WHERE titel LIKE '%plan%' OR titel LIKE '%Planung%' OR inhalt LIKE '%Bepflanzungsplan%' LIMIT 5`).all(); } catch {}
+  const artikelHtml = artikel.map(a => `<a href="/ratgeber/${slugify(a.titel)}" style="display:flex;align-items:center;gap:10px;background:#fff;border-radius:10px;padding:14px 18px;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.06);transition:background .12s;margin-bottom:10px" onmouseover="this.style.background='#f0fdf4'" onmouseout="this.style.background='#fff'"><span style="font-size:1.2rem">📖</span><span style="font-size:.9rem;font-weight:600;color:#1b4332">${a.titel}</span><span style="margin-left:auto;color:#2d6a4f;font-weight:700;font-size:.82rem">Lesen →</span></a>`).join('');
+  res.send(`<!DOCTYPE html><html lang="de"><head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Staudenbeet planen — Kostenloser Online-Planer mit KI | Staudenplan.de</title>
+  <meta name="description" content="Staudenbeet kostenlos online planen: KI-Bepflanzungsplan in 2 Minuten — mit ${pflanzenCount} winterharten Stauden, Pflanzplan-Grafik und Stückliste.">
+  <link rel="canonical" href="https://www.staudenplan.de/staudenbeet-planen">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">
+  <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',system-ui,sans-serif;background:#f8f4ef;color:#1a1a1a}</style>
+  </head><body>
+  ${NAV_LINKS}
+  <div style="background:linear-gradient(160deg,#1b4332,#2d6a4f);color:#fff;padding:56px 24px 48px;text-align:center">
+    <h1 style="font-size:clamp(1.6rem,4vw,2.2rem);font-weight:800;line-height:1.2;margin-bottom:14px">Staudenbeet online planen — kostenlos & mit KI</h1>
+    <p style="opacity:.88;max-width:620px;margin:0 auto 28px;font-size:1rem;line-height:1.65">Standort, Größe und Stil eingeben — unser KI-Planer erstellt deinen individuellen Bepflanzungsplan mit ${pflanzenCount} winterharten Stauden.</p>
+    <a href="/" style="background:#fff;color:#1b4332;border-radius:50px;padding:15px 40px;text-decoration:none;font-weight:800;font-size:1rem;display:inline-block">Jetzt kostenlosen Plan erstellen →</a>
+  </div>
+  <main style="max-width:900px;margin:0 auto;padding:48px 20px 60px">
+    <div style="background:#fff;border-radius:14px;padding:28px;box-shadow:0 2px 12px rgba(0,0,0,.07);margin-bottom:36px">
+      <h2 style="font-size:1.2rem;color:#1b4332;margin-bottom:16px;font-weight:700">So funktioniert der KI-Bepflanzungsplan</h2>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;margin-bottom:20px">
+        ${[['1','Garten beschreiben','Fläche, Lichtbedingungen, Bodentyp und Gartenstil eingeben — oder Fläche direkt einzeichnen.'],['2','KI generiert deinen Plan',`Unsere KI durchsucht ${pflanzenCount} geprüfte Stauden und erstellt einen standortgerechten Plan.`],['3','Pflanzen bestellen','Mit Stückliste, grafischem Pflanzplan und Jahreskalender. Komplettpaket direkt bestellbar.']].map(([n,t,s]) => `<div style="background:#f8f4ef;border-radius:10px;padding:18px"><div style="background:#2d6a4f;color:#fff;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.88rem;margin-bottom:10px">${n}</div><h3 style="font-size:.95rem;font-weight:700;color:#1b4332;margin-bottom:6px">${t}</h3><p style="font-size:.83rem;color:#555;line-height:1.6">${s}</p></div>`).join('')}
+      </div>
+      <h2 style="font-size:1.1rem;color:#1b4332;margin-bottom:12px;font-weight:700">Was kostet ein Bepflanzungsplan?</h2>
+      <p style="line-height:1.75;color:#333;font-size:.95rem;margin-bottom:12px">Unser KI-Bepflanzungsplan ist vollständig <strong>kostenlos und ohne Anmeldung</strong>. Ein professioneller Gartenplaner kostet für einen einfachen Plan oft 150–500 €. Unser Tool liefert einen ähnlich individualisierten Plan — in 2 Minuten, rund um die Uhr, für 0 €.</p>
+      <p style="line-height:1.75;color:#333;font-size:.95rem">Die einzigen Kosten entstehen beim optionalen Kauf der empfohlenen Pflanzen. Der Plan selbst ist und bleibt kostenlos.</p>
+    </div>
+    ${artikel.length > 0 ? `<h2 style="font-size:1.15rem;color:#1b4332;margin-bottom:16px;font-weight:700">📚 Ratgeber: Staudenbeet richtig planen</h2>${artikelHtml}` : ''}
+  </main>
+  ${SITE_FOOTER}
+  </body></html>`);
+});
+
+app.get('/stauden-kombinieren', (req, res) => {
+  const pflanzen = db.prepare(`SELECT name_deutsch, name_botanisch, bild_url, bluehzeit, licht FROM pflanzen ORDER BY RANDOM() LIMIT 48`).all();
+  let artikel = [];
+  try { artikel = db.prepare(`SELECT titel FROM wissen WHERE titel LIKE '%kombin%' OR titel LIKE '%Kombination%' OR titel LIKE '%Schichten%' OR titel LIKE '%Farbgest%' LIMIT 5`).all(); } catch {}
+  res.send(kategorieSeitenHTML({
+    slug: 'stauden-kombinieren',
+    titel: 'Stauden kombinieren — Bewährte Pflanzenkombinationen für das Staudenbeet',
+    metaDesc: 'Stauden richtig kombinieren: Farbharmonien, Höhenstaffelung, Saisonstaffelung — mit Pflanzbeispielen, Praxistipps und kostenlosem KI-Pflanzplan.',
+    h1: 'Stauden kombinieren',
+    intro: `Die Kunst des Staudenkombinierens liegt im Zusammenspiel von Blühzeit, Höhe, Farbe und Textur. Eine gelungene Kombination sieht nicht nur im Hochsommer gut aus, sondern vom frühen Frühjahr bis in den Winteraspekt hinein.\n\nDrei Grundregeln erleichtern den Einstieg: Erstens, Höhenstaffelung beachten — hohe Strukturpflanzen (Miscanthus, Rudbeckia) hinten, mittelhohe Blütenstauden in der Mitte (Salvia, Echinacea), niedrige Bodendecker vorne (Geranium, Nepeta). Zweitens, Blühzeiten überlappen lassen — immer mindestens eine blühende Staude pro Saison einplanen. Drittens, Farbkontraste oder Farbharmonien wählen — Blau-Violett mit Gelb für Spannung, Rosa-Weiß für Eleganz.\n\nBewährte Dreier-Kombinationen: Salvia nemorosa + Achillea 'Moonshine' + Geranium sanguineum (sonnig, trocken); Astilbe + Hosta + Geranium macrorrhizum (Halbschatten, feucht); Echinacea + Rudbeckia + Pennisetum (sonnig, Sommerflor bis Herbst).`,
+    pflanzen,
+    artikelLinks: artikel,
+  }));
 });
 
 // ─── Ratgeber-Seiten (SEO) ────────────────────────────────────────────────────
@@ -2367,6 +2711,15 @@ app.get('/ratgeber/:slug', (req, res) => {
   if (!artikel) return res.status(404).send(`<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><title>Nicht gefunden</title></head><body>${NAV_LINKS}<div style="text-align:center;padding:80px 20px"><h1>Artikel nicht gefunden</h1><p><a href="/ratgeber">Zurück zum Ratgeber</a></p></div>${SITE_FOOTER}</body></html>`);
 
   const verwandte = alle.filter(a => a.kategorie === artikel.kategorie && a.rowid !== artikel.rowid).slice(0, 3);
+
+  const hatHeckenThema = artikelWoerter.includes('hecke') || artikelWoerter.includes('sichtschutz');
+  const heckenKostenHtml = hatHeckenThema ? `
+    <div style="background:#f0fdf4;border:1px solid #b7e4c7;border-radius:12px;padding:18px 20px;margin:32px 0;display:flex;align-items:flex-start;gap:12px">
+      <span style="font-size:1.4rem;flex-shrink:0">💡</span>
+      <div>
+        <p style="font-size:.88rem;color:#1b4332;line-height:1.6"><strong>Hecke als Sichtschutz geplant?</strong> Was die Bepflanzung einer Hecke kostet, erklärt <a href="https://gartenbau-kosten.de/hecke/hecke-bepflanzung-kosten/" target="_blank" rel="noopener" style="color:#2d6a4f;font-weight:600">gartenbau-kosten.de → Hecke Bepflanzung Kosten</a></p>
+      </div>
+    </div>` : '';
   const cfg = katCfg(artikel.kategorie);
   const lesezeit = readingTime(artikel.inhalt);
 
@@ -2389,8 +2742,23 @@ app.get('/ratgeber/:slug', (req, res) => {
     "mainEntityOfPage": `https://www.staudenplan.de/ratgeber/${slug}`
   });
 
+  // Botanische Pflanzennamen im Artikeltext automatisch verlinken
+  let artikelInhalt = artikel.inhalt;
+  try {
+    const pflanzenLinks = db.prepare('SELECT name_botanisch FROM pflanzen WHERE name_botanisch IS NOT NULL ORDER BY length(name_botanisch) DESC').all();
+    for (const { name_botanisch } of pflanzenLinks) {
+      const idx = artikelInhalt.indexOf(name_botanisch);
+      if (idx !== -1) {
+        const s = pflanzeToSlug(name_botanisch);
+        artikelInhalt = artikelInhalt.substring(0, idx) +
+          `<a href="/pflanze/${s}" style="color:#2d6a4f;font-weight:600;text-decoration:none;border-bottom:1px solid #b7e4c7">${name_botanisch}</a>` +
+          artikelInhalt.substring(idx + name_botanisch.length);
+      }
+    }
+  } catch {}
+
   // Absätze mit Pull-Quote auf zweitem Absatz
-  const absaetzeRaw = artikel.inhalt.split('\n').filter(l => l.trim());
+  const absaetzeRaw = artikelInhalt.split('\n').filter(l => l.trim());
   const absaetze = absaetzeRaw.map((t, i) => {
     if (i === 0) return `<p style="font-size:1.08rem;line-height:1.8;color:#222;margin-bottom:20px;font-weight:400">${t}</p>`;
     if (i === 1) return `<blockquote style="border-left:4px solid #52b788;background:#f0fdf4;border-radius:0 10px 10px 0;padding:18px 20px;margin:28px 0;font-size:1rem;line-height:1.7;color:#1b4332;font-style:italic">${t}</blockquote>`;
@@ -2477,6 +2845,7 @@ app.get('/ratgeber/:slug', (req, res) => {
         <a href="/" style="background:#fff;color:#1b4332;border-radius:50px;padding:11px 28px;text-decoration:none;font-weight:700;font-size:.9rem;display:inline-block">Jetzt kostenlosen Plan erstellen →</a>
       </div>
 
+      ${heckenKostenHtml}
       ${passendePflanzenHtml}
       ${verwandteHtml}
     </article>
