@@ -989,7 +989,7 @@ app.post('/api/anfrage', anfrageLimiter, async (req, res) => {
     return res.status(500).json({ error: 'Datenbankfehler beim Speichern.' });
   }
 
-  const pflanzenListe = ki_plan?.pflanzen
+  const pflanzenListe = Array.isArray(ki_plan?.pflanzen)
     ? ki_plan.pflanzen.map(p =>
         `  • ${p.stueckzahl}x ${p.name_deutsch} (${p.name_botanisch}) — ca. ${(p.preis_stueck_eur * p.stueckzahl).toFixed(2)} €`
       ).join('\n')
