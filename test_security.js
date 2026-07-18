@@ -47,6 +47,8 @@ async function main() {
     '/api/ki-bilder-starten',
     '/api/bildcheck-starten',
     '/api/kandidaten-starten',
+    '/api/bild-approve/999999',
+    '/api/antwort-generieren',
   ];
   for (const route of adminActionRoutes) {
     r = await fetch(BASE + route, { method: 'POST' });
@@ -54,6 +56,12 @@ async function main() {
   }
   r = await fetch(BASE + '/api/kandidaten-starten?pw=' + encodeURIComponent(ADMIN_PW), { method: 'POST' });
   expect('Mit richtigem Passwort funktioniert die Aktion weiterhin (200)', r.status === 200, 'status=' + r.status);
+  r = await fetch(BASE + '/api/bild-approve/999999?pw=' + encodeURIComponent(ADMIN_PW), { method: 'POST' });
+  expect('bild-approve mit richtigem Passwort erreicht die Route (404 statt 401 — kein offener Vorschlag für die Fake-ID)', r.status === 404, 'status=' + r.status);
+  r = await fetch(BASE + '/api/antwort-generieren?pw=' + encodeURIComponent(ADMIN_PW), {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+  });
+  expect('antwort-generieren mit richtigem Passwort erreicht die Route (400 statt 401 — "frage" fehlt; kein echter KI-Call im Test)', r.status === 400, 'status=' + r.status);
 
   console.log('\n3) /api/anfrage — serverseitige E-Mail-Validierung …');
   r = await fetch(BASE + '/api/anfrage', {
@@ -83,6 +91,10 @@ async function main() {
   expect('X-Content-Type-Options gesetzt', r.headers.get('x-content-type-options') === 'nosniff');
   expect('Strict-Transport-Security gesetzt', !!r.headers.get('strict-transport-security'));
   expect('X-Powered-By nicht gesetzt (kein Express-Fingerprinting)', !r.headers.get('x-powered-by'));
+  const csp = r.headers.get('content-security-policy') || '';
+  expect('CSP gesetzt mit default-src \'self\'', csp.includes("default-src 'self'"), 'csp=' + csp);
+  expect('CSP erlaubt Plausible (script+connect), sonst keine fremden Hosts', csp.includes('https://plausible.io'));
+  expect('CSP blockt object-src (Plugin-Angriffe)', csp.includes("object-src 'none'"));
 
   console.log('\nAufräumen: Test-Anfrage aus der DB entfernen …');
   const db = new Database(path.join(__dirname, 'stauden.db'));

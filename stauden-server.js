@@ -18,13 +18,29 @@ app.disable('x-powered-by');
 
 app.use(express.json());
 
-// Security-Header (kein CSP: Seite nutzt durchgängig Inline-Styles/-Scripts,
-// eine korrekte CSP-Policy dafür ist ein eigenes Vorhaben)
+// Security-Header. CSP erlaubt 'unsafe-inline' für script/style, weil die Seite
+// durchgängig Inline-<script>/-style="" nutzt (kein Nonce/Hash-Rewrite ohne
+// Komplettumbau möglich) — blockt aber trotzdem das Nachladen fremder Scripts/
+// Bilder/Frames sowie Base-Tag- und Clickjacking-Angriffe. Externe Ressourcen der
+// Seite: nur Plausible Analytics (Script + Beacon), alle Bilder sind self-hosted.
+const CSP = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' https://plausible.io",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data:",
+  "font-src 'self' data:",
+  "connect-src 'self' https://plausible.io",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'self'",
+].join('; ');
 app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader('Content-Security-Policy', CSP);
   next();
 });
 
@@ -1533,13 +1549,13 @@ Für die konkrete Planung mit Pflanzliste, Abständen und Stückzahlen nutze ich
   }
   async function approve(id,btn){
     const orig=btn.textContent; btn.innerHTML='<span class=spinner></span>'; btn.disabled=true;
-    const r=await fetch('/api/bild-approve/'+id,{method:'POST'});
+    const r=await fetch('/api/bild-approve/'+id+'?pw='+encodeURIComponent(ADMIN_PW),{method:'POST'});
     if(r.ok){ hideCard(id); }
     else{ btn.textContent=orig; btn.disabled=false; alert('Fehler'); }
   }
   async function reject(id,btn){
     const orig=btn.textContent; btn.textContent='⏳'; btn.disabled=true;
-    const r=await fetch('/api/bild-reject/'+id,{method:'POST'});
+    const r=await fetch('/api/ki-bild-ablehnen/'+id+'?pw='+encodeURIComponent(ADMIN_PW),{method:'POST'});
     if(r.ok){ hideCard(id); }
     else{ btn.textContent=orig; btn.disabled=false; alert('Fehler'); }
   }
@@ -1619,7 +1635,7 @@ Für die konkrete Planung mit Pflanzliste, Abständen und Stückzahlen nutze ich
     btn.disabled = true; btn.textContent = '⏳ …';
     status.textContent = 'KI arbeitet…';
     try {
-      const resp = await fetch('/api/antwort-generieren?key=preview2026', {
+      const resp = await fetch('/api/antwort-generieren?pw=' + encodeURIComponent(ADMIN_PW), {
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ frage })
       });
@@ -1651,6 +1667,19 @@ app.post('/api/ki-bild-vorschlag/:id', adminActionLimiter, (req, res) => {
     `--ids=${id}`, '--keep-live'
   ], { cwd: __dirname, detached: true, stdio: 'ignore' });
   child.unref();
+  res.json({ ok: true });
+});
+
+// Bild-Vorschlag übernehmen: wird zum neuen bild_url, Vorschlag wird geleert
+app.post('/api/bild-approve/:id', adminActionLimiter, (req, res) => {
+  if (!checkAdminPw(req, res)) return;
+  const id = parseInt(req.params.id);
+  if (!id) return res.status(400).json({ error: 'id fehlt' });
+  const p = db.prepare('SELECT bild_vorschlag, bild_ki FROM pflanzen WHERE id=?').get(id);
+  if (!p || !p.bild_vorschlag) return res.status(404).json({ error: 'Kein offener Vorschlag.' });
+  db.prepare(
+    `UPDATE pflanzen SET bild_url=?, bild_vorschlag=NULL, bild_check_info=NULL, bild_geprueft=1${p.bild_ki ? ", bild_lizenz='KI-generiert / OpenAI'" : ''} WHERE id=?`
+  ).run(p.bild_vorschlag, id);
   res.json({ ok: true });
 });
 
@@ -1698,6 +1727,27 @@ app.post('/api/kandidaten-starten', adminActionLimiter, (req, res) => {
   ], { cwd: __dirname, detached: true, stdio: 'ignore' });
   child.unref();
   res.json({ ok: true });
+});
+
+// Vorlagen-Tab: Kundenfrage -> KI-Antwortentwurf zum Copy-Paste
+app.post('/api/antwort-generieren', adminActionLimiter, async (req, res) => {
+  if (!checkAdminPw(req, res)) return;
+  const { frage } = req.body;
+  if (!frage || typeof frage !== 'string') return res.status(400).json({ error: 'frage fehlt' });
+  try {
+    const completion = await getOpenAI().chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        { role: 'system', content: 'Du bist Gartenberater bei Staudenplan.de, einem Anbieter für KI-gestützte Bepflanzungspläne mit Pflanzenlieferung. Ein potenzieller Kunde hat eine Frage per E-Mail/Chat gestellt. Schreibe eine freundliche, fachlich fundierte, aber knappe Antwort (max. 150 Wörter) auf Deutsch, die konkret auf die Frage eingeht und beiläufig auf das kostenlose KI-Planungstool auf staudenplan.de hinweist. Kein Briefkopf, keine Anrede-/Grußformel-Floskeln — nur der copy-paste-fertige Fließtext.' },
+        { role: 'user', content: frage },
+      ],
+      temperature: 0.6,
+    });
+    res.json({ antwort: completion.choices[0].message.content });
+  } catch (err) {
+    console.error('Antwort-Generieren Fehler:', err.message);
+    res.status(500).json({ error: 'KI-Generierung fehlgeschlagen.' });
+  }
 });
 
 // ─── Pflanzenseiten (SEO) ─────────────────────────────────────────────────────
