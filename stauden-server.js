@@ -10,7 +10,23 @@ const fs = require('fs');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// nginx läuft als einziger Reverse-Proxy davor (siehe DEPLOY.md) — ohne das hier
+// gruppiert express-rate-limit alle Besucher unter der nginx-Loopback-Adresse in
+// einen einzigen Rate-Limit-Bucket statt pro echter Client-IP.
+app.set('trust proxy', 1);
+app.disable('x-powered-by');
+
 app.use(express.json());
+
+// Security-Header (kein CSP: Seite nutzt durchgängig Inline-Styles/-Scripts,
+// eine korrekte CSP-Policy dafür ist ein eigenes Vorhaben)
+app.use((req, res, next) => {
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  next();
+});
 
 // www-Redirect: staudenplan.de → www.staudenplan.de (301)
 app.use((req, res, next) => {
@@ -213,6 +229,13 @@ const anfrageLimiter = rateLimit({
 const alternativLimiter = rateLimit({
   windowMs: 5 * 60 * 1000, max: 30,
   message: { error: 'Zu viele Anfragen.' }
+});
+// Admin-Aktionen (KI-Bildgenerierung etc.) sind zusätzlich zum Passwortschutz
+// begrenzt, damit ein geleaktes/erratenes Passwort keine unbegrenzten OpenAI-Kosten
+// bzw. unbegrenzt viele Kindprozesse auf dem geteilten VPS auslösen kann.
+const adminActionLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, max: 30,
+  message: { error: 'Zu viele Admin-Aktionen.' }
 });
 
 // ─── RAG-Hilfsfunktionen ──────────────────────────────────────────────────────
@@ -971,6 +994,9 @@ app.post('/api/anfrage', anfrageLimiter, async (req, res) => {
   if (!name || !email || !plz) {
     return res.status(400).json({ error: 'Bitte Name, E-Mail und PLZ angeben.' });
   }
+  if (!/^[^\s@,]+@[^\s@,]+\.[^\s@,]+$/.test(email)) {
+    return res.status(400).json({ error: 'Bitte eine gültige E-Mail-Adresse eingeben.' });
+  }
 
   const params = gartenparameter || {};
 
@@ -1209,7 +1235,7 @@ app.get('/datenschutz', (req, res) => {
 // ─── Admin-Übersicht ─────────────────────────────────────────────────────────
 
 app.get('/admin', (req, res) => {
-  if (req.query.key !== 'preview2026') return res.status(403).send('<h2>403</h2>');
+  if (!req.query.pw || req.query.pw !== process.env.ADMIN_PASSWORT) return res.status(403).send('<h2>403</h2>');
 
   // ── Stats ──
   const stats = {
@@ -1486,6 +1512,7 @@ Für die konkrete Planung mit Pflanzliste, Abständen und Stückzahlen nutze ich
 </div>
 
 <script>
+  const ADMIN_PW = ${JSON.stringify(req.query.pw)};
   function showTab(name, el) {
     document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
     document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
@@ -1537,7 +1564,7 @@ Für die konkrete Planung mit Pflanzliste, Abständen und Stückzahlen nutze ich
   async function bildNeuLaden(btn){
     if(!confirm('Neuen Bildcheck starten? Das dauert ca. 15 Minuten.'))return;
     btn.innerHTML='<span class=spinner></span> Läuft…'; btn.disabled=true;
-    await fetch('/api/bildcheck-starten',{method:'POST'});
+    await fetch('/api/bildcheck-starten?pw='+encodeURIComponent(ADMIN_PW),{method:'POST'});
     btn.textContent='✓ Gestartet — Seite in 15 Min. neu laden';
   }
 
@@ -1554,7 +1581,7 @@ Für die konkrete Planung mit Pflanzliste, Abständen und Stückzahlen nutze ich
   async function kiVorschlagErstellen(id, btn) {
     if (!confirm('Neues KI-Bild generieren? Dauert ca. 30 Sekunden. Das aktuelle Bild bleibt bis zur Freigabe aktiv.')) return;
     btn.innerHTML = '<span class=spinner></span>'; btn.disabled = true;
-    const r = await fetch('/api/ki-bild-vorschlag/' + id, { method: 'POST' });
+    const r = await fetch('/api/ki-bild-vorschlag/' + id + '?pw=' + encodeURIComponent(ADMIN_PW), { method: 'POST' });
     if (r.ok) {
       btn.textContent = '⏳ Wird generiert…';
       setTimeout(() => {
@@ -1614,7 +1641,8 @@ Für die konkrete Planung mit Pflanzliste, Abständen und Stückzahlen nutze ich
 });
 
 // Neues KI-Bild für live Pflanze als Vorschlag generieren (Pflanze bleibt live)
-app.post('/api/ki-bild-vorschlag/:id', (req, res) => {
+app.post('/api/ki-bild-vorschlag/:id', adminActionLimiter, (req, res) => {
+  if (!checkAdminPw(req, res)) return;
   const id = parseInt(req.params.id);
   if (!id) return res.status(400).json({ error: 'id fehlt' });
   const { spawn } = require('child_process');
@@ -1627,14 +1655,16 @@ app.post('/api/ki-bild-vorschlag/:id', (req, res) => {
 });
 
 // KI-Bild ablehnen (bild_ki bleibt 1, damit nicht nochmal vorgeschlagen wird)
-app.post('/api/ki-bild-ablehnen/:id', (req, res) => {
+app.post('/api/ki-bild-ablehnen/:id', adminActionLimiter, (req, res) => {
+  if (!checkAdminPw(req, res)) return;
   const id = parseInt(req.params.id);
   db.prepare("UPDATE pflanzen SET bild_vorschlag=NULL, bild_check_info=NULL WHERE id=?").run(id);
   res.json({ ok: true });
 });
 
 // KI-Bilder generieren im Hintergrund starten
-app.post('/api/ki-bilder-starten', (req, res) => {
+app.post('/api/ki-bilder-starten', adminActionLimiter, (req, res) => {
+  if (!checkAdminPw(req, res)) return;
   const { spawn } = require('child_process');
   const child = spawn(process.execPath, [
     path.join(__dirname, 'scripts', 'generate-ki-bilder.js'), '--limit=10'
@@ -1644,7 +1674,8 @@ app.post('/api/ki-bilder-starten', (req, res) => {
 });
 
 // Bildcheck im Hintergrund starten
-app.post('/api/bildcheck-starten', (req, res) => {
+app.post('/api/bildcheck-starten', adminActionLimiter, (req, res) => {
+  if (!checkAdminPw(req, res)) return;
   // Nur Pflanzen mit offenem Vorschlag neu prüfen (nicht alle 500+ Live-Pflanzen)
   const ids = db.prepare("SELECT id FROM pflanzen WHERE bild_vorschlag IS NOT NULL AND bild_vorschlag != ''")
     .all().map(p => p.id);
@@ -1659,7 +1690,8 @@ app.post('/api/bildcheck-starten', (req, res) => {
 });
 
 // Kandidaten-Fetch im Hintergrund starten
-app.post('/api/kandidaten-starten', (req, res) => {
+app.post('/api/kandidaten-starten', adminActionLimiter, (req, res) => {
+  if (!checkAdminPw(req, res)) return;
   const { spawn } = require('child_process');
   const child = spawn(process.execPath, [
     path.join(__dirname, 'scripts', 'fetch-bild-kandidaten.js')
