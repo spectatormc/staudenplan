@@ -9,6 +9,7 @@
     "check:env": "node scripts/check-env-preflight.js",
     "check:env:strict": "node scripts/check-env-preflight.js --strict",
     "check:smoke": "node scripts/check-api-smoke.js",
+    "check:security": "node test_security.js",
     "ci:relaxed": "npm run check:env",
     "ci:strict": "npm run check:env:strict",
     "ci:smoke": "npm run check:smoke"
