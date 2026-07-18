@@ -2712,6 +2712,9 @@ app.get('/ratgeber/:slug', (req, res) => {
 
   const verwandte = alle.filter(a => a.kategorie === artikel.kategorie && a.rowid !== artikel.rowid).slice(0, 3);
 
+  // Passende Pflanzen zum Artikel (interne Verlinkung)
+  const artikelWoerter = artikel.titel.toLowerCase() + ' ' + artikel.inhalt.toLowerCase();
+
   const hatHeckenThema = artikelWoerter.includes('hecke') || artikelWoerter.includes('sichtschutz');
   const heckenKostenHtml = hatHeckenThema ? `
     <div style="background:#f0fdf4;border:1px solid #b7e4c7;border-radius:12px;padding:18px 20px;margin:32px 0;display:flex;align-items:flex-start;gap:12px">
@@ -2723,8 +2726,6 @@ app.get('/ratgeber/:slug', (req, res) => {
   const cfg = katCfg(artikel.kategorie);
   const lesezeit = readingTime(artikel.inhalt);
 
-  // Passende Pflanzen zum Artikel (interne Verlinkung)
-  const artikelWoerter = artikel.titel.toLowerCase() + ' ' + artikel.inhalt.toLowerCase();
   const passendePflanzen = db.prepare('SELECT name_deutsch, name_botanisch, bild_url, bluehzeit, licht FROM pflanzen ORDER BY RANDOM()').all()
     .filter(p => artikelWoerter.includes(p.name_deutsch.toLowerCase()) || artikelWoerter.includes((p.name_botanisch || '').split(' ')[0].toLowerCase()))
     .slice(0, 4);
