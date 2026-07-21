@@ -105,7 +105,33 @@ db.exec(`
     stil TEXT,
     quelle TEXT DEFAULT 'pdf-download'
   );
+
+  CREATE TABLE IF NOT EXISTS klicks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    erstellt_am TEXT DEFAULT (datetime('now')),
+    ziel TEXT NOT NULL,
+    pflanze TEXT
+  );
 `);
+
+// ─── Gaißmayer-Kaufweiterleitung (ersetzt Amazon-Affiliate) ───────────────────
+// Ziel-URL zentral gepflegt: sobald ein Deep-Link / eine Kooperation existiert, hier ändern.
+const GAISSMAYER_URL = 'https://www.gaissmayer.de/web/shop/';
+// Interner Zähl-Link: leitet auf Gaißmayer weiter und protokolliert den Klick pro Pflanze.
+const goLink = (botanisch) => `/go/gaissmayer?p=${encodeURIComponent(botanisch || '')}`;
+
+// ─── Schema-Migrationen (idempotent, try/catch) ───────────────────────────────
+[
+  'ALTER TABLE pflanzen ADD COLUMN feuchtigkeit TEXT',
+  'ALTER TABLE pflanzen ADD COLUMN wuchs TEXT',
+  'ALTER TABLE pflanzen ADD COLUMN lebensbereich TEXT',
+  'ALTER TABLE pflanzen ADD COLUMN breite_cm_max INTEGER',
+  'ALTER TABLE pflanzen ADD COLUMN rolle_empfehlung TEXT',
+  'ALTER TABLE pflanzen ADD COLUMN kombinationspartner TEXT',
+  'ALTER TABLE pflanzen ADD COLUMN winteraspekt TEXT',
+  'ALTER TABLE pflanzen ADD COLUMN trockenheitstoleranz TEXT',
+  'ALTER TABLE pflanzen ADD COLUMN inhalt_lang TEXT',
+].forEach(sql => { try { db.exec(sql); } catch (_) {} });
 
 // ─── SEO-Migrationen (läuft bei jedem Start, idempotent) ─────────────────────
 (function runSeoMigrations() {
@@ -446,7 +472,7 @@ Du empfiehlst ausschließlich in Deutschland winterharte Pflanzen. Antworte imme
       const kombi = p.kombinationspartner ? ` | Kombi:${p.kombinationspartner}` : '';
       return `- [${rolle}] ${p.name_deutsch} (${p.name_botanisch}): ${p.licht} | Blüte: ${p.bluehzeit || '?'} | ${p.farbe || '?'} | ${hoehe}${breite ? ' ' + breite : ''} | ${p.preis_stueck_eur || '?'}€ | Pflege: ${'★'.repeat(p.pflege_sterne || 2)}${lebensb}${kombi}${extras ? ' | ' + extras : ''}`;
     }).join('\n');
-    prompt += '\n\nKauflinks: https://www.amazon.de/s?k=BOTANISCHERNAME&tag=gartenbaukosten-21 (BOTANISCHERNAME URL-kodiert).';
+    prompt += '\n\nDas Feld "kauflink" bitte leer lassen ("") — es wird serverseitig gesetzt.';
   }
 
   if (wissen.length > 0) {
@@ -882,7 +908,7 @@ JSON-Format:
     "rolle": "Leitstaude",  // Leitstaude | Begleitstaude | Füllstaude | Geophyt
     "stueckzahl": 0,
     "preis_stueck_eur": 0.00,
-    "kauflink": "https://www.amazon.de/s?k=...&tag=gartenbaukosten-21"
+    "kauflink": ""
   }],
   "beetbeschreibung": "2–3 Sätze die den Charakter und die Gesamtwirkung des Beetes beschreiben — Stil, Farbstimmung, saisonale Höhepunkte, Atmosphäre. Formuliere so, als würdest du einem Gartenbesucher das Konzept erklären.",
   "gesamtkosten_geschaetzt": "...",
@@ -920,7 +946,7 @@ JSON-Format:
             if (Array.isArray(il.fehler) && il.fehler.length) fehler = il.fehler;
           } catch {}
         }
-        return { ...p, bild_url: dbP?.bild_url || null, pflanzabstand_cm, fehler };
+        return { ...p, kauflink: goLink(p.name_botanisch), bild_url: dbP?.bild_url || null, pflanzabstand_cm, fehler };
       });
     }
 
@@ -983,7 +1009,7 @@ app.post('/api/alternativ', alternativLimiter, (req, res) => {
     pflanze: {
       ...pflanzeOhneInhalt,
       hoehe_cm, fehler,
-      kauflink: `https://www.amazon.de/s?k=${encodeURIComponent(pflanze.name_botanisch)}&tag=gartenbaukosten-21`,
+      kauflink: goLink(pflanze.name_botanisch),
       rolle: rolle || (hoehe_cm >= 80 ? 'Leitstaude' : hoehe_cm >= 40 ? 'Begleitstaude' : 'Füllstaude'),
     }
   });
@@ -1052,6 +1078,56 @@ app.post('/api/anfrage', anfrageLimiter, async (req, res) => {
   res.json({ success: true, message: 'Anfrage erfolgreich gesendet.' });
 });
 
+// ─── Gaißmayer-Weiterleitung + Klickzählung ──────────────────────────────────
+const insertKlick = db.prepare('INSERT INTO klicks (ziel, pflanze) VALUES (?, ?)');
+app.get('/go/gaissmayer', (req, res) => {
+  const raw = typeof req.query.p === 'string' ? req.query.p : '';
+  const pflanze = raw.replace(/[^\p{L}0-9 .×'’()\-]/gu, '').trim().slice(0, 120) || null;
+  try { insertKlick.run('gaissmayer', pflanze); } catch { /* Zählung darf die Weiterleitung nie blockieren */ }
+  res.set('X-Robots-Tag', 'noindex, nofollow');
+  res.redirect(302, GAISSMAYER_URL);
+});
+
+// Admin: Klick-Statistik (gesamt + pro Pflanze, Fortschritt Richtung 100)
+app.get('/admin/klicks', (req, res) => {
+  if (!checkAdminPw(req, res)) return;
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const ZIEL = 100;
+  const gesamt = db.prepare("SELECT COUNT(*) AS n FROM klicks WHERE ziel = 'gaissmayer'").get().n;
+  const proPflanze = db.prepare(`
+    SELECT pflanze, COUNT(*) AS n, MAX(erstellt_am) AS letzter
+    FROM klicks WHERE ziel = 'gaissmayer' AND pflanze IS NOT NULL
+    GROUP BY pflanze ORDER BY n DESC, letzter DESC`).all();
+  const proTag = db.prepare(`
+    SELECT substr(erstellt_am,1,10) AS tag, COUNT(*) AS n
+    FROM klicks WHERE ziel = 'gaissmayer' GROUP BY tag ORDER BY tag DESC LIMIT 30`).all();
+  const pct = Math.min(100, Math.round(gesamt / ZIEL * 100));
+  res.send(`<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
+  <title>Gaißmayer-Klicks · Admin</title>
+  <style>body{font-family:'Segoe UI',system-ui,sans-serif;background:#f8f4ef;color:#1a1a1a;max-width:820px;margin:0 auto;padding:32px 20px}
+  h1{color:#1b4332;font-size:1.5rem}h2{font-size:1.05rem;color:#1b4332;margin-top:28px}
+  .big{font-size:3rem;font-weight:800;color:#2d6a4f;line-height:1}
+  .bar{background:#e5e0d8;border-radius:50px;height:22px;overflow:hidden;margin:12px 0 4px}
+  .bar>span{display:block;height:100%;background:linear-gradient(90deg,#52b788,#1b4332)}
+  table{width:100%;border-collapse:collapse;margin-top:12px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.06)}
+  th,td{text-align:left;padding:10px 14px;border-bottom:1px solid #eee;font-size:.9rem}
+  th{background:#1b4332;color:#fff}td:nth-child(2),th:nth-child(2){text-align:right;font-weight:700}
+  .muted{color:#999;font-size:.82rem}</style></head><body>
+  <h1>🌿 Gaißmayer-Kaufklicks</h1>
+  <div class="big">${gesamt}<span style="font-size:1rem;color:#999;font-weight:400"> / ${ZIEL}</span></div>
+  <div class="bar"><span style="width:${pct}%"></span></div>
+  <p class="muted">${pct}% des Ziels${gesamt >= ZIEL ? ' — erreicht! Gaißmayer kann jetzt mit Daten angesprochen werden 🎉' : ''}</p>
+  <h2>Nachfrage pro Pflanze</h2>
+  ${proPflanze.length ? `<table><tr><th>Pflanze (botanisch)</th><th>Klicks</th><th>Letzter Klick</th></tr>
+  ${proPflanze.map(r => `<tr><td>${esc(r.pflanze)}</td><td>${r.n}</td><td class="muted">${esc(r.letzter)}</td></tr>`).join('')}</table>`
+    : '<p class="muted">Noch keine Klicks erfasst.</p>'}
+  <h2>Klicks pro Tag (letzte 30)</h2>
+  ${proTag.length ? `<table><tr><th>Tag</th><th>Klicks</th></tr>
+  ${proTag.map(r => `<tr><td>${esc(r.tag)}</td><td>${r.n}</td></tr>`).join('')}</table>` : '<p class="muted">—</p>'}
+  </body></html>`);
+});
+
 // ─── robots.txt ──────────────────────────────────────────────────────────────
 // ─── IndexNow ─────────────────────────────────────────────────────────────────
 const INDEXNOW_KEY = '57b3c160fda14faa96ad948cb07805aa';
@@ -1063,7 +1139,7 @@ app.get(`/${INDEXNOW_KEY}.txt`, (req, res) => {
 app.get('/robots.txt', (req, res) => {
   const base = process.env.SITE_URL || `${req.protocol}://${req.hostname}`;
   res.type('text/plain');
-  res.send(`User-agent: *\nAllow: /\nSitemap: ${base}/sitemap.xml\n`);
+  res.send(`User-agent: *\nAllow: /\nDisallow: /go/\nSitemap: ${base}/sitemap.xml\n`);
 });
 
 // ─── Sitemap.xml ──────────────────────────────────────────────────────────────
@@ -1234,11 +1310,10 @@ app.get('/datenschutz', (req, res) => {
     <h2>5. Webanalyse (Plausible)</h2>
     <p>Diese Website nutzt <strong>Plausible Analytics</strong> zur datenschutzfreundlichen Besucherstatistik. Plausible erhebt keine personenbezogenen Daten, setzt keine Cookies und ist vollständig DSGVO-konform. Es werden ausschließlich aggregierte, anonymisierte Seitenaufrufstatistiken erfasst (Seitenaufrufe, Verweildauer, Herkunftsland). Ihre IP-Adresse wird dabei nicht gespeichert. Betreiber: Plausible Insights OÜ, Västriku tn 2, 50403 Tartu, Estland. Weitere Informationen: <a href="https://plausible.io/data-policy" target="_blank" rel="noopener">plausible.io/data-policy</a></p>
     <h2>6. Cookies</h2>
-    <p>Diese Website verwendet keine eigenen Tracking-Cookies und keine Werbe-Cookies. Es werden ausschließlich technisch notwendige Funktionen ohne Cookie-Einsatz verwendet. Bitte beachten Sie, dass externe Websites (z.B. Amazon.de), die Sie über Links auf dieser Website aufrufen, eigene Cookies setzen können. Für diese gilt die jeweilige Datenschutzerklärung des Anbieters.</p>
-    <h2>6. Affiliate-Links (Amazon Associates)</h2>
-    <p>Diese Website nimmt am Amazon-Partnerprogramm (Amazon Associates) teil, einem Partnerwerbeprogramm, das für Websites konzipiert wurde, mittels dessen durch die Platzierung von Werbeanzeigen und Links zu Amazon.de Werbekostenerstattungen verdient werden können.</p>
-    <p><strong>Als Amazon-Partner verdiene ich an qualifizierten Käufen.</strong> Das bedeutet: Wenn Sie über einen unserer Kauflinks zu Amazon.de weitergeleitet werden und dort einen Kauf tätigen, erhalten wir eine Provision. Für Sie entstehen dabei keine zusätzlichen Kosten.</p>
-    <p>Wenn Sie einen Amazon-Link auf dieser Website anklicken, wird Ihre IP-Adresse an Amazon übertragen. Amazon kann dabei Cookies setzen, um Käufe Ihrem Klick zuzuordnen. Verantwortlich für diese Datenverarbeitung ist die Amazon Europe Core S.à.r.l., 38 avenue John F. Kennedy, L-1855 Luxemburg. Die Datenschutzerklärung von Amazon finden Sie unter: <a href="https://www.amazon.de/gp/help/customer/display.html?nodeId=201909010" target="_blank" rel="noopener">amazon.de/privacy</a></p>
+    <p>Diese Website verwendet keine eigenen Tracking-Cookies und keine Werbe-Cookies. Es werden ausschließlich technisch notwendige Funktionen ohne Cookie-Einsatz verwendet. Bitte beachten Sie, dass externe Websites (z.B. die verlinkte Staudengärtnerei Gaißmayer), die Sie über Links auf dieser Website aufrufen, eigene Cookies setzen können. Für diese gilt die jeweilige Datenschutzerklärung des Anbieters.</p>
+    <h2>6. Empfehlungslinks (Staudengärtnerei)</h2>
+    <p>Diese Website verweist von einzelnen Pflanzenseiten sowie aus den KI-Bepflanzungsplänen auf die Staudengärtnerei Gaißmayer (gaissmayer.de), damit Sie die vorgestellten Stauden dort beziehen können. Es handelt sich um redaktionelle Empfehlungslinks. <strong>Es besteht derzeit keine bezahlte Partnerschaft und wir erhalten für diese Verweise keine Provision.</strong></p>
+    <p>Wenn Sie einen solchen Link anklicken, werden Sie über eine interne Weiterleitung (/go/…) zum Angebot des Drittanbieters geführt. Wir zählen dabei anonym und ohne Cookies mit, welche Pflanze angeklickt wurde; personenbezogene Daten (z.B. Ihre IP-Adresse) werden hierbei nicht gespeichert. Auf der Zielseite gilt die Datenschutzerklärung des jeweiligen Anbieters.</p>
     <h2>7. Externe Links</h2>
     <p>Diese Website enthält Links zu externen Websites. Für den Inhalt dieser externen Seiten sind ausschließlich deren Betreiber verantwortlich. Zum Zeitpunkt der Verlinkung wurden die Seiten auf mögliche Rechtsverstöße überprüft — eine permanente inhaltliche Kontrolle ist ohne konkrete Anhaltspunkte nicht zumutbar.</p>
     <p style="margin-top:24px;color:#aaa;font-size:.83rem">Stand: ${new Date().toLocaleDateString('de-DE', {month:'long',year:'numeric'})}</p>
@@ -2069,7 +2144,7 @@ app.get('/pflanze/:slug', (req, res) => {
 
   if (!pflanze) return res.status(404).send('<h2>Pflanze nicht gefunden. <a href="/pflanzen">Zurück zum Lexikon</a></h2>');
 
-  const kauflink = `https://www.amazon.de/s?k=${encodeURIComponent(pflanze.name_botanisch)}&tag=gartenbaukosten-21`;
+  const kauflink = goLink(pflanze.name_botanisch);
   const aehnliche = db.prepare(`
     SELECT name_deutsch, name_botanisch FROM pflanzen
     WHERE licht LIKE ? AND id != ? ORDER BY RANDOM() LIMIT 6
@@ -2269,7 +2344,7 @@ app.get('/pflanze/:slug', (req, res) => {
 
         <!-- CTA Buttons -->
         <div style="display:flex;gap:10px;flex-wrap:wrap">
-          <a href="${kauflink}" target="_blank" rel="noopener sponsored" style="background:#6b4226;color:#fff;border-radius:50px;padding:13px 28px;text-decoration:none;font-weight:700;font-size:.9rem;transition:background .15s">Bei Amazon kaufen →</a>
+          <a href="${kauflink}" target="_blank" rel="noopener nofollow" style="background:#6b4226;color:#fff;border-radius:50px;padding:13px 28px;text-decoration:none;font-weight:700;font-size:.9rem;transition:background .15s">In der Gärtnerei ansehen →</a>
           <button id="wl-btn" onclick="addToWunschliste()" style="background:#2d6a4f;color:#fff;border:none;border-radius:50px;padding:13px 28px;font-weight:700;font-size:.9rem;cursor:pointer;transition:background .2s">🌿 Zur Wunschliste</button>
           <script>
           (function(){
@@ -2281,7 +2356,7 @@ app.get('/pflanze/:slug', (req, res) => {
           })();
           </script>
         </div>
-        <p style="font-size:.72rem;color:#bbb;margin-top:8px">* Als Amazon-Partner verdienen wir an qualifizierten Käufen.
+        <p style="font-size:.72rem;color:#bbb;margin-top:8px">Externer Link zur Staudengärtnerei Gaißmayer.</p>
         </div>
       </div>
     </div>
@@ -3251,7 +3326,7 @@ function renderBeispielPlanSSR(plan, flaeche) {
           <span>Pflege: <span class="pflege-sterne">${stars}</span></span>
           <strong>${preis} €</strong>
         </div>
-        <a class="btn-kaufen" href="${p.kauflink||'/'}" target="_blank" rel="noopener">Kaufen →</a>
+        <a class="btn-kaufen" href="${p.name_botanisch ? goLink(p.name_botanisch) : (p.kauflink||'/')}" target="_blank" rel="noopener nofollow">Kaufen →</a>
       </div>
     </div>`;
   }).join('');

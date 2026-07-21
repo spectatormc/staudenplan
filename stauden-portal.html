@@ -2637,6 +2637,7 @@
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'Unbekannter Fehler');
+      if (window.plausible) plausible('Plan erstellt');
       currentPlan = data.plan;
       // Leitstauden immer mind. 3 Exemplare (Profipraxis)
       currentPlan.pflanzen.forEach(p => {
@@ -4039,7 +4040,7 @@
             <span>Pflege: <span class="pflege-sterne">${'★'.repeat(stars)}${'☆'.repeat(3-stars)}</span></span>
             <strong id="preis-${i}">${((p.preis_stueck_eur||0) * (p.stueckzahl||1)).toFixed(2)} €</strong>
           </div>
-          <a class="btn-kaufen" href="${p.kauflink}" target="_blank" rel="noopener">Kaufen →</a>
+          <a class="btn-kaufen" href="${p.kauflink}" target="_blank" rel="noopener nofollow">Kaufen →</a>
           <button class="btn-alt" data-idx="${i}" onclick="alternativVorschlagen(${i})">🔄 Alternative vorschlagen</button>
           ${p.fehler && p.fehler.length ? `<details class="pflanze-fehler"><summary>⚠️ Häufige Fehler (${p.fehler.length})</summary><ul>${p.fehler.map(f=>`<li>${f}</li>`).join('')}</ul></details>` : ''}
         </div>
@@ -4170,6 +4171,7 @@
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'Fehler beim Senden.');
 
+      if (window.plausible) plausible('Anfrage');
       document.getElementById('modal-content').innerHTML = `
         <div class="success-msg">
           <div class="success-icon">✅</div>
