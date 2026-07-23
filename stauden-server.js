@@ -856,7 +856,7 @@ app.post('/api/plan', planLimiter, async (req, res) => {
     : null;
 
   const vielfaltAnweisung = (() => {
-    if (vielfalt === 'wenig') return `Empfehle exakt 3–4 geeignete, winterharte Stauden. Setze auf wenige, klar strukturierte Arten mit hoher Wiederholung — ruhige, schlichte Beetwirkung.`;
+    if (vielfalt === 'wenig') return `Empfehle 6–7 winterharte Stauden — bewusst wenige Arten für eine ruhige, klar strukturierte Wirkung, dafür mit hoher Wiederholung in großen Gruppen. Das ist die kleinstmögliche Auswahl, die noch alle Schichten erfüllt (mind. 1 Leitstaude, 3 Begleitstauden, 2 Füllstauden).`;
     if (vielfalt === 'viel') return `Empfehle mindestens 8 verschiedene, winterharte Stauden — bei Flächen über 20 m² gerne bis zu 20 Arten. Maximale Artenvielfalt, kleine Gruppen je Art, hohe Biodiversität.`;
     return `Empfehle 5–8 geeignete, winterharte Stauden.`;
   })();
@@ -918,25 +918,48 @@ JSON-Format:
 }`;
 
   try {
-    const completion = await getOpenAI().chat.completions.create({
-      model: 'gpt-4o',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
-      ],
-      temperature: 0.6,
-      response_format: { type: 'json_object' }
-    });
+    // Generierung mit max_tokens-Backstop und EINEM automatischen Retry bei ungültigem JSON.
+    // (max_tokens großzügig: verhindert Runaway, ohne realistische Pläne zu kürzen.)
+    let plan = null;
+    for (let attempt = 1; attempt <= 2 && !plan; attempt++) {
+      const completion = await getOpenAI().chat.completions.create({
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.6,
+        max_tokens: 8000,
+        response_format: { type: 'json_object' }
+      });
+      try {
+        plan = JSON.parse(completion.choices[0].message.content);
+      } catch (parseErr) {
+        console.warn(`Plan-JSON ungültig (Versuch ${attempt}/2): ${parseErr.message}`);
+      }
+    }
+    if (!plan) {
+      return res.status(500).json({ error: 'Fehler bei der KI-Planung. Bitte versuche es erneut.' });
+    }
 
-    const plan = JSON.parse(completion.choices[0].message.content);
-
-    // Bilder + Pflanzabstand aus DB anreichern
+    // Bilder, Pflanzabstand UND Preis aus DB anreichern.
+    // Der Preis ist die einzige kaufrelevante Zahl, die früher ungeprüft vom Modell durchlief —
+    // die DB ist hier die Wahrheit, nicht die KI. Alle Preisanzeigen im Frontend hängen daran.
     if (Array.isArray(plan.pflanzen)) {
       plan.pflanzen = plan.pflanzen.map(p => {
-        const genus = p.name_botanisch.split(' ')[0];
-        const dbP = db.prepare(
-          'SELECT bild_url, inhalt_lang FROM pflanzen WHERE name_botanisch = ? OR name_botanisch LIKE ? LIMIT 1'
-        ).get(p.name_botanisch, `${genus}%`);
+        const nameBot = (p.name_botanisch || '').trim();
+        const genus = nameBot.split(' ')[0] || '';
+        const binomial = nameBot.split(' ').slice(0, 2).join(' ') || genus;
+        let dbP = null;
+        if (genus) {
+          // Bester Treffer zuerst: exakt → gleiche Art (Gattung+Art) → nur Gattung
+          dbP = db.prepare(
+            `SELECT name_botanisch, bild_url, inhalt_lang, preis_stueck_eur FROM pflanzen
+             WHERE name_botanisch = ? OR name_botanisch LIKE ? OR name_botanisch LIKE ?
+             ORDER BY CASE WHEN name_botanisch = ? THEN 0 WHEN name_botanisch LIKE ? THEN 1 ELSE 2 END
+             LIMIT 1`
+          ).get(nameBot, `${binomial}%`, `${genus}%`, nameBot, `${binomial}%`);
+        }
         let pflanzabstand_cm = null, fehler = null;
         if (dbP?.inhalt_lang) {
           try {
@@ -946,8 +969,21 @@ JSON-Format:
             if (Array.isArray(il.fehler) && il.fehler.length) fehler = il.fehler;
           } catch {}
         }
-        return { ...p, kauflink: goLink(p.name_botanisch), bild_url: dbP?.bild_url || null, pflanzabstand_cm, fehler };
+        // Preis nur aus DB übernehmen, wenn der Treffer auf Artebene passt (exakt oder gleiche Art).
+        // Ein reiner Gattungstreffer ist eine andere Pflanze → dann bleibt der Modellwert stehen.
+        const artTreffer = dbP && dbP.name_botanisch &&
+          dbP.name_botanisch.toLowerCase().startsWith(binomial.toLowerCase());
+        const preis_stueck_eur = (artTreffer && dbP.preis_stueck_eur != null)
+          ? dbP.preis_stueck_eur
+          : p.preis_stueck_eur;
+        return { ...p, preis_stueck_eur, kauflink: goLink(nameBot), bild_url: dbP?.bild_url || null, pflanzabstand_cm, fehler };
       });
+
+      // Gesamtkosten serverseitig aus (DB-)Preisen × Stückzahl — konsistent mit dem Frontend,
+      // kein frei erfundener Modell-String mehr.
+      plan.gesamtkosten_geschaetzt = plan.pflanzen.reduce(
+        (s, p) => s + (p.preis_stueck_eur || 0) * (p.stueckzahl || 1), 0
+      );
     }
 
     res.json({ success: true, plan, rag: { kandidaten: kandidaten.length, wissen: wissen.length } });
