@@ -4239,5 +4239,95 @@
     <button onclick="closeEmailGate()" style="background:none;border:none;color:#aaa;font-size:.85rem;cursor:pointer">Abbrechen</button>
   </div>
 </div>
+<!-- Feedback-Widget (unten rechts) -->
+<style>
+#fb-fab { position:fixed; right:20px; bottom:20px; width:56px; height:56px; border-radius:50%;
+  background:linear-gradient(135deg,#2d6a4f,#1b4332); color:#fff; border:none; cursor:pointer;
+  box-shadow:0 6px 20px rgba(0,0,0,.25); font-size:1.5rem; z-index:4000; display:flex;
+  align-items:center; justify-content:center; transition:transform .15s, box-shadow .15s; }
+#fb-fab:hover { transform:translateY(-2px) scale(1.05); box-shadow:0 10px 28px rgba(0,0,0,.3); }
+#fb-panel { position:fixed; right:20px; bottom:88px; width:340px; max-width:calc(100vw - 40px);
+  background:#fff; border-radius:16px; box-shadow:0 16px 48px rgba(0,0,0,.28); z-index:4001;
+  overflow:hidden; display:none; }
+#fb-panel.open { display:block; animation:fbIn .18s ease; }
+@keyframes fbIn { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
+.fb-head { background:linear-gradient(135deg,#2d6a4f,#1b4332); color:#fff; padding:16px 18px;
+  display:flex; gap:10px; align-items:flex-start; justify-content:space-between; }
+.fb-title { font-weight:800; font-size:1rem; line-height:1.3; }
+.fb-sub { font-size:.78rem; opacity:.85; margin-top:4px; line-height:1.45; }
+.fb-close { background:none; border:none; color:#fff; font-size:1.4rem; line-height:1; cursor:pointer;
+  opacity:.8; padding:0 2px; }
+.fb-close:hover { opacity:1; }
+#fb-body { padding:16px 18px; }
+#fb-msg { width:100%; box-sizing:border-box; min-height:96px; resize:vertical; padding:11px 13px;
+  border:2px solid #e0d9cf; border-radius:10px; font-size:.92rem; font-family:inherit; outline:none; }
+#fb-email { width:100%; box-sizing:border-box; margin-top:10px; padding:11px 13px;
+  border:2px solid #e0d9cf; border-radius:10px; font-size:.9rem; outline:none; }
+#fb-msg:focus, #fb-email:focus { border-color:#2d6a4f; }
+.fb-err { color:#e53e3e; font-size:.82rem; min-height:16px; margin:8px 0 4px; display:none; }
+#fb-send { width:100%; margin-top:10px; background:linear-gradient(135deg,#2d6a4f,#1b4332); color:#fff;
+  border:none; border-radius:12px; padding:13px; font-size:.95rem; font-weight:700; cursor:pointer;
+  transition:opacity .15s; }
+#fb-send:hover { opacity:.92; }
+#fb-send:disabled { opacity:.6; cursor:default; }
+.fb-success { text-align:center; padding:10px 4px; }
+.fb-success .fb-ic { font-size:2.4rem; }
+.fb-success h4 { color:#1b4332; margin:8px 0 4px; font-size:1.1rem; }
+.fb-success p { color:#666; font-size:.86rem; line-height:1.5; }
+@media(max-width:480px){ #fb-panel{ right:12px; bottom:80px; } #fb-fab{ right:14px; bottom:14px; } }
+</style>
+<button id="fb-fab" onclick="fbToggle()" aria-label="Feedback geben" title="Feedback geben"><span id="fb-fab-icon">💬</span></button>
+<div id="fb-panel" role="dialog" aria-label="Feedback geben">
+  <div class="fb-head">
+    <div>
+      <div class="fb-title">Hilf uns, Staudenplan besser zu machen</div>
+      <div class="fb-sub">Was gefällt dir, was fehlt, was nervt? Wir lesen jede Nachricht.</div>
+    </div>
+    <button class="fb-close" onclick="fbToggle()" aria-label="Schließen">×</button>
+  </div>
+  <div id="fb-body">
+    <textarea id="fb-msg" placeholder="Dein Feedback …" maxlength="3000" oninput="document.getElementById('fb-err').style.display='none'"></textarea>
+    <input type="email" id="fb-email" placeholder="E-Mail (optional, falls wir antworten dürfen)">
+    <p id="fb-err" class="fb-err"></p>
+    <button id="fb-send" onclick="fbSend()">Feedback senden →</button>
+  </div>
+</div>
+<script>
+  function fbToggle() {
+    const p = document.getElementById('fb-panel');
+    const open = p.classList.toggle('open');
+    document.getElementById('fb-fab-icon').textContent = open ? '×' : '💬';
+    if (open) setTimeout(() => { try { document.getElementById('fb-msg').focus(); } catch {} }, 60);
+  }
+  async function fbSend() {
+    const errEl = document.getElementById('fb-err');
+    const btn = document.getElementById('fb-send');
+    const nachricht = document.getElementById('fb-msg').value.trim();
+    if (nachricht.length < 3) { errEl.textContent = 'Bitte gib eine kurze Nachricht ein.'; errEl.style.display = 'block'; return; }
+    const email = document.getElementById('fb-email').value.trim();
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      errEl.textContent = 'Bitte eine gültige E-Mail-Adresse eingeben (oder Feld leer lassen).';
+      errEl.style.display = 'block'; return;
+    }
+    errEl.style.display = 'none';
+    btn.disabled = true; btn.textContent = 'Wird gesendet …';
+    try {
+      const res = await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nachricht, email, seite: location.pathname + location.hash })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Senden fehlgeschlagen.');
+      if (window.plausible) plausible('Feedback');
+      document.getElementById('fb-body').innerHTML =
+        '<div class="fb-success"><div class="fb-ic">🌿</div><h4>Danke dir!</h4>'
+        + '<p>Dein Feedback ist angekommen. Es hilft uns wirklich weiter.</p></div>';
+    } catch (err) {
+      errEl.textContent = err.message; errEl.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Feedback senden →';
+    }
+  }
+</script>
 </body>
 </html>

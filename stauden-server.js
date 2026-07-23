@@ -272,6 +272,10 @@ const alternativLimiter = rateLimit({
   windowMs: 5 * 60 * 1000, max: 30,
   message: { error: 'Zu viele Anfragen.' }
 });
+const feedbackLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, max: 5,
+  message: { error: 'Zu viele Feedback-Sendungen. Bitte versuche es später erneut.' }
+});
 // Admin-Aktionen (KI-Bildgenerierung etc.) sind zusätzlich zum Passwortschutz
 // begrenzt, damit ein geleaktes/erratenes Passwort keine unbegrenzten OpenAI-Kosten
 // bzw. unbegrenzt viele Kindprozesse auf dem geteilten VPS auslösen kann.
@@ -1112,6 +1116,45 @@ app.post('/api/anfrage', anfrageLimiter, async (req, res) => {
   }
 
   res.json({ success: true, message: 'Anfrage erfolgreich gesendet.' });
+});
+
+// ─── Feedback-Widget → E-Mail an Betreiber ───────────────────────────────────
+const FEEDBACK_EMAIL = process.env.FEEDBACK_EMAIL || 'Rohrhuber@freisinger-gartenschmiede.de';
+app.post('/api/feedback', feedbackLimiter, async (req, res) => {
+  const nachricht = (req.body?.nachricht || '').toString().trim();
+  if (nachricht.length < 3) return res.status(400).json({ error: 'Bitte gib eine kurze Nachricht ein.' });
+  if (nachricht.length > 3000) return res.status(400).json({ error: 'Nachricht ist zu lang (max. 3000 Zeichen).' });
+
+  // Optionale Absender-Adresse streng validieren: kein Whitespace/Komma erlaubt →
+  // ausgeschlossen, dass über replyTo eine Header-Injection (CRLF) möglich wäre.
+  const emailRaw = (req.body?.email || '').toString().trim();
+  const absender = /^[^\s@,]+@[^\s@,]+\.[^\s@,]+$/.test(emailRaw) ? emailRaw : null;
+  const seite = (req.body?.seite || '').toString().slice(0, 200);
+
+  const text = `Neues Feedback über Staudenplan.de\n\n`
+    + `Von: ${absender || 'anonym (keine E-Mail angegeben)'}\n`
+    + `Seite: ${seite || '—'}\n`
+    + `Zeit: ${new Date().toLocaleString('de-DE', { timeZone: 'Europe/Berlin' })}\n\n`
+    + `Nachricht:\n${nachricht}`;
+
+  if (process.env.EMAIL_USER) {
+    try {
+      await transporter.sendMail({
+        from: process.env.EMAIL_USER,
+        to: FEEDBACK_EMAIL,
+        replyTo: absender || undefined,
+        subject: 'Feedback Staudenplan.de',
+        text,
+      });
+    } catch (err) {
+      console.error('Feedback-E-Mail Fehler:', err.message);
+      return res.status(500).json({ error: 'Feedback konnte nicht gesendet werden. Bitte später erneut versuchen.' });
+    }
+  } else {
+    console.log('--- Feedback (kein SMTP konfiguriert) ---\n' + text);
+  }
+
+  res.json({ success: true });
 });
 
 // ─── Gaißmayer-Weiterleitung + Klickzählung ──────────────────────────────────
