@@ -952,8 +952,11 @@ JSON-Format:
     if (Array.isArray(plan.pflanzen)) {
       plan.pflanzen = plan.pflanzen.map(p => {
         const nameBot = (p.name_botanisch || '').trim();
-        const genus = nameBot.split(' ')[0] || '';
-        const binomial = nameBot.split(' ').slice(0, 2).join(' ') || genus;
+        // Hybrid-Marker (× / x) herausfiltern, damit z.B. "Nepeta x faassenii"
+        // auf den DB-Eintrag "Nepeta faassenii" matcht (DB führt Hybride ohne Marker).
+        const tokens = nameBot.split(/\s+/).filter(t => t && t !== 'x' && t !== 'X' && t !== '×');
+        const genus = tokens[0] || '';
+        const binomial = tokens.slice(0, 2).join(' ') || genus;
         let dbP = null;
         if (genus) {
           // Bester Treffer zuerst: exakt → gleiche Art (Gattung+Art) → nur Gattung
