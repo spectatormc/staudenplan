@@ -1107,7 +1107,7 @@ app.post('/api/anfrage', anfrageLimiter, async (req, res) => {
     : '  — keine Pflanzenliste vorhanden';
 
   const betreiberText = `Neue Bepflanzungsanfrage\n\nName: ${name}\nE-Mail: ${email}\nPLZ: ${plz}\nTelefon: ${telefon || '—'}\n\nGartenparameter:\n  Fläche: ${params.gartenflaeche || '—'} m²\n  Licht: ${params.licht || '—'}\n  Boden: ${params.boden || '—'}\n  Stil: ${params.stil || '—'}\n  Farbe: ${params.farbe || '—'}\n  Saison: ${params.saison || '—'}\n\nEmpfohlene Pflanzen:\n${pflanzenListe}\n\nGeschätzte Gesamtkosten: ${ki_plan?.gesamtkosten_geschaetzt || '—'}\n\nAnmerkungen:\n  ${anmerkungen || '—'}`;
-  const kundenText = `Hallo ${name},\n\nvielen Dank für Ihre Anfrage! Wir haben Ihren persönlichen Bepflanzungsplan erhalten und melden uns in Kürze mit einem konkreten Angebot für die Lieferung Ihrer Stauden.\n\nIhr Bepflanzungsplan umfasst:\n${pflanzenListe}\n\nGeschätzte Gesamtkosten: ${ki_plan?.gesamtkosten_geschaetzt || 'auf Anfrage'}\n\nFreundliche Grüße\nIhr Stauden-Team`;
+  const kundenText = `Hallo ${name},\n\nvielen Dank für Ihre Anfrage! Wir haben Ihren Bepflanzungsplan erhalten und leiten ihn an unsere Gärtnerei weiter, die sich mit einem konkreten Angebot für Ihr Pflanzenpaket bei Ihnen meldet.\n\nIhr Bepflanzungsplan umfasst:\n${pflanzenListe}\n\nGeschätzte Gesamtkosten: ${ki_plan?.gesamtkosten_geschaetzt || 'auf Anfrage'}\n\nFreundliche Grüße\nIhr Staudenplan-Team`;
 
   if (process.env.EMAIL_USER && process.env.EMAIL_BETREIBER) {
     try {
@@ -1207,6 +1207,59 @@ app.get('/admin/klicks', (req, res) => {
   <h2>Klicks pro Tag (letzte 30)</h2>
   ${proTag.length ? `<table><tr><th>Tag</th><th>Klicks</th></tr>
   ${proTag.map(r => `<tr><td>${esc(r.tag)}</td><td>${r.n}</td></tr>`).join('')}</table>` : '<p class="muted">—</p>'}
+  </body></html>`);
+});
+
+// Admin: eingegangene Anfragen direkt aus der DB (geht nie verloren, auch wenn eine Mail klemmt)
+app.get('/admin/anfragen', (req, res) => {
+  if (!checkAdminPw(req, res)) return;
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  let anfragen = [];
+  try {
+    anfragen = db.prepare(`SELECT id, erstellt_am, name, email, plz, telefon, anmerkungen,
+      gartenflaeche, licht, boden, stil, farbe, saison, ki_plan
+      FROM anfragen ORDER BY id DESC LIMIT 500`).all();
+  } catch { /* Tabelle evtl. noch leer */ }
+
+  const rows = anfragen.map(a => {
+    let planInfo = '—';
+    if (a.ki_plan) {
+      try {
+        const plan = JSON.parse(a.ki_plan);
+        const n = Array.isArray(plan.pflanzen) ? plan.pflanzen.length : 0;
+        const kosten = typeof plan.gesamtkosten_geschaetzt === 'number'
+          ? Math.round(plan.gesamtkosten_geschaetzt) + ' €' : (plan.gesamtkosten_geschaetzt || '');
+        planInfo = esc(`${n} Pflanzen${kosten ? ' · ' + kosten : ''}`);
+      } catch { planInfo = '(Plan nicht lesbar)'; }
+    }
+    const garten = [a.gartenflaeche ? a.gartenflaeche + ' m²' : '', a.licht, a.stil].filter(Boolean).map(esc).join(' · ');
+    return `<tr>
+      <td class="muted">${esc(a.erstellt_am)}</td>
+      <td><strong>${esc(a.name)}</strong></td>
+      <td><a href="mailto:${esc(a.email)}">${esc(a.email)}</a></td>
+      <td>${esc(a.plz)}</td>
+      <td>${esc(a.telefon) || '—'}</td>
+      <td class="muted">${garten || '—'}</td>
+      <td>${planInfo}</td>
+      <td class="muted">${esc(a.anmerkungen) || ''}</td>
+    </tr>`;
+  }).join('');
+
+  res.send(`<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
+  <title>Anfragen · Admin</title>
+  <style>body{font-family:'Segoe UI',system-ui,sans-serif;background:#f8f4ef;color:#1a1a1a;max-width:1100px;margin:0 auto;padding:32px 20px}
+  h1{color:#1b4332;font-size:1.5rem}
+  .big{font-size:3rem;font-weight:800;color:#2d6a4f;line-height:1}
+  table{width:100%;border-collapse:collapse;margin-top:16px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.06);font-size:.88rem}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid #eee;vertical-align:top}
+  th{background:#1b4332;color:#fff;white-space:nowrap}
+  a{color:#2d6a4f}
+  .muted{color:#999;font-size:.82rem}</style></head><body>
+  <h1>🌿 Eingegangene Anfragen</h1>
+  <div class="big">${anfragen.length}</div>
+  <p class="muted">Direkt aus der Datenbank — unabhängig vom E-Mail-Versand. Neueste zuerst (max. 500).</p>
+  ${anfragen.length ? `<table><tr><th>Datum</th><th>Name</th><th>E-Mail</th><th>PLZ</th><th>Telefon</th><th>Garten</th><th>Plan</th><th>Anmerkungen</th></tr>${rows}</table>` : '<p class="muted">Noch keine Anfragen.</p>'}
   </body></html>`);
 });
 
