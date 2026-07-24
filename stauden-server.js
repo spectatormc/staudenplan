@@ -16,7 +16,7 @@ const PORT = process.env.PORT || 3000;
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
 
-app.use(express.json());
+app.use(express.json({ limit: '1mb' })); // 1mb statt Default 100kb: Anfragen tragen den ganzen ki_plan mit
 
 // Security-Header. CSP erlaubt 'unsafe-inline' für script/style, weil die Seite
 // durchgängig Inline-<script>/-style="" nutzt (kein Nonce/Hash-Rewrite ohne
