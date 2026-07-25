@@ -3,6 +3,9 @@ const express = require('express');
 const Database = require('better-sqlite3');
 const nodemailer = require('nodemailer');
 const rateLimit = require('express-rate-limit');
+// Rate-Limiter-Fabrik: nur im lokalen Eval-Modus (RATE_LIMIT_DISABLED=1) zu No-Ops,
+// damit der Eval-Harness >10 Plan-Calls fahren kann. In Prod nie gesetzt → echte Limits.
+const rl = (opts) => process.env.RATE_LIMIT_DISABLED === '1' ? ((req, res, next) => next()) : rateLimit(opts);
 const { OpenAI } = require('openai');
 const path = require('path');
 const fs = require('fs');
@@ -271,7 +274,7 @@ const transporter = nodemailer.createTransport({
 // ─── Rate Limiting ────────────────────────────────────────────────────────────
 
 // Global: max 200 Requests pro IP pro Minute (schützt vor Bot-Floods)
-app.use(rateLimit({
+app.use(rl({
   windowMs: 60 * 1000,
   max: 200,
   standardHeaders: true,
@@ -281,31 +284,31 @@ app.use(rateLimit({
 }));
 
 // /api/pflanzen: max 30 Abrufe pro Minute (verhindert automatisiertes Scraping)
-const pflanzenLimiter = rateLimit({
+const pflanzenLimiter = rl({
   windowMs: 60 * 1000, max: 30,
   message: { error: 'Zu viele Anfragen.' }
 });
 
-const planLimiter = rateLimit({
+const planLimiter = rl({
   windowMs: 15 * 60 * 1000, max: 10,
   message: { error: 'Zu viele Anfragen, bitte versuche es später erneut.' }
 });
-const anfrageLimiter = rateLimit({
+const anfrageLimiter = rl({
   windowMs: 15 * 60 * 1000, max: 5,
   message: { error: 'Zu viele Anfragen, bitte versuche es später erneut.' }
 });
-const alternativLimiter = rateLimit({
+const alternativLimiter = rl({
   windowMs: 5 * 60 * 1000, max: 30,
   message: { error: 'Zu viele Anfragen.' }
 });
-const feedbackLimiter = rateLimit({
+const feedbackLimiter = rl({
   windowMs: 60 * 60 * 1000, max: 5,
   message: { error: 'Zu viele Feedback-Sendungen. Bitte versuche es später erneut.' }
 });
 // Admin-Aktionen (KI-Bildgenerierung etc.) sind zusätzlich zum Passwortschutz
 // begrenzt, damit ein geleaktes/erratenes Passwort keine unbegrenzten OpenAI-Kosten
 // bzw. unbegrenzt viele Kindprozesse auf dem geteilten VPS auslösen kann.
-const adminActionLimiter = rateLimit({
+const adminActionLimiter = rl({
   windowMs: 60 * 60 * 1000, max: 30,
   message: { error: 'Zu viele Admin-Aktionen.' }
 });
@@ -960,7 +963,8 @@ JSON-Format:
     let plan = null;
     for (let attempt = 1; attempt <= 2 && !plan; attempt++) {
       const completion = await getOpenAI().chat.completions.create({
-        model: 'gpt-4o',
+        // Modell per ?model= überschreibbar (nur Allowlist, für den Eval-Harness); Default gpt-4o.
+        model: ['gpt-4o', 'gpt-4o-mini'].includes(req.query.model) ? req.query.model : 'gpt-4o',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
@@ -1093,7 +1097,7 @@ app.post('/api/alternativ', alternativLimiter, (req, res) => {
   });
 });
 
-app.post('/api/email-gate', rateLimit({ windowMs: 60*60*1000, max: 10, message: { error: 'Zu viele Anfragen.' } }), (req, res) => {
+app.post('/api/email-gate', rl({ windowMs: 60*60*1000, max: 10, message: { error: 'Zu viele Anfragen.' } }), (req, res) => {
   const { email, gartenflaeche, licht, stil } = req.body;
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return res.status(400).json({ error: 'Bitte eine gültige E-Mail-Adresse eingeben.' });
@@ -3826,7 +3830,7 @@ app.get('/admin/login', (req, res) => {
 });
 
 // Login prüfen → signiertes Cookie setzen (timing-safe Passwortvergleich, rate-limited)
-const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, message: { error: 'Zu viele Versuche.' } });
+const loginLimiter = rl({ windowMs: 15 * 60 * 1000, max: 10, message: { error: 'Zu viele Versuche.' } });
 app.post('/admin/login', loginLimiter, (req, res) => {
   const pw = (req.body && typeof req.body.pw === 'string') ? req.body.pw : '';
   const expected = process.env.ADMIN_PASSWORT || '';
