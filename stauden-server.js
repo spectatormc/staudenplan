@@ -6,6 +6,7 @@ const rateLimit = require('express-rate-limit');
 const { OpenAI } = require('openai');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -1211,7 +1212,7 @@ app.get('/go/gaissmayer', (req, res) => {
 
 // Admin: Klick-Statistik (gesamt + pro Pflanze, Fortschritt Richtung 100)
 app.get('/admin/klicks', (req, res) => {
-  if (!checkAdminPw(req, res)) return;
+  if (!isAdmin(req)) return res.redirect('/admin/login?next=/admin/klicks');
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const ZIEL = 100;
   const gesamt = db.prepare("SELECT COUNT(*) AS n FROM klicks WHERE ziel = 'gaissmayer'").get().n;
@@ -1235,7 +1236,7 @@ app.get('/admin/klicks', (req, res) => {
   th,td{text-align:left;padding:10px 14px;border-bottom:1px solid #eee;font-size:.9rem}
   th{background:#1b4332;color:#fff}td:nth-child(2),th:nth-child(2){text-align:right;font-weight:700}
   .muted{color:#999;font-size:.82rem}</style></head><body>
-  <h1>🌿 Gaißmayer-Kaufklicks</h1>
+  <h1>🌿 Gaißmayer-Kaufklicks <a href="/admin/logout" style="float:right;font-size:.8rem;font-weight:400;color:#999;text-decoration:none">Abmelden →</a></h1>
   <div class="big">${gesamt}<span style="font-size:1rem;color:#999;font-weight:400"> / ${ZIEL}</span></div>
   <div class="bar"><span style="width:${pct}%"></span></div>
   <p class="muted">${pct}% des Ziels${gesamt >= ZIEL ? ' — erreicht! Gaißmayer kann jetzt mit Daten angesprochen werden 🎉' : ''}</p>
@@ -1251,7 +1252,7 @@ app.get('/admin/klicks', (req, res) => {
 
 // Admin: eingegangene Anfragen direkt aus der DB (geht nie verloren, auch wenn eine Mail klemmt)
 app.get('/admin/anfragen', (req, res) => {
-  if (!checkAdminPw(req, res)) return;
+  if (!isAdmin(req)) return res.redirect('/admin/login?next=/admin/anfragen');
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   let anfragen = [];
   try {
@@ -1295,7 +1296,7 @@ app.get('/admin/anfragen', (req, res) => {
   th{background:#1b4332;color:#fff;white-space:nowrap}
   a{color:#2d6a4f}
   .muted{color:#999;font-size:.82rem}</style></head><body>
-  <h1>🌿 Eingegangene Anfragen</h1>
+  <h1>🌿 Eingegangene Anfragen <a href="/admin/logout" style="float:right;font-size:.8rem;font-weight:400;color:#999;text-decoration:none">Abmelden →</a></h1>
   <div class="big">${anfragen.length}</div>
   <p class="muted">Direkt aus der Datenbank — unabhängig vom E-Mail-Versand. Neueste zuerst (max. 500).</p>
   ${anfragen.length ? `<table><tr><th>Datum</th><th>Name</th><th>E-Mail</th><th>PLZ</th><th>Telefon</th><th>Garten</th><th>Plan</th><th>Anmerkungen</th></tr>${rows}</table>` : '<p class="muted">Noch keine Anfragen.</p>'}
@@ -1500,7 +1501,7 @@ app.get('/datenschutz', (req, res) => {
 // ─── Admin-Übersicht ─────────────────────────────────────────────────────────
 
 app.get('/admin', (req, res) => {
-  if (!req.query.pw || req.query.pw !== process.env.ADMIN_PASSWORT) return res.status(403).send('<h2>403</h2>');
+  if (!isAdmin(req)) return res.redirect('/admin/login?next=/admin');
 
   // ── Stats ──
   const stats = {
@@ -1777,7 +1778,6 @@ Für die konkrete Planung mit Pflanzliste, Abständen und Stückzahlen nutze ich
 </div>
 
 <script>
-  const ADMIN_PW = ${JSON.stringify(req.query.pw)};
   function showTab(name, el) {
     document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
     document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
@@ -1798,13 +1798,13 @@ Für die konkrete Planung mit Pflanzliste, Abständen und Stückzahlen nutze ich
   }
   async function approve(id,btn){
     const orig=btn.textContent; btn.innerHTML='<span class=spinner></span>'; btn.disabled=true;
-    const r=await fetch('/api/bild-approve/'+id+'?pw='+encodeURIComponent(ADMIN_PW),{method:'POST'});
+    const r=await fetch('/api/bild-approve/'+id,{method:'POST'});
     if(r.ok){ hideCard(id); }
     else{ btn.textContent=orig; btn.disabled=false; alert('Fehler'); }
   }
   async function reject(id,btn){
     const orig=btn.textContent; btn.textContent='⏳'; btn.disabled=true;
-    const r=await fetch('/api/ki-bild-ablehnen/'+id+'?pw='+encodeURIComponent(ADMIN_PW),{method:'POST'});
+    const r=await fetch('/api/ki-bild-ablehnen/'+id,{method:'POST'});
     if(r.ok){ hideCard(id); }
     else{ btn.textContent=orig; btn.disabled=false; alert('Fehler'); }
   }
@@ -1829,7 +1829,7 @@ Für die konkrete Planung mit Pflanzliste, Abständen und Stückzahlen nutze ich
   async function bildNeuLaden(btn){
     if(!confirm('Neuen Bildcheck starten? Das dauert ca. 15 Minuten.'))return;
     btn.innerHTML='<span class=spinner></span> Läuft…'; btn.disabled=true;
-    await fetch('/api/bildcheck-starten?pw='+encodeURIComponent(ADMIN_PW),{method:'POST'});
+    await fetch('/api/bildcheck-starten',{method:'POST'});
     btn.textContent='✓ Gestartet — Seite in 15 Min. neu laden';
   }
 
@@ -1846,7 +1846,7 @@ Für die konkrete Planung mit Pflanzliste, Abständen und Stückzahlen nutze ich
   async function kiVorschlagErstellen(id, btn) {
     if (!confirm('Neues KI-Bild generieren? Dauert ca. 30 Sekunden. Das aktuelle Bild bleibt bis zur Freigabe aktiv.')) return;
     btn.innerHTML = '<span class=spinner></span>'; btn.disabled = true;
-    const r = await fetch('/api/ki-bild-vorschlag/' + id + '?pw=' + encodeURIComponent(ADMIN_PW), { method: 'POST' });
+    const r = await fetch('/api/ki-bild-vorschlag/' + id, { method: 'POST' });
     if (r.ok) {
       btn.textContent = '⏳ Wird generiert…';
       setTimeout(() => {
@@ -1884,7 +1884,7 @@ Für die konkrete Planung mit Pflanzliste, Abständen und Stückzahlen nutze ich
     btn.disabled = true; btn.textContent = '⏳ …';
     status.textContent = 'KI arbeitet…';
     try {
-      const resp = await fetch('/api/antwort-generieren?pw=' + encodeURIComponent(ADMIN_PW), {
+      const resp = await fetch('/api/antwort-generieren', {
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ frage })
       });
@@ -3753,13 +3753,97 @@ ${SITE_FOOTER}
 
 // ─── Admin ────────────────────────────────────────────────────────────────────
 
+// ─── Admin-Auth per signiertem Session-Cookie (kein Passwort mehr in der URL) ──
+const ADMIN_COOKIE = 'sp_admin';
+const ADMIN_TTL_MS = 7 * 24 * 3600 * 1000;
+const adminSecret = () => process.env.ADMIN_PASSWORT || 'kein-admin-passwort-gesetzt';
+function signAdminToken() {
+  const payload = `admin.${Date.now() + ADMIN_TTL_MS}`;
+  const sig = crypto.createHmac('sha256', adminSecret()).update(payload).digest('base64url');
+  return `${payload}.${sig}`;
+}
+function verifyAdminToken(token) {
+  if (typeof token !== 'string' || token.length < 10) return false;
+  const i = token.lastIndexOf('.');
+  if (i < 1) return false;
+  const payload = token.slice(0, i), sig = token.slice(i + 1);
+  const expected = crypto.createHmac('sha256', adminSecret()).update(payload).digest('base64url');
+  const a = Buffer.from(sig), b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return false;
+  const exp = parseInt(payload.split('.')[1], 10);
+  return Number.isFinite(exp) && exp > Date.now();
+}
+function parseCookies(header) {
+  const out = {};
+  (header || '').split(';').forEach(part => {
+    const i = part.indexOf('=');
+    if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+  });
+  return out;
+}
+// Reine Prüfung ohne Response-Seiteneffekt (Seiten-Routen leiten auf /admin/login um).
+function isAdmin(req) {
+  return verifyAdminToken(parseCookies(req.headers.cookie)[ADMIN_COOKIE]);
+}
+// Für API-Routen: prüft und antwortet bei Fehlschlag mit 401.
 function checkAdminPw(req, res) {
-  if (!req.query.pw || req.query.pw !== process.env.ADMIN_PASSWORT) {
-    res.status(401).json({ error: 'Passwort fehlt oder falsch.' });
+  if (!isAdmin(req)) {
+    res.status(401).json({ error: 'Nicht angemeldet.' });
     return false;
   }
   return true;
 }
+
+// Login-Seite
+app.get('/admin/login', (req, res) => {
+  const next = typeof req.query.next === 'string' && /^\/admin[a-z/-]*$/i.test(req.query.next)
+    ? req.query.next : '/admin/anfragen';
+  res.send(`<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
+  <title>Admin-Login · Staudenplan</title>
+  <style>body{font-family:'Segoe UI',system-ui,sans-serif;background:#f8f4ef;color:#1a1a1a;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
+  .box{background:#fff;border-radius:16px;padding:32px 28px;box-shadow:0 8px 32px rgba(0,0,0,.12);width:320px;max-width:90vw}
+  h1{font-size:1.2rem;color:#1b4332;margin:0 0 6px}p{color:#888;font-size:.85rem;margin:0 0 18px}
+  input{width:100%;box-sizing:border-box;padding:12px 14px;border:2px solid #e0d9cf;border-radius:10px;font-size:1rem;outline:none}
+  input:focus{border-color:#2d6a4f}button{width:100%;margin-top:12px;background:linear-gradient(135deg,#2d6a4f,#1b4332);color:#fff;border:none;border-radius:12px;padding:13px;font-size:1rem;font-weight:700;cursor:pointer}
+  .err{color:#e53e3e;font-size:.82rem;min-height:18px;margin-top:8px}</style></head><body>
+  <form class="box" onsubmit="return doLogin(event)">
+    <h1>🌿 Admin-Login</h1><p>Bitte Admin-Passwort eingeben.</p>
+    <input type="password" id="pw" placeholder="Passwort" autofocus autocomplete="current-password">
+    <button type="submit">Anmelden</button>
+    <div class="err" id="err"></div>
+  </form>
+  <script>
+    async function doLogin(e){
+      e.preventDefault();
+      const err=document.getElementById('err');err.textContent='';
+      const r=await fetch('/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pw:document.getElementById('pw').value})});
+      if(r.ok){location.href=${JSON.stringify(next)};}else{err.textContent='Falsches Passwort.';}
+      return false;
+    }
+  </script>
+  </body></html>`);
+});
+
+// Login prüfen → signiertes Cookie setzen (timing-safe Passwortvergleich, rate-limited)
+const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, message: { error: 'Zu viele Versuche.' } });
+app.post('/admin/login', loginLimiter, (req, res) => {
+  const pw = (req.body && typeof req.body.pw === 'string') ? req.body.pw : '';
+  const expected = process.env.ADMIN_PASSWORT || '';
+  const a = Buffer.from(pw), b = Buffer.from(expected);
+  const ok = expected.length > 0 && a.length === b.length && crypto.timingSafeEqual(a, b);
+  if (!ok) return res.status(401).json({ error: 'Falsches Passwort.' });
+  res.cookie(ADMIN_COOKIE, signAdminToken(), {
+    httpOnly: true, secure: req.secure, sameSite: 'lax', maxAge: ADMIN_TTL_MS, path: '/',
+  });
+  res.json({ success: true });
+});
+
+// Logout
+app.get('/admin/logout', (req, res) => {
+  res.clearCookie(ADMIN_COOKIE, { path: '/' });
+  res.redirect('/admin/login');
+});
 
 
 app.post('/admin/update-wissen', async (req, res) => {
