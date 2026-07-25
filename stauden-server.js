@@ -963,8 +963,9 @@ JSON-Format:
     let plan = null;
     for (let attempt = 1; attempt <= 2 && !plan; attempt++) {
       const completion = await getOpenAI().chat.completions.create({
-        // Modell per ?model= überschreibbar (nur Allowlist, für den Eval-Harness); Default gpt-4o.
-        model: ['gpt-4o', 'gpt-4o-mini'].includes(req.query.model) ? req.query.model : 'gpt-4o',
+        // Default gpt-4o-mini (Eval 2026-07-25: gleichauf mit 4o, 0 Halluzinationen, ~15× günstiger).
+        // ?model=gpt-4o bleibt als Notausstieg/Override (Allowlist).
+        model: ['gpt-4o', 'gpt-4o-mini'].includes(req.query.model) ? req.query.model : 'gpt-4o-mini',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
