@@ -1844,7 +1844,7 @@
         <textarea id="anfrage-anmerkungen" rows="3" placeholder="z.B. bevorzugter Liefertermin, Besonderheiten …"></textarea>
       </div>
       <div id="modal-error" class="error-msg" style="display:none"></div>
-      <button class="btn-primary" onclick="submitAnfrage()">Anfrage senden 📩</button>
+      <button class="btn-primary" onclick="submitAnfrage(this)">Anfrage senden 📩</button>
     </div>
   </div>
 </div>
@@ -1861,6 +1861,15 @@
   let currentPlan = null;
   let currentStep = 1;
 
+  // ── Output-Kodierung: alle Fremd-/LLM-/DB-Werte VOR innerHTML hier durch ──
+  // escapeHtml für Text- und Attribut-Kontexte; für Werte, die in einen
+  // Inline-Handler (JS-String im HTML-Attribut) müssen, escapeHtml(JSON.stringify(x)).
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+  function jsArg(s) { return escapeHtml(JSON.stringify(s == null ? '' : String(s))); }
+
   // ── URL-Parameter: Pflanze aus Lexikon vorauswählen ───────────────────────
   (function checkUrlPflanze() {
     const p = new URLSearchParams(window.location.search);
@@ -1872,7 +1881,7 @@
     // Toast-Hinweis anzeigen
     const toast = document.createElement('div');
     toast.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1b4332;color:#fff;padding:13px 24px;border-radius:50px;font-size:.9rem;font-weight:600;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,.3);display:flex;gap:10px;align-items:center';
-    toast.innerHTML = `<span style="font-size:1.2rem">🌿</span> <strong>${deutsch}</strong> wurde zur Wunschliste hinzugefügt`;
+    toast.innerHTML = `<span style="font-size:1.2rem">🌿</span> <strong>${escapeHtml(deutsch)}</strong> wurde zur Wunschliste hinzugefügt`;
     document.body.appendChild(toast);
     setTimeout(() => toast.remove(), 4000);
     saveWishlist();
@@ -2410,8 +2419,8 @@
         ? '<p style="color:#aaa;font-size:.85rem">Noch keine Pflanzen gewählt</p>'
         : wishlist.map(w => `
           <div style="display:flex;align-items:center;justify-content:space-between;background:#f8f4ef;border-radius:8px;padding:8px 12px">
-            <span style="font-size:.88rem;font-weight:600;color:#1b4332">${w.name_deutsch}</span>
-            <button onclick="removeFromWishlist('${w.name_botanisch.replace(/'/g,"\\'")}');updateHeroWishlistCTA()" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:1rem;line-height:1;padding:0 4px" title="Entfernen">✕</button>
+            <span style="font-size:.88rem;font-weight:600;color:#1b4332">${escapeHtml(w.name_deutsch)}</span>
+            <button onclick="removeFromWishlist(${jsArg(w.name_botanisch)});updateHeroWishlistCTA()" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:1rem;line-height:1;padding:0 4px" title="Entfernen">✕</button>
           </div>`).join('');
     }
   }
@@ -2489,13 +2498,13 @@
     const alreadyAdded = new Set(wishlist.map(w => w.name_botanisch));
     container.innerHTML = matches.map(p => {
       const added = alreadyAdded.has(p.name_botanisch);
-      return `<div class="psr-card ${added ? 'added' : ''}" onclick="${added ? '' : `addToWishlist('${p.name_deutsch.replace(/'/g,"\\'")}','${p.name_botanisch.replace(/'/g,"\\'")}',this)`}">
-        <div class="psr-name">${p.name_deutsch}</div>
-        <div class="psr-bot">${p.name_botanisch}</div>
+      return `<div class="psr-card ${added ? 'added' : ''}" onclick="${added ? '' : `addToWishlist(${jsArg(p.name_deutsch)},${jsArg(p.name_botanisch)},this)`}">
+        <div class="psr-name">${escapeHtml(p.name_deutsch)}</div>
+        <div class="psr-bot">${escapeHtml(p.name_botanisch)}</div>
         <div class="psr-tags">
-          ${p.licht ? `<span class="psr-tag">${p.licht.split('|')[0]}</span>` : ''}
-          ${p.farbe ? `<span class="psr-tag">${p.farbe.split('|')[0]}</span>` : ''}
-          ${p.bluehzeit ? `<span class="psr-tag">${p.bluehzeit}</span>` : ''}
+          ${p.licht ? `<span class="psr-tag">${escapeHtml(p.licht.split('|')[0])}</span>` : ''}
+          ${p.farbe ? `<span class="psr-tag">${escapeHtml(p.farbe.split('|')[0])}</span>` : ''}
+          ${p.bluehzeit ? `<span class="psr-tag">${escapeHtml(p.bluehzeit)}</span>` : ''}
         </div>
         ${added ? '<div style="color:var(--green-mid);font-size:.75rem;margin-top:4px;font-weight:600">✓ Bereits gewählt</div>' : ''}
       </div>`;
@@ -2533,7 +2542,7 @@
       const chips = document.getElementById('wishlist-chips');
       chips && chips.parentNode.insertBefore(el, chips.nextSibling);
     }
-    el.innerHTML = `<span>⚠️</span><span>${text}</span>`;
+    el.innerHTML = `<span>⚠️</span><span>${escapeHtml(text)}</span>`;
     el.style.display = 'flex';
     setTimeout(() => { if (el) el.style.display = 'none'; }, 6000);
   }
@@ -2543,8 +2552,8 @@
     const label = document.getElementById('wishlist-label');
     label.style.display = wishlist.length > 0 ? 'block' : 'none';
     chips.innerHTML = wishlist.map(w =>
-      `<div class="wl-chip">${w.name_deutsch}
-       <button onclick="removeFromWishlist('${w.name_botanisch.replace(/'/g,"\\'")}')">✕</button>
+      `<div class="wl-chip">${escapeHtml(w.name_deutsch)}
+       <button onclick="removeFromWishlist(${jsArg(w.name_botanisch)})">✕</button>
        </div>`
     ).join('');
   }
@@ -3500,14 +3509,14 @@
         <td><span class="sl-number">${i+1}</span></td>
         <td style="font-weight:600">
           <span class="sl-color-dot" style="background:${c}"></span>
-          ${p.name_deutsch}
+          ${escapeHtml(p.name_deutsch)}
         </td>
-        <td style="font-style:italic;color:#888;font-size:.82rem">${p.name_botanisch}</td>
+        <td style="font-style:italic;color:#888;font-size:.82rem">${escapeHtml(p.name_botanisch)}</td>
         <td style="font-weight:700;font-size:1.05rem">${p.stueckzahl || 1}</td>
         <td>${p.preis_stueck_eur ? p.preis_stueck_eur.toFixed(2) + ' €' : '—'}</td>
         <td style="font-weight:700;color:var(--earth)">${gesamt.toFixed(2)} €</td>
-        <td style="font-size:.82rem;color:#666">${p.bluehzeit || '—'}</td>
-        <td style="font-size:.82rem;color:#666">${p.standort || '—'}</td>
+        <td style="font-size:.82rem;color:#666">${escapeHtml(p.bluehzeit || '—')}</td>
+        <td style="font-size:.82rem;color:#666">${escapeHtml(p.standort || '—')}</td>
       </tr>`;
     }).join('');
     document.getElementById('sl-total-stueck').textContent = totalStueck + ' Stück';
@@ -3948,11 +3957,15 @@
       if (se) se.textContent = '× ' + p.stueckzahl + ' Stück';
       if (pe) pe.textContent = ((p.preis_stueck_eur||0) * p.stueckzahl).toFixed(2) + ' €';
     });
-    const totalStueck = currentPlan.pflanzen.reduce((s,p) => s + p.stueckzahl, 0);
+    // Staudenzahl nur über Nicht-Geophyten (Kachel ist mit "Stauden" beschriftet);
+    // Gesamtkosten über alle. Kacheln über stabile data-Attribute, nicht Positionsindex
+    // (mit Geophyten verschiebt sich sonst der Index → Zwiebel-Kachel würde überschrieben).
+    const totalStueck = currentPlan.pflanzen.filter(p => p.rolle !== 'Geophyt').reduce((s,p) => s + p.stueckzahl, 0);
     const totalKosten = currentPlan.pflanzen.reduce((s,p) => s + (p.preis_stueck_eur||0) * p.stueckzahl, 0);
-    const metaStrong = document.querySelectorAll('#ergebnis-meta .em-item strong');
-    if (metaStrong[1]) metaStrong[1].textContent = totalStueck;
-    if (metaStrong[2]) metaStrong[2].textContent = totalKosten.toFixed(0) + ' €';
+    const staudenEl = document.querySelector('#ergebnis-meta [data-meta="stauden"]');
+    const kostenEl = document.querySelector('#ergebnis-meta [data-meta="kosten"]');
+    if (staudenEl) staudenEl.textContent = totalStueck;
+    if (kostenEl) kostenEl.textContent = totalKosten.toFixed(0) + ' €';
     renderStueckliste(currentPlan);
   }
 
@@ -3966,11 +3979,20 @@
       if (!bz) return [];
       const s = bz.toLowerCase();
       if (s.includes('ganzjähr') || s.includes('immergrün')) return MONAT_NR;
-      const found = Object.entries(MONAT_IDX)
-        .filter(([k]) => s.includes(k)).map(([,v]) => v).sort((a,b) => a-b);
-      if (!found.length) return [];
-      const lo = found[0], hi = found[found.length-1];
-      return Array.from({length: hi-lo+1}, (_,i) => lo+i);
+      // Monate in TEXT-Reihenfolge (erster Treffer = Start, letzter = Ende) — nicht sortiert,
+      // sonst kippt "Dezember - März" zu [3..12] statt zum Jahreswechsel-Bereich.
+      const hits = Object.entries(MONAT_IDX)
+        .map(([k,v]) => ({ v, pos: s.indexOf(k) }))
+        .filter(o => o.pos !== -1)
+        .sort((a,b) => a.pos - b.pos);
+      if (!hits.length) return [];
+      const start = hits[0].v, end = hits[hits.length-1].v;
+      if (start <= end) return Array.from({length: end-start+1}, (_,i) => start+i);
+      // Überwinternde Blüte: Bereich läuft über den Jahreswechsel (start..12 + 1..end)
+      const months = [];
+      for (let m = start; m <= 12; m++) months.push(m);
+      for (let m = 1; m <= end; m++) months.push(m);
+      return months;
     }
     const header = `<div class="bk-row bk-header">
       <div class="bk-dot"></div>
@@ -4007,9 +4029,9 @@
     const meta = document.getElementById('ergebnis-meta');
     meta.innerHTML = `
       <div class="em-item"><strong>${stauden.length}</strong> Staudenarten</div>
-      <div class="em-item"><strong>${stauden.reduce((s,p)=>s+p.stueckzahl,0)}</strong> Stauden</div>
+      <div class="em-item"><strong data-meta="stauden">${stauden.reduce((s,p)=>s+p.stueckzahl,0)}</strong> Stauden</div>
       ${geos.length > 0 ? `<div class="em-item" style="background:rgba(157,23,77,.15)"><strong>${geos.reduce((s,p)=>s+p.stueckzahl,0)}</strong> 🌷 Zwiebeln (${geos.length} Arten)</div>` : ''}
-      <div class="em-item"><strong>${typeof plan.gesamtkosten_geschaetzt === 'number' ? plan.gesamtkosten_geschaetzt.toFixed(0) + ' €' : plan.gesamtkosten_geschaetzt || '—'}</strong> Gesamtkosten</div>
+      <div class="em-item"><strong data-meta="kosten">${typeof plan.gesamtkosten_geschaetzt === 'number' ? plan.gesamtkosten_geschaetzt.toFixed(0) + ' €' : plan.gesamtkosten_geschaetzt || '—'}</strong> Gesamtkosten</div>
     `;
 
     // Pflanzenkarten (mit echten Fotos oder farbigem Top)
@@ -4018,21 +4040,21 @@
       const c = bloomColor(p.farbe);
       const stars = p.pflege_sterne || 1;
       const topContent = p.bild_url
-        ? `<img src="${p.bild_url}" alt="${p.name_deutsch}" style="width:100%;height:100%;object-fit:cover;display:block" loading="lazy" onerror="this.parentElement.innerHTML='<div style=\\'font-size:2.2rem;display:flex;align-items:center;justify-content:center;height:100%\\'>${['🌸','🌺','🌼','🌻','🌹','💐','🌷','🌿','🍃','🌾'][i%10]}</div>'">`
+        ? `<img src="${escapeHtml(p.bild_url)}" alt="${escapeHtml(p.name_deutsch)}" style="width:100%;height:100%;object-fit:cover;display:block" loading="lazy" onerror="this.parentElement.innerHTML='<div style=\\'font-size:2.2rem;display:flex;align-items:center;justify-content:center;height:100%\\'>${['🌸','🌺','🌼','🌻','🌹','💐','🌷','🌿','🍃','🌾'][i%10]}</div>'">`
         : `<div style="font-size:2.2rem;display:flex;align-items:center;justify-content:center;height:100%">${['🌸','🌺','🌼','🌻','🌹','💐','🌷','🌿','🍃','🌾'][i%10]}</div>`;
       return `<div class="pflanze-card">
         <div class="pflanze-card-top" style="background:linear-gradient(135deg,${hexLighten(c,40)},${c});height:140px;overflow:hidden;position:relative">
           ${topContent}
         </div>
         <div class="pflanze-card-body">
-          <div class="pflanze-name">${p.name_deutsch}</div>
-          <div class="pflanze-botanisch">${p.name_botanisch}</div>
-          <div class="pflanze-beschreibung">${p.beschreibung || ''}</div>
+          <div class="pflanze-name">${escapeHtml(p.name_deutsch)}</div>
+          <div class="pflanze-botanisch">${escapeHtml(p.name_botanisch)}</div>
+          <div class="pflanze-beschreibung">${escapeHtml(p.beschreibung || '')}</div>
           <div class="pflanze-tags">
             ${p.rolle === 'Leitstaude' ? '<span class="tag" style="background:#fef3c7;color:#92400e;font-weight:700">⭐ Leitstaude</span>' : p.rolle === 'Begleitstaude' ? '<span class="tag" style="background:#f0fdf4;color:#166534">🌿 Begleitstaude</span>' : p.rolle === 'Geophyt' ? '<span class="tag" style="background:#fdf2f8;color:#9d174d;font-weight:700">🌷 Geophyt</span>' : '<span class="tag" style="background:#f8fafc;color:#64748b">· Füllstaude</span>'}
-            <span class="tag">☀️ ${p.standort || ''}</span>
-            <span class="tag">🌸 ${p.bluehzeit || ''}</span>
-            ${p.farbe ? `<span class="tag" style="background:${hexLighten(c,50)};color:${hexDarken(c,40)}">${p.farbe}</span>` : ''}
+            <span class="tag">☀️ ${escapeHtml(p.standort || '')}</span>
+            <span class="tag">🌸 ${escapeHtml(p.bluehzeit || '')}</span>
+            ${p.farbe ? `<span class="tag" style="background:${hexLighten(c,50)};color:${hexDarken(c,40)}">${escapeHtml(p.farbe)}</span>` : ''}
             <span class="tag tag-erde">↕ ${p.hoehe_cm} cm</span>
             <span class="tag tag-stueck" id="stueck-${i}">× ${p.stueckzahl} Stück</span>
           </div>
@@ -4042,7 +4064,7 @@
           </div>
           <a class="btn-kaufen" href="${p.kauflink}" target="_blank" rel="noopener nofollow" onclick="trackKauf(${i})">Kaufen →</a>
           <button class="btn-alt" data-idx="${i}" onclick="alternativVorschlagen(${i})">🔄 Alternative vorschlagen</button>
-          ${p.fehler && p.fehler.length ? `<details class="pflanze-fehler"><summary>⚠️ Häufige Fehler (${p.fehler.length})</summary><ul>${p.fehler.map(f=>`<li>${f}</li>`).join('')}</ul></details>` : ''}
+          ${p.fehler && p.fehler.length ? `<details class="pflanze-fehler"><summary>⚠️ Häufige Fehler (${p.fehler.length})</summary><ul>${p.fehler.map(f=>`<li>${escapeHtml(f)}</li>`).join('')}</ul></details>` : ''}
         </div>
       </div>`;
     }).join('');
@@ -4052,8 +4074,8 @@
 
     // Tipps
     const tipps = document.getElementById('tipps-list');
-    tipps.innerHTML = (plan.tipps || []).map(t => `<li>${t}</li>`).join('');
-    if (plan.pflanzabstand_hinweis) tipps.innerHTML += `<li>${plan.pflanzabstand_hinweis}</li>`;
+    tipps.innerHTML = (plan.tipps || []).map(t => `<li>${escapeHtml(t)}</li>`).join('');
+    if (plan.pflanzabstand_hinweis) tipps.innerHTML += `<li>${escapeHtml(plan.pflanzabstand_hinweis)}</li>`;
 
     // Beetkonzept
     const konzeptEl = document.getElementById('beet-konzept');
@@ -4142,7 +4164,7 @@
     if (e.target === document.getElementById('modal-overlay')) closeModal();
   }
 
-  async function submitAnfrage() {
+  async function submitAnfrage(btn) {
     const name = document.getElementById('anfrage-name').value.trim();
     const email = document.getElementById('anfrage-email').value.trim();
     const plz = document.getElementById('anfrage-plz').value.trim();
@@ -4161,6 +4183,7 @@
       return;
     }
     errEl.style.display = 'none';
+    if (btn) { btn.disabled = true; btn.dataset.orig = btn.textContent; btn.textContent = 'Wird gesendet …'; }
 
     try {
       const res = await fetch('/api/anfrage', {
@@ -4176,12 +4199,13 @@
         <div class="success-msg">
           <div class="success-icon">✅</div>
           <h3>Anfrage gesendet!</h3>
-          <p>Danke, ${name}! Wir haben deine Anfrage erhalten und leiten sie an unsere Gärtnerei weiter — sie meldet sich mit einem Angebot für dein Pflanzenpaket bei dir.</p>
+          <p>Danke, ${escapeHtml(name)}! Wir haben deine Anfrage erhalten und leiten sie an unsere Gärtnerei weiter — sie meldet sich mit einem Angebot für dein Pflanzenpaket bei dir.</p>
         </div>
       `;
     } catch (err) {
       errEl.textContent = err.message;
       errEl.style.display = 'block';
+      if (btn) { btn.disabled = false; btn.textContent = btn.dataset.orig || 'Anfrage senden 📩'; }
     }
   }
 

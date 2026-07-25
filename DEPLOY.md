@@ -43,7 +43,7 @@ nano .env
 
 Eintragen:
 ```
-PORT=3001
+PORT=3003
 SITE_URL=https://www.staudenplan.de
 OPENAI_API_KEY=sk-proj-[DEIN KEY]
 ADMIN_PASSWORT=<STARKES-PASSWORT-NUR-IN-.ENV-NIE-INS-REPO>
@@ -74,7 +74,7 @@ pm2 save
 pm2 status
 ```
 
-Test: `curl http://localhost:3001` → sollte HTML zurückgeben
+Test: `curl http://localhost:3003` → sollte HTML zurückgeben
 
 ---
 
@@ -103,7 +103,7 @@ server {
     client_max_body_size 10M;
 
     location / {
-        proxy_pass http://localhost:3001;
+        proxy_pass http://localhost:3003;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';

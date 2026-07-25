@@ -52,6 +52,9 @@ app.use((req, res, next) => {
   next();
 });
 
+// Veraltete public/index.html (Alt-Kopie der Startseite) nie ausliefern → 301 auf die aktuelle App
+app.get('/index.html', (req, res) => res.redirect(301, '/'));
+
 // ─── Datenbank ────────────────────────────────────────────────────────────────
 const db = new Database(path.join(__dirname, 'stauden.db'));
 
@@ -120,6 +123,13 @@ const GAISSMAYER_URL = 'https://www.gaissmayer.de/web/shop/';
 // Interner Zähl-Link: leitet auf Gaißmayer weiter und protokolliert den Klick pro Pflanze.
 const goLink = (botanisch) => `/go/gaissmayer?p=${encodeURIComponent(botanisch || '')}`;
 
+// Zentrale HTML-Ausgabe-Kodierung für alle server-gerenderten Seiten. ALLE DB-/Fremd-/
+// LLM-Werte müssen hier durch, bevor sie in HTML interpoliert werden (Text + Attribute).
+const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// ld+json gegen </script>-Ausbruch härten: < in JSON-Strings unschädlich machen.
+const escJsonLd = (obj) => JSON.stringify(obj).replace(/</g, '\\u003c');
+
 // ─── Schema-Migrationen (idempotent, try/catch) ───────────────────────────────
 [
   'ALTER TABLE pflanzen ADD COLUMN feuchtigkeit TEXT',
@@ -131,6 +141,21 @@ const goLink = (botanisch) => `/go/gaissmayer?p=${encodeURIComponent(botanisch |
   'ALTER TABLE pflanzen ADD COLUMN winteraspekt TEXT',
   'ALTER TABLE pflanzen ADD COLUMN trockenheitstoleranz TEXT',
   'ALTER TABLE pflanzen ADD COLUMN inhalt_lang TEXT',
+  // Spalten, die real abgefragt werden (RAG-status, Bild-Workflow), aber bisher nur in
+  // externen Skripten angelegt wurden → hier idempotent, damit eine frische DB nicht bricht.
+  "ALTER TABLE pflanzen ADD COLUMN status TEXT DEFAULT 'live'",
+  'ALTER TABLE pflanzen ADD COLUMN bild_url TEXT',
+  'ALTER TABLE pflanzen ADD COLUMN bild_lizenz TEXT',
+  'ALTER TABLE pflanzen ADD COLUMN bild_ki INTEGER DEFAULT 0',
+  'ALTER TABLE pflanzen ADD COLUMN bild_vorschlag TEXT',
+  'ALTER TABLE pflanzen ADD COLUMN bild_geprueft INTEGER DEFAULT 0',
+  'ALTER TABLE pflanzen ADD COLUMN bild_check_info TEXT',
+].forEach(sql => { try { db.exec(sql); } catch (_) {} });
+
+// Indizes (idempotent) — Prefix-Lookups auf name_botanisch (Plan-Anreicherung) + status-Filter (RAG)
+[
+  'CREATE INDEX IF NOT EXISTS idx_pflanzen_botanisch ON pflanzen(name_botanisch)',
+  'CREATE INDEX IF NOT EXISTS idx_pflanzen_status ON pflanzen(status)',
 ].forEach(sql => { try { db.exec(sql); } catch (_) {} });
 
 // ─── SEO-Migrationen (läuft bei jedem Start, idempotent) ─────────────────────
@@ -230,7 +255,7 @@ Kaufhinweis: Geranium 'Rozanne' ist eine eingetragene Schutzsorte (Handelsname '
 // ─── OpenAI (lazy) ────────────────────────────────────────────────────────────
 let openai = null;
 function getOpenAI() {
-  if (!openai) openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  if (!openai) openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, timeout: 30000, maxRetries: 1 });
   return openai;
 }
 
@@ -531,10 +556,10 @@ app.get('/', (req, res) => {
 
     const pflanzenHTML = featuredPflanzen.map(p => `
       <a class="seo-pflanze-card" href="/pflanze/${slugify(p.name_botanisch)}">
-        <span class="spc-name">${p.name_deutsch}</span>
-        <span class="spc-bot">${p.name_botanisch}</span>
-        ${p.bluehzeit ? `<span class="spc-tag">${p.bluehzeit}</span>` : ''}
-        ${p.licht ? `<span class="spc-tag">${p.licht.split('|')[0]}</span>` : ''}
+        <span class="spc-name">${escHtml(p.name_deutsch)}</span>
+        <span class="spc-bot">${escHtml(p.name_botanisch)}</span>
+        ${p.bluehzeit ? `<span class="spc-tag">${escHtml(p.bluehzeit)}</span>` : ''}
+        ${p.licht ? `<span class="spc-tag">${escHtml(p.licht.split('|')[0])}</span>` : ''}
       </a>`).join('');
 
     const fs = require('fs');
@@ -838,6 +863,13 @@ app.post('/api/plan', planLimiter, async (req, res) => {
   if (!gartenflaeche || !licht || !boden || !stil) {
     return res.status(400).json({ error: 'Bitte alle Pflichtfelder ausfüllen.' });
   }
+  // Typ-Härtung: RAG- und Prompt-Bildung laufen VOR dem try-Block; ein truthy Nicht-String
+  // (z.B. licht:5, plz:80331) würde dort eine uncaught TypeError werfen → 500-HTML statt 400-JSON.
+  if (typeof licht !== 'string' || typeof boden !== 'string' || typeof stil !== 'string'
+      || (standort_beschreibung != null && typeof standort_beschreibung !== 'string')
+      || (plz != null && typeof plz !== 'string')) {
+    return res.status(400).json({ error: 'Ungültige Eingabewerte.' });
+  }
 
   // RAG: Hol Kontext aus der Wissensdatenbank
   const feuchtigkeit = getFeuchtigkeit(boden, standort_beschreibung);
@@ -977,8 +1009,10 @@ JSON-Format:
           } catch {}
         }
         // Preis nur aus DB übernehmen, wenn der Treffer auf Artebene passt (exakt oder gleiche Art).
-        // Ein reiner Gattungstreffer ist eine andere Pflanze → dann bleibt der Modellwert stehen.
+        // binomial muss dafür Gattung+Art (>=2 Tokens) haben — ein reiner Gattungsname ("Salvia")
+        // würde sonst den Preis einer beliebigen Fremd-Art derselben Gattung übernehmen.
         const artTreffer = dbP && dbP.name_botanisch &&
+          binomial.split(' ').length >= 2 &&
           dbP.name_botanisch.toLowerCase().startsWith(binomial.toLowerCase());
         const preis_stueck_eur = (artTreffer && dbP.preis_stueck_eur != null)
           ? dbP.preis_stueck_eur
@@ -1102,7 +1136,7 @@ app.post('/api/anfrage', anfrageLimiter, async (req, res) => {
 
   const pflanzenListe = Array.isArray(ki_plan?.pflanzen)
     ? ki_plan.pflanzen.map(p =>
-        `  • ${p.stueckzahl}x ${p.name_deutsch} (${p.name_botanisch}) — ca. ${(p.preis_stueck_eur * p.stueckzahl).toFixed(2)} €`
+        `  • ${p.stueckzahl || 1}x ${p.name_deutsch} (${p.name_botanisch}) — ca. ${((p.preis_stueck_eur || 0) * (p.stueckzahl || 1)).toFixed(2)} €`
       ).join('\n')
     : '  — keine Pflanzenliste vorhanden';
 
@@ -1110,12 +1144,17 @@ app.post('/api/anfrage', anfrageLimiter, async (req, res) => {
   const kundenText = `Hallo ${name},\n\nvielen Dank für Ihre Anfrage! Wir haben Ihren Bepflanzungsplan erhalten und leiten ihn an unsere Gärtnerei weiter, die sich mit einem konkreten Angebot für Ihr Pflanzenpaket bei Ihnen meldet.\n\nIhr Bepflanzungsplan umfasst:\n${pflanzenListe}\n\nGeschätzte Gesamtkosten: ${ki_plan?.gesamtkosten_geschaetzt || 'auf Anfrage'}\n\nFreundliche Grüße\nIhr Staudenplan-Team`;
 
   if (process.env.EMAIL_USER && process.env.EMAIL_BETREIBER) {
+    // Zwei unabhängige Sends: schlägt die Betreiber-Mail fehl, soll die Kundenbestätigung
+    // trotzdem raus (und umgekehrt). Der Lead liegt ohnehin schon in der DB (/admin/anfragen).
     try {
       await transporter.sendMail({ from: process.env.EMAIL_USER, to: process.env.EMAIL_BETREIBER, subject: `Neue Bepflanzungsanfrage von ${name} (PLZ ${plz})`, text: betreiberText });
+    } catch (err) { console.error('E-Mail Fehler (Betreiber):', err.message); }
+    try {
       await transporter.sendMail({ from: process.env.EMAIL_USER, to: email, subject: 'Ihr Bepflanzungsplan — wir melden uns bald!', text: kundenText });
-    } catch (err) { console.error('E-Mail Fehler:', err.message); }
+    } catch (err) { console.error('E-Mail Fehler (Kunde):', err.message); }
   } else {
-    console.log('--- E-Mail (Betreiber) ---\n' + betreiberText);
+    // Kein PII-Volltext in die (auf Shared-VPS geteilten) Logs — nur ein neutraler Hinweis.
+    console.log(`Anfrage von ${name} gespeichert (SMTP nicht konfiguriert, Details in /admin/anfragen).`);
   }
 
   res.json({ success: true, message: 'Anfrage erfolgreich gesendet.' });
@@ -1154,7 +1193,7 @@ app.post('/api/feedback', feedbackLimiter, async (req, res) => {
       return res.status(500).json({ error: 'Feedback konnte nicht gesendet werden. Bitte später erneut versuchen.' });
     }
   } else {
-    console.log('--- Feedback (kein SMTP konfiguriert) ---\n' + text);
+    console.log(`Feedback eingegangen (${nachricht.length} Zeichen, SMTP nicht konfiguriert).`);
   }
 
   res.json({ success: true });
@@ -1876,6 +1915,7 @@ app.post('/api/ki-bild-vorschlag/:id', adminActionLimiter, (req, res) => {
     path.join(__dirname, 'scripts', 'generate-ki-bilder.js'),
     `--ids=${id}`, '--keep-live'
   ], { cwd: __dirname, detached: true, stdio: 'ignore' });
+  child.on('error', e => console.error('Kindprozess-Fehler:', e.message));
   child.unref();
   res.json({ ok: true });
 });
@@ -1908,6 +1948,7 @@ app.post('/api/ki-bilder-starten', adminActionLimiter, (req, res) => {
   const child = spawn(process.execPath, [
     path.join(__dirname, 'scripts', 'generate-ki-bilder.js'), '--limit=10'
   ], { cwd: __dirname, detached: true, stdio: 'ignore' });
+  child.on('error', e => console.error('Kindprozess-Fehler:', e.message));
   child.unref();
   res.json({ ok: true });
 });
@@ -1924,6 +1965,7 @@ app.post('/api/bildcheck-starten', adminActionLimiter, (req, res) => {
     path.join(__dirname, 'scripts', 'check-plant-images.js'),
     '--propose', `--ids=${ids.join(',')}`
   ], { cwd: __dirname, detached: true, stdio: 'ignore' });
+  child.on('error', e => console.error('Kindprozess-Fehler:', e.message));
   child.unref();
   res.json({ ok: true, count: ids.length });
 });
@@ -1935,6 +1977,7 @@ app.post('/api/kandidaten-starten', adminActionLimiter, (req, res) => {
   const child = spawn(process.execPath, [
     path.join(__dirname, 'scripts', 'fetch-bild-kandidaten.js')
   ], { cwd: __dirname, detached: true, stdio: 'ignore' });
+  child.on('error', e => console.error('Kindprozess-Fehler:', e.message));
   child.unref();
   res.json({ ok: true });
 });
@@ -2385,11 +2428,11 @@ app.get('/pflanze/:slug', (req, res) => {
 
   const faqHtml = faqItems.length > 0 ? `
     <section style="background:#fff;border-radius:14px;padding:24px;box-shadow:0 2px 12px rgba(0,0,0,.07);margin-bottom:24px">
-      <h2 style="font-size:1.15rem;color:#1b4332;margin-bottom:20px;font-weight:700">❓ Häufige Fragen zu ${pflanze.name_deutsch}</h2>
+      <h2 style="font-size:1.15rem;color:#1b4332;margin-bottom:20px;font-weight:700">❓ Häufige Fragen zu ${escHtml(pflanze.name_deutsch)}</h2>
       <div>
         ${faqItems.map((item, i) => `<details style="border-bottom:${i < faqItems.length - 1 ? '1px solid #f0ede8' : 'none'};padding:14px 0"${i === 0 ? ' open' : ''}>
-          <summary style="font-weight:700;font-size:.92rem;color:#1b4332;cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center">${item.q}<span style="color:#2d6a4f;flex-shrink:0;margin-left:8px;font-size:.75rem">▼</span></summary>
-          <p style="font-size:.88rem;color:#555;line-height:1.65;margin-top:10px;padding-right:8px">${item.a}</p>
+          <summary style="font-weight:700;font-size:.92rem;color:#1b4332;cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center">${escHtml(item.q)}<span style="color:#2d6a4f;flex-shrink:0;margin-left:8px;font-size:.75rem">▼</span></summary>
+          <p style="font-size:.88rem;color:#555;line-height:1.65;margin-top:10px;padding-right:8px">${escHtml(item.a)}</p>
         </details>`).join('')}
       </div>
     </section>` : '';
@@ -2407,23 +2450,23 @@ app.get('/pflanze/:slug', (req, res) => {
     <section style="background:#f0fdf4;border-radius:14px;padding:20px 24px;margin-bottom:24px">
       <h2 style="font-size:1rem;color:#1b4332;margin-bottom:14px;font-weight:700">📚 Weiterführende Ratgeber</h2>
       <div style="display:flex;flex-direction:column;gap:8px">
-        ${passendArtikel.map(a => `<a href="/ratgeber/${slugify(a.titel)}" style="display:flex;align-items:center;gap:10px;color:#2d6a4f;text-decoration:none;font-size:.88rem;font-weight:600;padding:8px 12px;background:#fff;border-radius:8px;transition:background .12s" onmouseover="this.style.background='#d8f3dc'" onmouseout="this.style.background='#fff'">→ ${a.titel}</a>`).join('')}
+        ${passendArtikel.map(a => `<a href="/ratgeber/${slugify(a.titel)}" style="display:flex;align-items:center;gap:10px;color:#2d6a4f;text-decoration:none;font-size:.88rem;font-weight:600;padding:8px 12px;background:#fff;border-radius:8px;transition:background .12s" onmouseover="this.style.background='#d8f3dc'" onmouseout="this.style.background='#fff'">→ ${escHtml(a.titel)}</a>`).join('')}
       </div>
     </section>` : '';
 
   res.send(`<!DOCTYPE html><html lang="de"><head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>${pflanze.name_deutsch} (${pflanze.name_botanisch}) — Pflege, Standort & Verwendung | Staudenplan.de</title>
-  <meta name="description" content="${pflanze.name_deutsch} (${pflanze.name_botanisch}): ${(pflanze.beschreibung || '').substring(0, 130)} — Standort ${pflanze.licht||''}, Blühzeit ${pflanze.bluehzeit||''}, Pflege und Kauftipp.">
+  <title>${escHtml(pflanze.name_deutsch)} (${escHtml(pflanze.name_botanisch)}) — Pflege, Standort & Verwendung | Staudenplan.de</title>
+  <meta name="description" content="${escHtml(pflanze.name_deutsch)} (${escHtml(pflanze.name_botanisch)}): ${escHtml((pflanze.beschreibung || '').substring(0, 130))} — Standort ${escHtml(pflanze.licht||'')}, Blühzeit ${escHtml(pflanze.bluehzeit||'')}, Pflege und Kauftipp.">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">
   <link rel="canonical" href="https://www.staudenplan.de/pflanze/${slug}">
-  <meta property="og:title" content="${pflanze.name_deutsch} — Pflege, Standort & Kauftipp">
-  <meta property="og:description" content="${(pflanze.beschreibung || '').substring(0, 155)}">
-  <meta property="og:image" content="${pflanze.bild_url || 'https://www.staudenplan.de/images/og-default.jpg'}">
+  <meta property="og:title" content="${escHtml(pflanze.name_deutsch)} — Pflege, Standort & Kauftipp">
+  <meta property="og:description" content="${escHtml((pflanze.beschreibung || '').substring(0, 155))}">
+  <meta property="og:image" content="${escHtml(pflanze.bild_url || 'https://www.staudenplan.de/images/og-default.jpg')}">
   <meta property="og:url" content="https://www.staudenplan.de/pflanze/${slug}">
   <meta property="og:type" content="product">
-  <script type="application/ld+json">${schemaOrg}</script>
-  ${faqSchema ? `<script type="application/ld+json">${faqSchema}</script>` : ''}
+  <script type="application/ld+json">${schemaOrg.replace(/</g, '\\u003c')}</script>
+  ${faqSchema ? `<script type="application/ld+json">${faqSchema.replace(/</g, '\\u003c')}</script>` : ''}
   <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',system-ui,sans-serif;background:#f8f4ef;color:#1a1a1a}@media(max-width:680px){.pflanz-grid{grid-template-columns:1fr!important}.pflanz-hero-inner{flex-direction:column!important}}details>summary::-webkit-details-marker{display:none}</style>
   </head><body>
   ${NAV_LINKS}
@@ -2432,7 +2475,7 @@ app.get('/pflanze/:slug', (req, res) => {
   <div style="max-width:960px;margin:14px auto 0;padding:0 20px;font-size:.8rem;color:#aaa">
     <a href="/" style="color:#2d6a4f;text-decoration:none">Startseite</a> ›
     <a href="/pflanzen" style="color:#2d6a4f;text-decoration:none"> Stauden-Lexikon</a> ›
-    <span>${pflanze.name_deutsch}</span>
+    <span>${escHtml(pflanze.name_deutsch)}</span>
   </div>
 
   <!-- Hero: Bild links, Info rechts -->
@@ -2443,7 +2486,7 @@ app.get('/pflanze/:slug', (req, res) => {
       <div style="flex-shrink:0;width:380px;max-width:100%">
         ${pflanze.bild_url
           ? `<div style="border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.12);aspect-ratio:4/3">
-               <img src="${pflanze.bild_url}" alt="${pflanze.name_deutsch} — ${pflanze.name_botanisch}" style="width:100%;height:100%;object-fit:cover;display:block">
+               <img src="${escHtml(pflanze.bild_url)}" alt="${escHtml(pflanze.name_deutsch)} — ${escHtml(pflanze.name_botanisch)}" style="width:100%;height:100%;object-fit:cover;display:block">
              </div>
              <p style="font-size:.68rem;color:#bbb;margin-top:6px;text-align:right">${
                pflanze.bild_ki ? 'KI-generiert · OpenAI'
@@ -2455,9 +2498,9 @@ app.get('/pflanze/:slug', (req, res) => {
 
       <!-- Info -->
       <div style="flex:1;min-width:0">
-        <h1 style="font-size:clamp(1.5rem,4vw,2rem);color:#1b4332;font-weight:800;line-height:1.2;margin-bottom:4px">${pflanze.name_deutsch}</h1>
-        <p style="font-style:italic;color:#888;font-size:1rem;margin-bottom:14px">${pflanze.name_botanisch}</p>
-        <p style="line-height:1.7;color:#333;margin-bottom:20px;font-size:.95rem">${pflanze.beschreibung || 'Winterharte Gartenstaude für deutsche Gärten.'}</p>
+        <h1 style="font-size:clamp(1.5rem,4vw,2rem);color:#1b4332;font-weight:800;line-height:1.2;margin-bottom:4px">${escHtml(pflanze.name_deutsch)}</h1>
+        <p style="font-style:italic;color:#888;font-size:1rem;margin-bottom:14px">${escHtml(pflanze.name_botanisch)}</p>
+        <p style="line-height:1.7;color:#333;margin-bottom:20px;font-size:.95rem">${escHtml(pflanze.beschreibung || 'Winterharte Gartenstaude für deutsche Gärten.')}</p>
 
         <!-- Eigenschaften Grid -->
         <div class="pflanz-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:24px">
@@ -2471,7 +2514,7 @@ app.get('/pflanze/:slug', (req, res) => {
           ].map(([l,v]) => `
             <div style="background:#fff;border-radius:10px;padding:12px 14px;box-shadow:0 1px 6px rgba(0,0,0,.06)">
               <div style="font-size:.72rem;color:#aaa;margin-bottom:3px;text-transform:uppercase;letter-spacing:.05em">${l}</div>
-              <div style="font-weight:700;font-size:.92rem;color:#1b4332">${v}</div>
+              <div style="font-weight:700;font-size:.92rem;color:#1b4332">${escHtml(v)}</div>
             </div>`).join('')}
           ${pflanze.bienen_freundlich ? `<div style="background:#fef9c3;border-radius:10px;padding:12px 14px"><div style="font-size:.72rem;color:#92400e;margin-bottom:3px;text-transform:uppercase;letter-spacing:.05em">Ökologie</div><div style="font-weight:700;font-size:.92rem;color:#92400e">🐝 Bienenfreundlich</div></div>` : ''}
           ${pflanze.heimisch ? `<div style="background:#f0fdf4;border-radius:10px;padding:12px 14px"><div style="font-size:.72rem;color:#065f46;margin-bottom:3px;text-transform:uppercase;letter-spacing:.05em">Herkunft</div><div style="font-weight:700;font-size:.92rem;color:#065f46">🌱 Heimisch in Deutschland</div></div>` : ''}
@@ -2483,7 +2526,7 @@ app.get('/pflanze/:slug', (req, res) => {
           <button id="wl-btn" onclick="addToWunschliste()" style="background:#2d6a4f;color:#fff;border:none;border-radius:50px;padding:13px 28px;font-weight:700;font-size:.9rem;cursor:pointer;transition:background .2s">🌿 Zur Wunschliste</button>
           <script>
           (function(){
-            const KEY='staudenplan_wishlist', BOT='${pflanze.name_botanisch.replace(/'/g,"\\'")}', DE='${pflanze.name_deutsch.replace(/'/g,"\\'")}';
+            const KEY='staudenplan_wishlist', BOT=${JSON.stringify(pflanze.name_botanisch).replace(/</g, '\\u003c')}, DE=${JSON.stringify(pflanze.name_deutsch).replace(/</g, '\\u003c')};
             function getWL(){try{return JSON.parse(localStorage.getItem(KEY)||'[]');}catch{return[];}}
             function setAdded(){const b=document.getElementById('wl-btn');if(!b)return;b.textContent='✓ Auf Wunschliste';b.style.background='#52b788';b.style.cursor='default';b.onclick=function(){if(window.snavToggle)window.snavToggle();};}
             window.addToWunschliste=function(){const wl=getWL();if(!wl.find(p=>p.name_botanisch===BOT)){wl.push({name_deutsch:DE,name_botanisch:BOT});localStorage.setItem(KEY,JSON.stringify(wl));}setAdded();document.dispatchEvent(new CustomEvent('wl-changed'));if(window.snavUpdateBtn)window.snavUpdateBtn();};
@@ -2503,7 +2546,7 @@ app.get('/pflanze/:slug', (req, res) => {
     <!-- Standort & Pflege -->
     <section style="background:#fff;border-radius:14px;padding:24px;box-shadow:0 2px 12px rgba(0,0,0,.07);margin-bottom:24px">
       <h2 style="font-size:1.15rem;color:#1b4332;margin-bottom:16px;font-weight:700;display:flex;align-items:center;gap:8px">🌱 Standort & Pflege</h2>
-      <p style="line-height:1.75;color:#333;margin-bottom:12px"><strong>${pflanze.name_deutsch}</strong> (${pflanze.name_botanisch}) ist eine ${pflanze.licht?pflanze.licht.split('|')[0]+'-liebende':''} Gartenstaude mit einer Wuchshöhe von ${hoehe}. ${pflanze.beschreibung||''}</p>
+      <p style="line-height:1.75;color:#333;margin-bottom:12px"><strong>${escHtml(pflanze.name_deutsch)}</strong> (${escHtml(pflanze.name_botanisch)}) ist eine ${pflanze.licht?escHtml(pflanze.licht.split('|')[0])+'-liebende':''} Gartenstaude mit einer Wuchshöhe von ${hoehe}. ${escHtml(pflanze.beschreibung||'')}</p>
       <p style="line-height:1.75;color:#333;margin-bottom:12px">Besonders gut eignet sich die Pflanze für den <strong>${(pflanze.stil||'Naturgarten').replace(/\|/g,', ')}</strong>. Bodentyp: ${(pflanze.boden||'normaler Gartenboden').replace(/\|/g,', ')}.</p>
       <p style="line-height:1.75;color:#333"><strong>Pflanzzeit:</strong> März–Mai (Frühjahr) oder September–Oktober (Herbst). ${pflanze.bienen_freundlich?'Als bienenfreundliche Staude leistet sie einen wichtigen Beitrag zur Gartenökologie.':''} ${pflanze.heimisch?'Als heimische Art ist sie besonders wertvoll für einheimische Insekten und Vögel.':''}</p>
     </section>
@@ -2617,8 +2660,8 @@ app.get('/pflanze/:slug', (req, res) => {
 
     <!-- Plan CTA -->
     <div style="background:linear-gradient(135deg,#1b4332,#2d6a4f);color:#fff;border-radius:14px;padding:28px;margin-top:32px;text-align:center">
-      <h3 style="font-size:1.15rem;margin-bottom:8px">Passt ${pflanze.name_deutsch} in deinen Garten?</h3>
-      <p style="opacity:.88;font-size:.9rem;margin-bottom:18px">Unser KI-Planer zeigt dir den perfekten Bepflanzungsplan — mit ${pflanze.name_deutsch} als Teil eines harmonischen Gesamtkonzepts.</p>
+      <h3 style="font-size:1.15rem;margin-bottom:8px">Passt ${escHtml(pflanze.name_deutsch)} in deinen Garten?</h3>
+      <p style="opacity:.88;font-size:.9rem;margin-bottom:18px">Unser KI-Planer zeigt dir den perfekten Bepflanzungsplan — mit ${escHtml(pflanze.name_deutsch)} als Teil eines harmonischen Gesamtkonzepts.</p>
       <a href="/" style="background:#fff;color:#1b4332;border-radius:50px;padding:12px 30px;text-decoration:none;font-weight:700;font-size:.9rem;display:inline-block">Kostenlosen Plan erstellen →</a>
     </div>
   </main>
@@ -2632,12 +2675,12 @@ function kategorieSeitenHTML({ titel, metaDesc, h1, intro, pflanzen, artikelLink
   const pflanzenHtml = pflanzen.map(p => `
     <a href="/pflanze/${pflanzeToSlug(p.name_botanisch)}" style="background:#fff;border-radius:12px;text-decoration:none;color:inherit;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.07);transition:transform .12s;display:flex;flex-direction:column" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
       ${p.bild_url
-        ? `<div style="height:120px;overflow:hidden"><img src="${p.bild_url}" alt="${p.name_deutsch}" loading="lazy" style="width:100%;height:100%;object-fit:cover"></div>`
+        ? `<div style="height:120px;overflow:hidden"><img src="${escHtml(p.bild_url)}" alt="${escHtml(p.name_deutsch)}" loading="lazy" style="width:100%;height:100%;object-fit:cover"></div>`
         : `<div style="height:120px;background:linear-gradient(135deg,#d8f3dc,#b7e4c7);display:flex;align-items:center;justify-content:center;font-size:3rem">🌿</div>`}
       <div style="padding:12px">
-        <div style="font-size:.88rem;font-weight:700;color:#1b4332;line-height:1.3;margin-bottom:3px">${p.name_deutsch}</div>
-        <div style="font-size:.73rem;color:#aaa;font-style:italic;margin-bottom:6px">${p.name_botanisch}</div>
-        ${p.bluehzeit ? `<div style="font-size:.72rem;color:#2d6a4f">🌸 ${p.bluehzeit}</div>` : ''}
+        <div style="font-size:.88rem;font-weight:700;color:#1b4332;line-height:1.3;margin-bottom:3px">${escHtml(p.name_deutsch)}</div>
+        <div style="font-size:.73rem;color:#aaa;font-style:italic;margin-bottom:6px">${escHtml(p.name_botanisch)}</div>
+        ${p.bluehzeit ? `<div style="font-size:.72rem;color:#2d6a4f">🌸 ${escHtml(p.bluehzeit)}</div>` : ''}
       </div>
     </a>`).join('');
 
@@ -2647,7 +2690,7 @@ function kategorieSeitenHTML({ titel, metaDesc, h1, intro, pflanzen, artikelLink
       <div style="display:flex;flex-direction:column;gap:10px">
         ${artikelLinks.map(a => `<a href="/ratgeber/${slugify(a.titel)}" style="display:flex;align-items:center;gap:10px;background:#fff;border-radius:10px;padding:14px 18px;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.06);transition:background .12s" onmouseover="this.style.background='#f0fdf4'" onmouseout="this.style.background='#fff'">
           <span style="font-size:1.2rem;flex-shrink:0">📖</span>
-          <span style="font-size:.9rem;font-weight:600;color:#1b4332">${a.titel}</span>
+          <span style="font-size:.9rem;font-weight:600;color:#1b4332">${escHtml(a.titel)}</span>
           <span style="margin-left:auto;color:#2d6a4f;font-weight:700;font-size:.82rem;white-space:nowrap">Lesen →</span>
         </a>`).join('')}
       </div>
@@ -3022,8 +3065,8 @@ app.get('/ratgeber/:slug', (req, res) => {
     .filter(p => artikelWoerter.includes(p.name_deutsch.toLowerCase()) || artikelWoerter.includes((p.name_botanisch || '').split(' ')[0].toLowerCase()))
     .slice(0, 4);
 
-  // Article Schema
-  const articleSchema = JSON.stringify({
+  // Article Schema (escJsonLd härtet gegen </script>-Ausbruch)
+  const articleSchema = escJsonLd({
     "@context": "https://schema.org",
     "@type": "Article",
     "headline": artikel.titel,
@@ -3035,17 +3078,19 @@ app.get('/ratgeber/:slug', (req, res) => {
     "mainEntityOfPage": `https://www.staudenplan.de/ratgeber/${slug}`
   });
 
-  // Botanische Pflanzennamen im Artikeltext automatisch verlinken
-  let artikelInhalt = artikel.inhalt;
+  // Artikeltext ist untrusted (teils aus externem Brave-Ingest): erst escapen, DANN
+  // botanische Namen verlinken — Suche/Ersetzung läuft auf dem escapten Text.
+  let artikelInhalt = escHtml(artikel.inhalt);
   try {
     const pflanzenLinks = db.prepare('SELECT name_botanisch FROM pflanzen WHERE name_botanisch IS NOT NULL ORDER BY length(name_botanisch) DESC').all();
     for (const { name_botanisch } of pflanzenLinks) {
-      const idx = artikelInhalt.indexOf(name_botanisch);
+      const escName = escHtml(name_botanisch);
+      const idx = artikelInhalt.indexOf(escName);
       if (idx !== -1) {
         const s = pflanzeToSlug(name_botanisch);
         artikelInhalt = artikelInhalt.substring(0, idx) +
-          `<a href="/pflanze/${s}" style="color:#2d6a4f;font-weight:600;text-decoration:none;border-bottom:1px solid #b7e4c7">${name_botanisch}</a>` +
-          artikelInhalt.substring(idx + name_botanisch.length);
+          `<a href="/pflanze/${s}" style="color:#2d6a4f;font-weight:600;text-decoration:none;border-bottom:1px solid #b7e4c7">${escName}</a>` +
+          artikelInhalt.substring(idx + escName.length);
       }
     }
   } catch {}
@@ -3064,10 +3109,10 @@ app.get('/ratgeber/:slug', (req, res) => {
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px">
         ${passendePflanzen.map(p => `
           <a href="/pflanze/${pflanzeToSlug(p.name_botanisch)}" style="background:#fff;border-radius:10px;text-decoration:none;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.07);transition:transform .12s" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
-            ${p.bild_url ? `<div style="height:80px;overflow:hidden"><img src="${p.bild_url}" alt="${p.name_deutsch}" loading="lazy" style="width:100%;height:100%;object-fit:cover"></div>` : `<div style="height:80px;background:linear-gradient(135deg,#d8f3dc,#b7e4c7);display:flex;align-items:center;justify-content:center;font-size:2rem">🌿</div>`}
+            ${p.bild_url ? `<div style="height:80px;overflow:hidden"><img src="${escHtml(p.bild_url)}" alt="${escHtml(p.name_deutsch)}" loading="lazy" style="width:100%;height:100%;object-fit:cover"></div>` : `<div style="height:80px;background:linear-gradient(135deg,#d8f3dc,#b7e4c7);display:flex;align-items:center;justify-content:center;font-size:2rem">🌿</div>`}
             <div style="padding:10px">
-              <div style="font-size:.82rem;font-weight:700;color:#1b4332">${p.name_deutsch}</div>
-              <div style="font-size:.7rem;color:#aaa;font-style:italic">${p.name_botanisch}</div>
+              <div style="font-size:.82rem;font-weight:700;color:#1b4332">${escHtml(p.name_deutsch)}</div>
+              <div style="font-size:.7rem;color:#aaa;font-style:italic">${escHtml(p.name_botanisch)}</div>
             </div>
           </a>`).join('')}
       </div>
@@ -3075,25 +3120,25 @@ app.get('/ratgeber/:slug', (req, res) => {
 
   const verwandteHtml = verwandte.length > 0 ? `
     <div style="margin-top:48px;padding-top:32px;border-top:2px solid #e0d9cf">
-      <h2 style="font-size:1.1rem;color:#1b4332;margin-bottom:20px;font-weight:700">Weitere Ratgeber: ${artikel.kategorie}</h2>
+      <h2 style="font-size:1.1rem;color:#1b4332;margin-bottom:20px;font-weight:700">Weitere Ratgeber: ${escHtml(artikel.kategorie)}</h2>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">
         ${verwandte.map(v => `
           <a href="/ratgeber/${slugify(v.titel)}" style="background:#fff;border-radius:10px;padding:0;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.07);overflow:hidden;transition:transform .12s" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
-            <div style="background:${cfg.grad};padding:10px 14px"><span style="color:rgba(255,255,255,.8);font-size:.72rem;font-weight:600">${cfg.icon} ${v.kategorie}</span></div>
-            <div style="padding:14px"><p style="font-size:.85rem;font-weight:700;color:#1a1a1a;line-height:1.4;margin-bottom:6px">${v.titel}</p><span style="color:#2d6a4f;font-size:.78rem;font-weight:700">Lesen →</span></div>
+            <div style="background:${cfg.grad};padding:10px 14px"><span style="color:rgba(255,255,255,.8);font-size:.72rem;font-weight:600">${cfg.icon} ${escHtml(v.kategorie)}</span></div>
+            <div style="padding:14px"><p style="font-size:.85rem;font-weight:700;color:#1a1a1a;line-height:1.4;margin-bottom:6px">${escHtml(v.titel)}</p><span style="color:#2d6a4f;font-size:.78rem;font-weight:700">Lesen →</span></div>
           </a>`).join('')}
       </div>
     </div>` : '';
 
   res.send(`<!DOCTYPE html><html lang="de"><head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>${artikel.titel} | Staudenplan.de Ratgeber</title>
-  <meta name="description" content="${artikel.inhalt.substring(0, 155).replace(/"/g,"'")}">
+  <title>${escHtml(artikel.titel)} | Staudenplan.de Ratgeber</title>
+  <meta name="description" content="${escHtml(artikel.inhalt.substring(0, 155))}">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">
   <link rel="canonical" href="https://www.staudenplan.de/ratgeber/${slug}">
-  <meta property="og:title" content="${artikel.titel}">
+  <meta property="og:title" content="${escHtml(artikel.titel)}">
   <meta property="og:type" content="article">
-  <meta property="og:description" content="${artikel.inhalt.substring(0, 155).replace(/"/g,"'")}">
+  <meta property="og:description" content="${escHtml(artikel.inhalt.substring(0, 155))}">
   <meta property="og:image" content="https://www.staudenplan.de/images/og-default.jpg">
   <meta property="og:url" content="https://www.staudenplan.de/ratgeber/${slug}">
   <script type="application/ld+json">${articleSchema}</script>
@@ -3112,9 +3157,9 @@ app.get('/ratgeber/:slug', (req, res) => {
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
         <a href="/ratgeber" style="color:rgba(255,255,255,.7);text-decoration:none;font-size:.82rem">← Ratgeber</a>
         <span style="color:rgba(255,255,255,.4)">/</span>
-        <span style="background:rgba(255,255,255,.2);color:#fff;border-radius:20px;padding:3px 12px;font-size:.75rem;font-weight:700">${cfg.icon} ${artikel.kategorie}</span>
+        <span style="background:rgba(255,255,255,.2);color:#fff;border-radius:20px;padding:3px 12px;font-size:.75rem;font-weight:700">${cfg.icon} ${escHtml(artikel.kategorie)}</span>
       </div>
-      <h1 style="font-size:clamp(1.5rem,4vw,2rem);font-weight:800;color:#fff;line-height:1.25;margin-bottom:16px">${artikel.titel}</h1>
+      <h1 style="font-size:clamp(1.5rem,4vw,2rem);font-weight:800;color:#fff;line-height:1.25;margin-bottom:16px">${escHtml(artikel.titel)}</h1>
       <div style="display:flex;align-items:center;gap:16px;color:rgba(255,255,255,.7);font-size:.82rem">
         <span>📖 ${lesezeit} Min. Lesezeit</span>
         <span>·</span>
@@ -3299,7 +3344,12 @@ const BEISPIEL_PFLANZEN_IDS = (() => {
 
 function loadBeispielPlan(slug) {
   try {
-    const p = path.join(__dirname, 'scripts', `beispiel-plan-${slug}.json`);
+    // Slug streng validieren: keine Pfad-Trenner/Punkte → kein Path-Traversal.
+    if (typeof slug !== 'string' || !/^[a-z0-9-]+$/.test(slug)) return null;
+    const dir = path.join(__dirname, 'scripts');
+    const p = path.join(dir, `beispiel-plan-${slug}.json`);
+    // Belt-and-suspenders: aufgelöster Pfad muss im scripts/-Verzeichnis bleiben.
+    if (path.dirname(path.resolve(p)) !== path.resolve(dir)) return null;
     return JSON.parse(fs.readFileSync(p, 'utf8'));
   } catch { return null; }
 }
@@ -3767,7 +3817,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 
-app.listen(PORT, async () => {
+const server = app.listen(PORT, async () => {
   const pflanzenN = db.prepare("SELECT COUNT(*) as n FROM pflanzen WHERE name_deutsch != 'Test-Pflanze'").get().n;
   let wissenN = 0;
   try { wissenN = db.prepare('SELECT COUNT(*) as n FROM wissen').get().n; } catch {}
@@ -3798,3 +3848,20 @@ app.listen(PORT, async () => {
     console.log(`IndexNow: ${e.message}`);
   }
 });
+
+// ─── Fehler-Sicherheitsnetz + Graceful Shutdown ───────────────────────────────
+// Log-only (kein forcierter Exit): ein einzelner async-Fehler soll nicht alle
+// Nutzer treffen; better-sqlite3 ist synchron/crashsicher, pm2 fängt echte Crashes.
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled Rejection:', reason instanceof Error ? reason.stack || reason.message : reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err.stack || err.message);
+});
+function shutdown(signal) {
+  console.log(`${signal} empfangen — fahre sauber herunter.`);
+  server.close(() => { try { db.close(); } catch {} process.exit(0); });
+  setTimeout(() => process.exit(0), 8000).unref(); // Notausstieg falls Verbindungen hängen
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
