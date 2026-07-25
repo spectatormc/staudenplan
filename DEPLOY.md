@@ -46,7 +46,7 @@ Eintragen:
 PORT=3001
 SITE_URL=https://www.staudenplan.de
 OPENAI_API_KEY=sk-proj-[DEIN KEY]
-ADMIN_PASSWORT=staudenplan2025
+ADMIN_PASSWORT=<STARKES-PASSWORT-NUR-IN-.ENV-NIE-INS-REPO>
 EMAIL_HOST=smtp.ionos.de
 EMAIL_PORT=587
 EMAIL_USER=info@staudenplan.de
