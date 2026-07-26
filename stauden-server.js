@@ -2595,6 +2595,27 @@ app.get('/pflanze/:slug', (req, res) => {
       </div>
     </section>` : '';
 
+  // Pflege-Content aus inhalt_lang mit SEO-Überschriften ([Pflanze] pflanzen/gießen/schneiden/…)
+  // — targetet die Care-Queries aus der Search Console, die bisher schwach ranken.
+  const pflName = pflanze.name_deutsch;
+  const pflegeFelder = [
+    { key: 'pflanzzeit',     h: `${pflName} pflanzen`,    icon: '🌱' },
+    { key: 'giessen',        h: `${pflName} gießen`,      icon: '💧' },
+    { key: 'duengen',        h: `${pflName} düngen`,      icon: '🌾' },
+    { key: 'rueckschnitt',   h: `${pflName} schneiden`,   icon: '✂️' },
+    { key: 'ueberwinterung', h: `${pflName} überwintern`, icon: '❄️' },
+  ].filter(f => inhaltLang && typeof inhaltLang[f.key] === 'string' && inhaltLang[f.key].trim());
+  const pflegeHtml = pflegeFelder.length ? `
+    <section style="background:#fff;border-radius:14px;padding:24px;box-shadow:0 2px 12px rgba(0,0,0,.07);margin-bottom:24px">
+      <h2 style="font-size:1.2rem;color:#1b4332;margin-bottom:18px;font-weight:700">🌿 Pflege &amp; Anbau von ${escHtml(pflName)}</h2>
+      ${pflegeFelder.map(f => `
+        <div style="margin-bottom:16px">
+          <h3 style="font-size:1rem;color:#2d6a4f;margin-bottom:5px;font-weight:700">${f.icon} ${escHtml(f.h)}</h3>
+          <p style="font-size:.92rem;color:#444;line-height:1.7">${escHtml(inhaltLang[f.key])}</p>
+        </div>`).join('')}
+      ${inhaltLang.tipp ? `<div style="background:#f0fdf4;border-left:4px solid #52b788;border-radius:0 8px 8px 0;padding:12px 16px;margin-top:8px"><strong style="color:#1b4332">💡 Profi-Tipp:</strong> <span style="color:#444;font-size:.92rem">${escHtml(inhaltLang.tipp)}</span></div>` : ''}
+    </section>` : '';
+
   // Passende Ratgeber für interne Verlinkung
   let passendArtikel = [];
   try {
@@ -2815,6 +2836,7 @@ app.get('/pflanze/:slug', (req, res) => {
       </div>
     </section>` : ''}
 
+    ${pflegeHtml}
     ${faqHtml}
     ${passendArtikelHtml}
 
