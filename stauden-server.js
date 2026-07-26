@@ -25,11 +25,11 @@ app.use(express.json({ limit: '1mb' })); // 1mb statt Default 100kb: Anfragen tr
 // Security-Header. CSP erlaubt 'unsafe-inline' für script/style, weil die Seite
 // durchgängig Inline-<script>/-style="" nutzt (kein Nonce/Hash-Rewrite ohne
 // Komplettumbau möglich) — blockt aber trotzdem das Nachladen fremder Scripts/
-// Bilder/Frames sowie Base-Tag- und Clickjacking-Angriffe. Externe Ressourcen der
-// Seite: nur Plausible Analytics (Script + Beacon), alle Bilder sind self-hosted.
+// Bilder/Frames sowie Base-Tag- und Clickjacking-Angriffe. Externe Scripts:
+// Plausible Analytics + jsPDF/autotable von cdnjs (PDF-Export) — alle Bilder self-hosted.
 const CSP = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' https://plausible.io",
+  "script-src 'self' 'unsafe-inline' https://plausible.io https://cdnjs.cloudflare.com",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data:",
   "font-src 'self' data:",
