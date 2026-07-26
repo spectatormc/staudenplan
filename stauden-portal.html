@@ -1708,6 +1708,7 @@
         <p>Lass dir alle Pflanzen deines Plans als fertiges Paket liefern. Schick uns deine Anfrage — wir leiten sie an unsere Gärtnerei weiter, die sich mit einem Angebot bei dir meldet.</p>
         <button class="btn-anfrage" onclick="openModal()">Paket bei Gärtnerei anfragen</button>
       </div>
+      <button class="btn-neustart" onclick="planTeilen(this)">🔗 Plan teilen</button>
       <button class="btn-neustart" onclick="neustart()">↩ Neuen Plan erstellen</button>
     </div>
   </div>
@@ -2680,6 +2681,7 @@
     'Gelb': '#facc15', 'Orange': '#fb923c', 'Gelb / Orange': '#fbbf24',
     'Rot': '#ef4444', 'Weinrot': '#b91c1c', 'Rot / Weinrot': '#dc2626',
     'Grün': '#4ade80', 'Gruen': '#4ade80',
+    'Silber': '#d1d5db', 'Bronze': '#d97706',
   };
   function bloomColor(farbe) {
     if (!farbe) return '#86efac';
@@ -4206,6 +4208,28 @@
       errEl.textContent = err.message;
       errEl.style.display = 'block';
       if (btn) { btn.disabled = false; btn.textContent = btn.dataset.orig || 'Anfrage senden 📩'; }
+    }
+  }
+
+  async function planTeilen(btn) {
+    if (!currentPlan || !currentPlan.pflanzen || !currentPlan.pflanzen.length) return;
+    const orig = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = 'Link wird erstellt …'; }
+    try {
+      const res = await fetch('/api/plan-teilen', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan: currentPlan })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Fehler beim Teilen.');
+      const url = location.origin + data.url;
+      if (window.plausible) plausible('Plan geteilt');
+      try { await navigator.clipboard.writeText(url); } catch {}
+      prompt('Dein Teilen-Link wurde in die Zwischenablage kopiert:', url);
+    } catch (e) {
+      alert('Teilen fehlgeschlagen: ' + e.message);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = orig; }
     }
   }
 

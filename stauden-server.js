@@ -119,11 +119,18 @@ db.exec(`
     ziel TEXT NOT NULL,
     pflanze TEXT
   );
+  CREATE TABLE IF NOT EXISTS geteilte_plaene (
+    id TEXT PRIMARY KEY,
+    erstellt_am TEXT DEFAULT (datetime('now')),
+    plan_json TEXT NOT NULL
+  );
 `);
 
 // ─── Gaißmayer-Kaufweiterleitung (ersetzt Amazon-Affiliate) ───────────────────
 // Ziel-URL zentral gepflegt: sobald ein Deep-Link / eine Kooperation existiert, hier ändern.
 const GAISSMAYER_URL = 'https://www.gaissmayer.de/web/shop/';
+// Deeplink in Gaißmayers Produktsuche (verifiziert liefert Treffer). Param-Name aus dem Suchformular.
+const GAISSMAYER_SEARCH = 'https://www.gaissmayer.de/web/shop/suche/produkte?filter%5Bartikel%5D%5Btext_suche%5D%5Bwerte%5D%5B%5D=';
 // Interner Zähl-Link: leitet auf Gaißmayer weiter und protokolliert den Klick pro Pflanze.
 const goLink = (botanisch) => `/go/gaissmayer?p=${encodeURIComponent(botanisch || '')}`;
 
@@ -1053,9 +1060,28 @@ JSON-Format:
 
       // Gesamtkosten serverseitig aus (DB-)Preisen × Stückzahl — konsistent mit dem Frontend,
       // kein frei erfundener Modell-String mehr.
-      plan.gesamtkosten_geschaetzt = plan.pflanzen.reduce(
-        (s, p) => s + (p.preis_stueck_eur || 0) * (p.stueckzahl || 1), 0
-      );
+      const gesamt = () => plan.pflanzen.reduce((s, p) => s + (p.preis_stueck_eur || 0) * (p.stueckzahl || 1), 0);
+
+      // Budget deterministisch erzwingen (Eval: Modell hält es von sich aus nie ein).
+      // Stückzahlen in Prio-Reihenfolge kappen (Füll → Begleit → Leit → Geophyt), immer
+      // die teuerste reduzierbare Art, min. 1 pro Art — Leitstauden/Struktur zuletzt.
+      const budgetNum = Number(budget);
+      if (Number.isFinite(budgetNum) && budgetNum > 0) {
+        const prio = ['Füllstaude', 'Begleitstaude', 'Leitstaude', 'Geophyt'];
+        let guard = 0;
+        while (gesamt() > budgetNum && guard++ < 1000) {
+          let target = null;
+          for (const rolle of prio) {
+            const cands = plan.pflanzen.filter(p => (p.rolle || '') === rolle && (p.stueckzahl || 1) > 1 && (p.preis_stueck_eur || 0) > 0);
+            if (cands.length) { target = cands.sort((a, b) => b.preis_stueck_eur - a.preis_stueck_eur)[0]; break; }
+          }
+          if (!target) break; // alles bei Stückzahl 1 → nicht weiter kürzbar
+          target.stueckzahl -= 1;
+        }
+      }
+
+      // Gesamtkosten serverseitig aus (DB-)Preisen × Stückzahl — konsistent mit dem Frontend.
+      plan.gesamtkosten_geschaetzt = gesamt();
     }
 
     res.json({ success: true, plan, rag: { kandidaten: kandidaten.length, wissen: wissen.length } });
@@ -1237,8 +1263,88 @@ app.get('/go/gaissmayer', (req, res) => {
   const pflanze = raw.replace(/[^\p{L}0-9 .×'’()\-]/gu, '').trim().slice(0, 120) || null;
   try { insertKlick.run('gaissmayer', pflanze); } catch { /* Zählung darf die Weiterleitung nie blockieren */ }
   res.set('X-Robots-Tag', 'noindex, nofollow');
-  res.redirect(302, GAISSMAYER_URL);
+  // Deeplink auf die Produktsuche mit Binomial (Gattung+Art) für robuste Treffer; sonst generischer Shop.
+  const suchbegriff = pflanze ? pflanze.split(' ').slice(0, 2).join(' ') : '';
+  res.redirect(302, suchbegriff ? GAISSMAYER_SEARCH + encodeURIComponent(suchbegriff) : GAISSMAYER_URL);
 });
+
+// ─── Plan teilen: öffentlicher Read-only-Link (viral + Backlinks) ─────────────
+const planTeilenLimiter = rl({ windowMs: 15 * 60 * 1000, max: 20, message: { error: 'Zu viele Anfragen.' } });
+app.post('/api/plan-teilen', planTeilenLimiter, (req, res) => {
+  const plan = req.body && req.body.plan;
+  if (!plan || !Array.isArray(plan.pflanzen) || plan.pflanzen.length === 0) {
+    return res.status(400).json({ error: 'Kein gültiger Plan zum Teilen.' });
+  }
+  const serialized = JSON.stringify(plan);
+  if (serialized.length > 200000) return res.status(400).json({ error: 'Plan zu groß.' });
+  const id = crypto.randomBytes(6).toString('hex');
+  try {
+    db.prepare('INSERT INTO geteilte_plaene (id, plan_json) VALUES (?, ?)').run(id, serialized);
+  } catch (e) {
+    console.error('Plan-Teilen Fehler:', e.message);
+    return res.status(500).json({ error: 'Speichern fehlgeschlagen.' });
+  }
+  res.json({ success: true, id, url: `/plan/${id}` });
+});
+
+app.get('/plan/:id', (req, res) => {
+  const id = req.params.id;
+  if (!/^[a-f0-9]{8,32}$/.test(id)) return res.status(404).send('<h2>Plan nicht gefunden.</h2>');
+  const row = db.prepare('SELECT plan_json FROM geteilte_plaene WHERE id = ?').get(id);
+  if (!row) return res.status(404).send('<h2>Plan nicht gefunden. <a href="/">Zur Startseite</a></h2>');
+  let plan;
+  try { plan = JSON.parse(row.plan_json); } catch { return res.status(404).send('<h2>Plan nicht lesbar.</h2>'); }
+  res.send(renderSharedPlan(plan, id));
+});
+
+// Read-only-Ansicht eines geteilten Plans — ALLE Plan-Felder (LLM-Daten) escaped.
+function renderSharedPlan(plan, id) {
+  const pflanzen = Array.isArray(plan.pflanzen) ? plan.pflanzen : [];
+  const stauden = pflanzen.filter(p => p.rolle !== 'Geophyt');
+  const kosten = typeof plan.gesamtkosten_geschaetzt === 'number'
+    ? Math.round(plan.gesamtkosten_geschaetzt) + ' €'
+    : (plan.gesamtkosten_geschaetzt ? escHtml(String(plan.gesamtkosten_geschaetzt)) : '—');
+  const rows = pflanzen.map(p => `<tr>
+      <td style="font-weight:600">${escHtml(p.name_deutsch || '')}<br><span style="font-style:italic;color:#999;font-size:.8rem">${escHtml(p.name_botanisch || '')}</span></td>
+      <td style="text-align:center">${Number(p.stueckzahl) || 1}</td>
+      <td>${escHtml(p.bluehzeit || '—')}</td>
+      <td>${escHtml(p.farbe || '—')}</td>
+      <td style="text-align:right">${p.preis_stueck_eur ? (Number(p.preis_stueck_eur) * (Number(p.stueckzahl) || 1)).toFixed(2) + ' €' : '—'}</td>
+    </tr>`).join('');
+  return `<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Geteilter Bepflanzungsplan | Staudenplan.de</title>
+  <meta name="description" content="Ein mit Staudenplan.de erstellter Bepflanzungsplan mit ${pflanzen.length} Stauden. Erstelle deinen eigenen kostenlosen Plan.">
+  <meta name="robots" content="noindex, follow">
+  <link rel="canonical" href="https://www.staudenplan.de/plan/${escHtml(id)}">
+  <style>body{font-family:'Segoe UI',system-ui,sans-serif;background:#f8f4ef;color:#1a1a1a;margin:0}
+  .wrap{max-width:820px;margin:0 auto;padding:32px 20px 60px}
+  .card{background:#fff;border-radius:16px;padding:24px;box-shadow:0 2px 14px rgba(0,0,0,.07);margin-bottom:20px}
+  table{width:100%;border-collapse:collapse;font-size:.9rem}th,td{text-align:left;padding:9px 8px;border-bottom:1px solid #eee}
+  th{color:#1b4332;font-size:.78rem;text-transform:uppercase;letter-spacing:.04em}
+  .cta{display:inline-block;border-radius:30px;padding:14px 32px;text-decoration:none;font-weight:700}
+  .meta{display:flex;gap:20px;flex-wrap:wrap;color:#555;font-size:.9rem;margin-top:10px}</style>
+  </head><body>
+  ${NAV_LINKS}
+  <div class="wrap">
+    <div class="card">
+      <div style="font-size:.78rem;color:#52b788;font-weight:700;text-transform:uppercase;letter-spacing:.05em">Geteilter Bepflanzungsplan</div>
+      <h1 style="font-size:1.5rem;color:#1b4332;margin:6px 0 4px">${plan.konzept ? escHtml(plan.konzept) : 'Staudenbeet-Plan'}</h1>
+      ${plan.beetbeschreibung ? `<p style="color:#444;line-height:1.6;margin-top:8px">${escHtml(plan.beetbeschreibung)}</p>` : ''}
+      <div class="meta"><span><strong>${stauden.length}</strong> Staudenarten</span><span><strong>${kosten}</strong> geschätzt</span></div>
+    </div>
+    <div class="card">
+      <table><thead><tr><th>Pflanze</th><th style="text-align:center">Stück</th><th>Blüte</th><th>Farbe</th><th style="text-align:right">Preis</th></tr></thead><tbody>${rows}</tbody></table>
+    </div>
+    <div class="card" style="text-align:center;background:linear-gradient(135deg,#1b4332,#2d6a4f);color:#fff">
+      <h2 style="font-size:1.2rem;margin:0 0 8px">Erstelle deinen eigenen Bepflanzungsplan</h2>
+      <p style="opacity:.88;font-size:.92rem;margin:0 0 18px">Kostenlos, in 2 Minuten, ohne Anmeldung — abgestimmt auf deinen Garten.</p>
+      <a class="cta" href="/" style="background:#fff;color:#1b4332">🌿 Jetzt kostenlos planen</a>
+    </div>
+  </div>
+  ${SITE_FOOTER}
+  </body></html>`;
+}
 
 // Admin: Klick-Statistik (gesamt + pro Pflanze, Fortschritt Richtung 100)
 app.get('/admin/klicks', (req, res) => {
@@ -2429,6 +2535,28 @@ app.get('/pflanze/:slug', (req, res) => {
     WHERE (licht LIKE ? OR stil LIKE ?) AND id != ? ORDER BY RANDOM() LIMIT 6
   `).all(`%${(pflanze.licht||'').split('|')[0]}%`, `%${(pflanze.stil||'').split('|')[0]}%`, pflanze.id);
 
+  // Kombinationspartner → interne Links (nur zu Pflanzen, die als Seite existieren; dedupliziert)
+  const kombiPartner = (pflanze.kombinationspartner || '').split(',')
+    .map(s => s.trim()).filter(Boolean)
+    .map(name => {
+      const nl = name.toLowerCase();
+      const binomial = nl.split(' ').slice(0, 2).join(' ');
+      return alle.find(p => p.name_botanisch && p.name_botanisch.toLowerCase() === nl)
+          || alle.find(p => p.name_botanisch && binomial.split(' ').length >= 2 && p.name_botanisch.toLowerCase().startsWith(binomial))
+          || null;
+    })
+    .filter(Boolean)
+    .filter((p, i, arr) => arr.findIndex(x => x.id === p.id) === i && p.id !== pflanze.id)
+    .slice(0, 8);
+  const kombiHtml = kombiPartner.length > 0 ? `
+    <section style="background:#fff;border-radius:14px;padding:20px 24px;margin-bottom:24px;box-shadow:0 2px 12px rgba(0,0,0,.06)">
+      <h2 style="font-size:1.05rem;color:#1b4332;margin-bottom:6px;font-weight:700">🌿 Passt gut zu ${escHtml(pflanze.name_deutsch)}</h2>
+      <p style="color:#888;font-size:.82rem;margin-bottom:14px">Bewährte Pflanzpartner für harmonische Kombinationen im Beet.</p>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        ${kombiPartner.map(p => `<a href="/pflanze/${pflanzeToSlug(p.name_botanisch)}" style="display:inline-flex;align-items:center;gap:6px;background:#f0fdf4;border:1px solid #d8f3dc;border-radius:20px;padding:7px 14px;text-decoration:none;color:#1b4332;font-size:.85rem;font-weight:600;transition:background .12s" onmouseover="this.style.background='#d8f3dc'" onmouseout="this.style.background='#f0fdf4'">🌱 ${escHtml(p.name_deutsch)}</a>`).join('')}
+      </div>
+    </section>` : '';
+
   // Inhalt-Lang vorab parsen (für FAQ + Verlinkung)
   const inhaltLang = pflanze.inhalt_lang
     ? (() => { try { return JSON.parse(pflanze.inhalt_lang); } catch { return null; } })()
@@ -2666,6 +2794,8 @@ app.get('/pflanze/:slug', (req, res) => {
         ${(pflanze.stil||'Naturgarten').split('|').map(s => `<span style="background:#2d6a4f;color:#fff;border-radius:20px;padding:6px 16px;font-size:.82rem;font-weight:600">${s.trim()}</span>`).join('')}
       </div>
     </section>
+
+    ${kombiHtml}
 
     <!-- Ähnliche Stauden -->
     ${aehnlicheMitBild.length > 0 ? `
@@ -3384,10 +3514,11 @@ function loadBeispielPlan(slug) {
   } catch { return null; }
 }
 
+// HINWEIS: identisch mit BLOOM_COLORS in stauden-portal.html (Client) halten — bei Änderung beide anpassen.
 const BLOOM_COLORS_SSR = {
   'Rosa':'#f472b6','Pink':'#f472b6','Purpur':'#a855f7','Lila':'#a855f7','Violett':'#818cf8',
-  'Blau':'#3b82f6','Weiß':'#e2e8f0','Weiss':'#e2e8f0','Creme':'#fef3c7',
-  'Gelb':'#facc15','Orange':'#fb923c','Rot':'#ef4444','Weinrot':'#b91c1c',
+  'Blau':'#3b82f6','Weiß':'#e2e8f0','Weiss':'#e2e8f0','Creme':'#fef3c7','Weiß / Creme':'#fef3c7',
+  'Gelb':'#facc15','Orange':'#fb923c','Gelb / Orange':'#fbbf24','Rot':'#ef4444','Weinrot':'#b91c1c','Rot / Weinrot':'#dc2626',
   'Grün':'#4ade80','Gruen':'#4ade80','Silber':'#d1d5db','Bronze':'#d97706',
 };
 function bloomColorSSR(farbe) {
