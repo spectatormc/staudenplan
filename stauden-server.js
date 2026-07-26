@@ -570,6 +570,16 @@ app.get('/', (req, res) => {
     let html = fs.readFileSync(path.join(__dirname, 'stauden-portal.html'), 'utf8');
     html = html.replace(/__PFLANZEN_COUNT__/g, pflanzenCount);
 
+  // FAQ (targetet reale Search-Console-Queries: "bepflanzungsplan erstellen", "beetplaner
+  // online kostenlos", "staudenbeet planen online", "stauden pro m²") — HTML + FAQPage-Schema.
+  const homeFaq = [
+    { q: 'Wie erstelle ich einen Bepflanzungsplan?', a: `Beschreibe deinen Garten — Fläche, Lichtbedingungen, Bodentyp und Gartenstil — und unser KI-Gartenplaner erstellt in rund 2 Minuten einen individuellen Bepflanzungsplan aus ${pflanzenCount}+ winterharten Stauden. Du bekommst einen grafischen Plan, eine Stückliste und einen Blühkalender — kostenlos und ohne Anmeldung.` },
+    { q: 'Gibt es einen kostenlosen Beetplaner online?', a: 'Ja. Staudenplan.de ist ein komplett kostenloser Beetplaner online: Du kannst dein Staudenbeet planen, ohne Konto und ohne E-Mail. Der KI-Planer schlägt standortgerechte Stauden vor und berechnet Stückzahlen und Kosten automatisch.' },
+    { q: 'Was kostet ein Bepflanzungsplan?', a: 'Das Erstellen des Bepflanzungsplans bei Staudenplan.de ist kostenlos. Bezahlt wird nur, wenn du die vorgeschlagenen Pflanzen tatsächlich kaufst — so kannst du dein Staudenbeet unverbindlich online planen.' },
+    { q: 'Kann ich mein Staudenbeet online planen?', a: 'Ja, genau dafür ist der Planer da. Du zeichnest die Beetfläche direkt ein oder gibst Maße ein, wählst Standort und Stil, und erhältst einen fertigen Pflanzplan mit Höhenstaffelung, Blütenfolge und bewährten Pflanzenkombinationen.' },
+    { q: 'Wie viele Stauden brauche ich pro Quadratmeter?', a: 'Je nach Pflanzdichte etwa 2–3 (locker), 4–5 (normal) oder 6–8 Stauden pro m². Der Pflanzplan berechnet die Stückzahlen automatisch aus Fläche und Pflanzabständen — du musst nichts selbst rechnen.' },
+  ];
+
   // Inject SEO sections before </body>
   const seoSection = `
 <!-- SEO Content (server-rendered) -->
@@ -679,6 +689,21 @@ app.get('/', (req, res) => {
       </div>
     </div>
   </section>
+
+  <!-- FAQ (server-rendered, mit FAQPage-Schema) -->
+  <section style="background:#fff;padding:48px 20px">
+    <div style="max-width:800px;margin:0 auto">
+      <h2 style="font-size:1.5rem;color:#1b4332;margin-bottom:20px;line-height:1.3">Häufige Fragen: Bepflanzungsplan &amp; Beetplaner online</h2>
+      ${homeFaq.map(f => `<details style="background:#f8f4ef;border-radius:10px;padding:14px 18px;margin-bottom:10px">
+        <summary style="font-weight:700;color:#1b4332;cursor:pointer;font-size:1rem;list-style:none">${f.q}</summary>
+        <p style="margin-top:10px;color:#444;line-height:1.7;font-size:.95rem">${f.a}</p>
+      </details>`).join('')}
+    </div>
+  </section>
+  <script type="application/ld+json">${escJsonLd({
+    '@context': 'https://schema.org', '@type': 'FAQPage',
+    mainEntity: homeFaq.map(f => ({ '@type': 'Question', name: f.q, acceptedAnswer: { '@type': 'Answer', text: f.a } })),
+  })}</script>
 
   <!-- Quiz Teaser -->
   <section class="seo-quiz-teaser">
