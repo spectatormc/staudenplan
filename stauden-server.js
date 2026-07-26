@@ -139,6 +139,9 @@ const GAISSMAYER_URL = 'https://www.gaissmayer.de/web/shop/';
 const GAISSMAYER_SEARCH = 'https://www.gaissmayer.de/web/shop/suche/produkte?filter%5Bartikel%5D%5Btext_suche%5D%5Bwerte%5D%5B%5D=';
 // Interner Zähl-Link: leitet auf Gaißmayer weiter und protokolliert den Klick pro Pflanze.
 const goLink = (botanisch) => `/go/gaissmayer?p=${encodeURIComponent(botanisch || '')}`;
+// Nur http(s)- oder relative URLs zulassen (blockt javascript:/data: aus geteilten Plänen).
+const safeUrl = (u) => /^(https?:\/\/|\/)/i.test(String(u == null ? '' : u).trim())
+  ? String(u).trim() : '#';
 
 // Zentrale HTML-Ausgabe-Kodierung für alle server-gerenderten Seiten. ALLE DB-/Fremd-/
 // LLM-Werte müssen hier durch, bevor sie in HTML interpoliert werden (Text + Attribute).
@@ -1281,6 +1284,9 @@ app.post('/api/plan-teilen', planTeilenLimiter, (req, res) => {
   if (!plan || !Array.isArray(plan.pflanzen) || plan.pflanzen.length === 0) {
     return res.status(400).json({ error: 'Kein gültiger Plan zum Teilen.' });
   }
+  // Fläche mitspeichern, damit die geteilte Seite den grafischen Plan (Draufsicht) zeigen kann.
+  const flaeche = Number(req.body && req.body.flaeche);
+  if (Number.isFinite(flaeche) && flaeche > 0 && flaeche <= 5000) plan._flaeche = flaeche;
   const serialized = JSON.stringify(plan);
   if (serialized.length > 200000) return res.status(400).json({ error: 'Plan zu groß.' });
   const id = crypto.randomBytes(6).toString('hex');
@@ -1303,48 +1309,74 @@ app.get('/plan/:id', (req, res) => {
   res.send(renderSharedPlan(plan, id));
 });
 
-// Read-only-Ansicht eines geteilten Plans — ALLE Plan-Felder (LLM-Daten) escaped.
+// Read-only-Ansicht eines geteilten Plans — kompletter Plan inkl. grafischem Plan (Draufsicht),
+// Pflanzenkarten, Jahreskalender & Pflegetipps. ALLE Plan-Felder werden in den SSR-Renderern escaped.
 function renderSharedPlan(plan, id) {
   const pflanzen = Array.isArray(plan.pflanzen) ? plan.pflanzen : [];
-  const stauden = pflanzen.filter(p => p.rolle !== 'Geophyt');
-  const kosten = typeof plan.gesamtkosten_geschaetzt === 'number'
-    ? Math.round(plan.gesamtkosten_geschaetzt) + ' €'
-    : (plan.gesamtkosten_geschaetzt ? escHtml(String(plan.gesamtkosten_geschaetzt)) : '—');
-  const rows = pflanzen.map(p => `<tr>
-      <td style="font-weight:600">${escHtml(p.name_deutsch || '')}<br><span style="font-style:italic;color:#999;font-size:.8rem">${escHtml(p.name_botanisch || '')}</span></td>
-      <td style="text-align:center">${Number(p.stueckzahl) || 1}</td>
-      <td>${escHtml(p.bluehzeit || '—')}</td>
-      <td>${escHtml(p.farbe || '—')}</td>
-      <td style="text-align:right">${p.preis_stueck_eur ? (Number(p.preis_stueck_eur) * (Number(p.stueckzahl) || 1)).toFixed(2) + ' €' : '—'}</td>
-    </tr>`).join('');
+  const flaeche = Number(plan._flaeche) > 0 ? Number(plan._flaeche) : null;
+  const konzept = plan.konzept ? escHtml(plan.konzept) : 'Staudenbeet-Plan';
   return `<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Geteilter Bepflanzungsplan | Staudenplan.de</title>
-  <meta name="description" content="Ein mit Staudenplan.de erstellter Bepflanzungsplan mit ${pflanzen.length} Stauden. Erstelle deinen eigenen kostenlosen Plan.">
+  <meta name="description" content="Ein mit Staudenplan.de erstellter Bepflanzungsplan mit ${pflanzen.length} Stauden — grafischer Plan, Pflanzenauswahl und Pflegetipps. Erstelle deinen eigenen kostenlosen Plan.">
   <meta name="robots" content="noindex, follow">
   <link rel="canonical" href="https://www.staudenplan.de/plan/${escHtml(id)}">
-  <style>body{font-family:'Segoe UI',system-ui,sans-serif;background:#f8f4ef;color:#1a1a1a;margin:0}
-  .wrap{max-width:820px;margin:0 auto;padding:32px 20px 60px}
-  .card{background:#fff;border-radius:16px;padding:24px;box-shadow:0 2px 14px rgba(0,0,0,.07);margin-bottom:20px}
-  table{width:100%;border-collapse:collapse;font-size:.9rem}th,td{text-align:left;padding:9px 8px;border-bottom:1px solid #eee}
-  th{color:#1b4332;font-size:.78rem;text-transform:uppercase;letter-spacing:.04em}
-  .cta{display:inline-block;border-radius:30px;padding:14px 32px;text-decoration:none;font-weight:700}
-  .meta{display:flex;gap:20px;flex-wrap:wrap;color:#555;font-size:.9rem;margin-top:10px}</style>
-  </head><body>
   ${NAV_LINKS}
-  <div class="wrap">
-    <div class="card">
-      <div style="font-size:.78rem;color:#52b788;font-weight:700;text-transform:uppercase;letter-spacing:.05em">Geteilter Bepflanzungsplan</div>
-      <h1 style="font-size:1.5rem;color:#1b4332;margin:6px 0 4px">${plan.konzept ? escHtml(plan.konzept) : 'Staudenbeet-Plan'}</h1>
-      ${plan.beetbeschreibung ? `<p style="color:#444;line-height:1.6;margin-top:8px">${escHtml(plan.beetbeschreibung)}</p>` : ''}
-      <div class="meta"><span><strong>${stauden.length}</strong> Staudenarten</span><span><strong>${kosten}</strong> geschätzt</span></div>
-    </div>
-    <div class="card">
-      <table><thead><tr><th>Pflanze</th><th style="text-align:center">Stück</th><th>Blüte</th><th>Farbe</th><th style="text-align:right">Preis</th></tr></thead><tbody>${rows}</tbody></table>
-    </div>
-    <div class="card" style="text-align:center;background:linear-gradient(135deg,#1b4332,#2d6a4f);color:#fff">
+  <style>
+  :root{--gd:#1b4332;--gm:#2d6a4f;--gl:#52b788;--gp:#f0faf3;--ea:#7d4f2a;--tx:#222;--tl:#666;--r:12px;--sh:0 2px 10px rgba(0,0,0,.07)}
+  body{font-family:system-ui,sans-serif;background:#f6faf7;margin:0;color:var(--tx)}
+  .pflanzen-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:16px;margin-bottom:36px}
+  .pflanze-card{background:#fff;border-radius:var(--r);box-shadow:var(--sh);overflow:hidden;transition:transform .15s}
+  .pflanze-card:hover{transform:translateY(-3px)}
+  .pflanze-card-top{height:140px;overflow:hidden;position:relative}
+  .pflanze-card-body{padding:16px 18px 18px}
+  .pflanze-name{font-weight:700;font-size:1rem;color:var(--gd);margin-bottom:2px}
+  .pflanze-botanisch{font-size:.78rem;color:var(--tl);font-style:italic;margin-bottom:8px}
+  .pflanze-beschreibung{font-size:.85rem;color:var(--tx);line-height:1.5;margin-bottom:12px}
+  .pflanze-tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+  .tag{background:var(--gp);color:var(--gd);border-radius:6px;padding:3px 9px;font-size:.75rem;font-weight:500}
+  .tag-erde{background:#f3e5d0;color:var(--ea)}
+  .tag-stueck{background:#e8f4f8;color:#1a607a}
+  .pflanze-preis{display:flex;align-items:center;justify-content:space-between;font-size:.88rem;color:var(--tl);margin-bottom:12px}
+  .pflanze-preis strong{color:var(--ea);font-size:1rem}
+  .pflege-sterne{color:var(--gl);letter-spacing:2px}
+  .btn-kaufen{display:block;width:100%;background:var(--gm);color:#fff;border:none;border-radius:8px;padding:10px;font-size:.9rem;font-weight:600;text-decoration:none;text-align:center;cursor:pointer;transition:background .15s;box-sizing:border-box}
+  .btn-kaufen:hover{background:var(--gd)}
+  .kalender-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:36px}
+  .kalender-card{background:#fff;border-radius:var(--r);box-shadow:var(--sh);padding:16px}
+  .kalender-card h4{font-size:.95rem;color:var(--gd);margin:0 0 10px}
+  .kalender-card ul{list-style:none;padding:0;margin:0}
+  .kalender-card ul li{font-size:.83rem;color:var(--tl);padding:3px 0;display:flex;gap:6px}
+  .kalender-card ul li::before{content:'→';color:var(--gl);flex-shrink:0}
+  .tipps-list{background:var(--gp);border-radius:var(--r);padding:20px 24px;margin-bottom:36px}
+  .tipps-list li{font-size:.9rem;color:var(--gd);padding:6px 0;display:flex;gap:10px;list-style:none}
+  .tipps-list li::before{content:'🌿';flex-shrink:0}
+  .em-bar{display:flex;gap:16px;flex-wrap:wrap;background:var(--gp);border-radius:10px;padding:16px 20px;margin-bottom:24px}
+  .em-item{font-size:.85rem;color:var(--tl)}
+  .em-item strong{display:block;font-size:1.1rem;color:var(--gd)}
+  .sec-title{font-size:1.1rem;font-weight:700;color:var(--gd);margin:0 0 16px;display:flex;align-items:center;gap:8px}
+  .card-wrap{background:#fff;border-radius:14px;padding:28px 20px;box-shadow:0 2px 12px rgba(0,0,0,.07);margin-bottom:24px}
+  .viz-card{background:#fff;border-radius:var(--r);box-shadow:var(--sh);overflow:hidden;margin-bottom:20px}
+  .viz-card-title{background:var(--gd);color:#fff;padding:12px 20px;font-size:.9rem;font-weight:700}
+  .viz-card-body{padding:20px}
+  .viz-svg-wrap{overflow-x:auto}
+  .viz-legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px;padding-top:16px;border-top:1px solid var(--gp)}
+  .vl-item{display:flex;align-items:center;gap:6px;font-size:.8rem;color:var(--tx);background:var(--gp);border-radius:6px;padding:4px 10px}
+  .vl-num{background:var(--gm);color:#fff;border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;font-size:.68rem;font-weight:700;flex-shrink:0}
+  .vl-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0;border:1.5px solid rgba(0,0,0,.15)}
+  .cta{display:inline-block;border-radius:30px;padding:14px 32px;text-decoration:none;font-weight:700}
+  </style>
+  </head><body>
+  <div style="background:linear-gradient(135deg,#1b4332,#2d6a4f);padding:40px 20px 30px;color:#fff;text-align:center">
+    <div style="font-size:2rem;margin-bottom:8px">🌿</div>
+    <div style="display:inline-block;background:rgba(255,255,255,.2);border-radius:20px;padding:4px 14px;font-size:.72rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;margin-bottom:10px">Geteilter Bepflanzungsplan</div>
+    <h1 style="font-size:clamp(1.3rem,4vw,1.9rem);font-weight:800;margin:0 auto;max-width:640px;line-height:1.3">${konzept}</h1>
+  </div>
+  <div style="max-width:900px;margin:0 auto;padding:32px 16px 60px">
+    ${renderBeispielPlanSSR(plan, flaeche)}
+    <div style="background:linear-gradient(135deg,#1b4332,#2d6a4f);border-radius:14px;padding:28px;color:#fff;margin-bottom:24px;text-align:center">
       <h2 style="font-size:1.2rem;margin:0 0 8px">Erstelle deinen eigenen Bepflanzungsplan</h2>
-      <p style="opacity:.88;font-size:.92rem;margin:0 0 18px">Kostenlos, in 2 Minuten, ohne Anmeldung — abgestimmt auf deinen Garten.</p>
+      <p style="opacity:.88;font-size:.92rem;margin:0 0 18px;line-height:1.6">Kostenlos, in 2 Minuten, ohne Anmeldung — abgestimmt auf deine Fläche, deinen Boden und deine Vorlieben.</p>
       <a class="cta" href="/" style="background:#fff;color:#1b4332">🌿 Jetzt kostenlos planen</a>
     </div>
   </div>
@@ -3693,8 +3725,8 @@ function renderGrafischSSR(pflanzen, flaeche) {
     return `<div class="vl-item">
       <span class="vl-num">${i+1}</span>
       <span class="vl-dot" style="background:${c}"></span>
-      <span>${p.name_deutsch}</span>
-      ${p.bluehzeit ? `<span style="color:#999;font-size:.72rem">${p.bluehzeit}</span>` : ''}
+      <span>${escHtml(p.name_deutsch)}</span>
+      ${p.bluehzeit ? `<span style="color:#999;font-size:.72rem">${escHtml(p.bluehzeit)}</span>` : ''}
     </div>`;
   }).join('');
 
@@ -3717,50 +3749,51 @@ function renderBeispielPlanSSR(plan, flaeche) {
   const meta = `<div class="em-bar">
     <div class="em-item"><strong>${pflanzen.length}</strong> Pflanzenarten</div>
     <div class="em-item"><strong>${gesamt}</strong> Pflanzen gesamt</div>
-    <div class="em-item"><strong>${plan.gesamtkosten_geschaetzt||'–'} €</strong> Gesamtkosten ca.</div>
+    <div class="em-item"><strong>${escHtml(String(plan.gesamtkosten_geschaetzt||'–'))} €</strong> Gesamtkosten ca.</div>
   </div>`;
 
   const cards = pflanzen.map((p, i) => {
     const c = bloomColorSSR(p.farbe);
     const cLight = hexLightenSSR(c, 40);
     const farbenTag = p.farbe
-      ? `<span class="tag" style="background:${hexLightenSSR(c,50)};color:${hexDarkenSSR(c,40)}">${p.farbe}</span>` : '';
+      ? `<span class="tag" style="background:${hexLightenSSR(c,50)};color:${hexDarkenSSR(c,40)}">${escHtml(p.farbe)}</span>` : '';
     const st = Math.min(p.pflege_sterne || 1, 3);
     const stars = '★'.repeat(st) + '☆'.repeat(3 - st);
     const preis = ((p.preis_stueck_eur||0) * (p.stueckzahl||1)).toFixed(2);
     const imgTop = p.bild_url
-      ? `<img src="${p.bild_url}" alt="${p.name_deutsch}" style="width:100%;height:100%;object-fit:cover;display:block" loading="lazy">`
+      ? `<img src="${escHtml(safeUrl(p.bild_url))}" alt="${escHtml(p.name_deutsch)}" style="width:100%;height:100%;object-fit:cover;display:block" loading="lazy">`
       : `<div style="font-size:2.2rem;display:flex;align-items:center;justify-content:center;height:100%">${emojis[i%10]}</div>`;
+    const kaufHref = p.name_botanisch ? goLink(p.name_botanisch) : safeUrl(p.kauflink || '/');
     return `<div class="pflanze-card">
       <div class="pflanze-card-top" style="background:linear-gradient(135deg,${cLight},${c})">${imgTop}</div>
       <div class="pflanze-card-body">
-        <div class="pflanze-name">${p.name_deutsch}</div>
-        <div class="pflanze-botanisch">${p.name_botanisch||''}</div>
-        <div class="pflanze-beschreibung">${p.beschreibung||''}</div>
+        <div class="pflanze-name">${escHtml(p.name_deutsch)}</div>
+        <div class="pflanze-botanisch">${escHtml(p.name_botanisch||'')}</div>
+        <div class="pflanze-beschreibung">${escHtml(p.beschreibung||'')}</div>
         <div class="pflanze-tags">
-          <span class="tag">☀️ ${p.standort||''}</span>
-          <span class="tag">🌸 ${p.bluehzeit||''}</span>
+          <span class="tag">☀️ ${escHtml(p.standort||'')}</span>
+          <span class="tag">🌸 ${escHtml(p.bluehzeit||'')}</span>
           ${farbenTag}
-          <span class="tag tag-erde">↕ ${p.hoehe_cm||'?'} cm</span>
-          <span class="tag tag-stueck">× ${p.stueckzahl||1} Stück</span>
+          <span class="tag tag-erde">↕ ${escHtml(String(p.hoehe_cm||'?'))} cm</span>
+          <span class="tag tag-stueck">× ${escHtml(String(p.stueckzahl||1))} Stück</span>
         </div>
         <div class="pflanze-preis">
           <span>Pflege: <span class="pflege-sterne">${stars}</span></span>
           <strong>${preis} €</strong>
         </div>
-        <a class="btn-kaufen" href="${p.name_botanisch ? goLink(p.name_botanisch) : (p.kauflink||'/')}" target="_blank" rel="noopener nofollow">Kaufen →</a>
+        <a class="btn-kaufen" href="${escHtml(kaufHref)}" target="_blank" rel="noopener nofollow">Kaufen →</a>
       </div>
     </div>`;
   }).join('');
 
   const kal = Object.entries(plan.pflanzkalender || {}).map(([jz, items]) => {
     const icon = jez[jz] || '📅';
-    const liItems = (Array.isArray(items) ? items : [items]).map(it => `<li>${it}</li>`).join('');
-    return `<div class="kalender-card"><h4>${icon} ${jz}</h4><ul>${liItems}</ul></div>`;
+    const liItems = (Array.isArray(items) ? items : [items]).map(it => `<li>${escHtml(String(it))}</li>`).join('');
+    return `<div class="kalender-card"><h4>${icon} ${escHtml(jz)}</h4><ul>${liItems}</ul></div>`;
   }).join('');
 
   const tippsAll = (plan.tipps||[]).concat(plan.pflanzabstand_hinweis ? [plan.pflanzabstand_hinweis] : []);
-  const tippsList = tippsAll.map(t => `<li>${t}</li>`).join('');
+  const tippsList = tippsAll.map(t => `<li>${escHtml(String(t))}</li>`).join('');
 
   const grafisch = flaeche ? renderGrafischSSR(pflanzen, flaeche) : '';
 
@@ -3772,7 +3805,7 @@ function renderBeispielPlanSSR(plan, flaeche) {
     <div class="pflanzen-grid">${cards}</div>
     ${kal ? `<p class="sec-title" style="font-size:.95rem">Jahreskalender</p><div class="kalender-grid">${kal}</div>` : ''}
     ${tippsList ? `<p class="sec-title" style="font-size:.95rem">Pflegetipps</p><ul class="tipps-list">${tippsList}</ul>` : ''}
-    ${plan.beetbeschreibung ? `<p style="color:#444;line-height:1.75;font-size:.92rem;margin-top:16px;padding-top:16px;border-top:1px solid #eee">${plan.beetbeschreibung}</p>` : ''}
+    ${plan.beetbeschreibung ? `<p style="color:#444;line-height:1.75;font-size:.92rem;margin-top:16px;padding-top:16px;border-top:1px solid #eee">${escHtml(plan.beetbeschreibung)}</p>` : ''}
   </div>`;
 }
 
