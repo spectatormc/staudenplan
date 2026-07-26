@@ -1278,15 +1278,44 @@ app.get('/go/gaissmayer', (req, res) => {
 });
 
 // ─── Plan teilen: öffentlicher Read-only-Link (viral + Backlinks) ─────────────
+// Grafik-Parameter validieren: nur endliche, plausible Maße (>=0.1 m, sonst Endlosschleife
+// bei den Gitterlinien) + Allowlists. Wird beim Speichern UND beim Rendern angewandt.
+function sanitizeGrafikOpts(g) {
+  if (!g || typeof g !== 'object') return {};
+  const dim = (v, max) => { const n = Number(v); return Number.isFinite(n) && n >= 0.1 && n <= max ? n : undefined; };
+  return {
+    flaeche: dim(g.flaeche, 5000),
+    beetLaenge: dim(g.beetLaenge, 500),
+    beetBreite: dim(g.beetBreite, 500),
+    sichtseite: typeof g.sichtseite === 'string' ? g.sichtseite.slice(0, 60) : undefined,
+    dichte: ['locker', 'normal', 'dicht'].includes(g.dichte) ? g.dichte : undefined
+  };
+}
+
 const planTeilenLimiter = rl({ windowMs: 15 * 60 * 1000, max: 20, message: { error: 'Zu viele Anfragen.' } });
 app.post('/api/plan-teilen', planTeilenLimiter, (req, res) => {
   const plan = req.body && req.body.plan;
   if (!plan || !Array.isArray(plan.pflanzen) || plan.pflanzen.length === 0) {
     return res.status(400).json({ error: 'Kein gültiger Plan zum Teilen.' });
   }
+  // Untrusted Pflanzen-Zahlenfelder koerzieren (String/NaN → sauber), damit der SSR-Renderer
+  // nie NaN-Koordinaten baut, keine String-Konkatenation in Summen entsteht (Stored-XSS-Vektor
+  // über stueckzahl) und '★'.repeat() nie mit ungültiger Zahl crasht.
+  const numOrUndef = (v) => { const n = Number(v); return Number.isFinite(n) ? n : undefined; };
+  plan.pflanzen = plan.pflanzen.map(p => (p && typeof p === 'object') ? {
+    ...p,
+    hoehe_cm: numOrUndef(p.hoehe_cm),
+    stueckzahl: numOrUndef(p.stueckzahl),
+    pflanzabstand_cm: numOrUndef(p.pflanzabstand_cm),
+    preis_stueck_eur: numOrUndef(p.preis_stueck_eur),
+    pflege_sterne: numOrUndef(p.pflege_sterne)
+  } : {});
   // Fläche mitspeichern, damit die geteilte Seite den grafischen Plan (Draufsicht) zeigen kann.
   const flaeche = Number(req.body && req.body.flaeche);
   if (Number.isFinite(flaeche) && flaeche > 0 && flaeche <= 5000) plan._flaeche = flaeche;
+  // Grafik-Parameter IMMER neu aus der Anfrage setzen (überschreibt evtl. in plan eingebettetes
+  // _grafik → kein Validierungs-Bypass) und säubern.
+  plan._grafik = sanitizeGrafikOpts(req.body && req.body.grafik);
   const serialized = JSON.stringify(plan);
   if (serialized.length > 200000) return res.status(400).json({ error: 'Plan zu groß.' });
   const id = crypto.randomBytes(6).toString('hex');
@@ -1299,21 +1328,31 @@ app.post('/api/plan-teilen', planTeilenLimiter, (req, res) => {
   res.json({ success: true, id, url: `/plan/${id}` });
 });
 
+// Geteilte Pläne sind unveränderlich → gerendertes HTML cachen (der Grafik-Renderer ist
+// CPU-intensiv; so wird pro Plan nur einmal gerechnet, egal wie oft der Link aufgerufen wird).
+const sharedPlanHtmlCache = new Map();
 app.get('/plan/:id', (req, res) => {
   const id = req.params.id;
   if (!/^[a-f0-9]{8,32}$/.test(id)) return res.status(404).send('<h2>Plan nicht gefunden.</h2>');
+  const cached = sharedPlanHtmlCache.get(id);
+  if (cached) return res.send(cached);
   const row = db.prepare('SELECT plan_json FROM geteilte_plaene WHERE id = ?').get(id);
   if (!row) return res.status(404).send('<h2>Plan nicht gefunden. <a href="/">Zur Startseite</a></h2>');
   let plan;
   try { plan = JSON.parse(row.plan_json); } catch { return res.status(404).send('<h2>Plan nicht lesbar.</h2>'); }
-  res.send(renderSharedPlan(plan, id));
+  const html = renderSharedPlan(plan, id);
+  if (sharedPlanHtmlCache.size >= 500) sharedPlanHtmlCache.clear();
+  sharedPlanHtmlCache.set(id, html);
+  res.send(html);
 });
 
 // Read-only-Ansicht eines geteilten Plans — kompletter Plan inkl. grafischem Plan (Draufsicht),
 // Pflanzenkarten, Jahreskalender & Pflegetipps. ALLE Plan-Felder werden in den SSR-Renderern escaped.
 function renderSharedPlan(plan, id) {
   const pflanzen = Array.isArray(plan.pflanzen) ? plan.pflanzen : [];
-  const flaeche = Number(plan._flaeche) > 0 ? Number(plan._flaeche) : null;
+  const g = sanitizeGrafikOpts(plan._grafik);
+  const flaeche = Number(g.flaeche) > 0 ? Number(g.flaeche)
+    : (Number(plan._flaeche) > 0 ? Number(plan._flaeche) : null);
   const konzept = plan.konzept ? escHtml(plan.konzept) : 'Staudenbeet-Plan';
   return `<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -1365,6 +1404,7 @@ function renderSharedPlan(plan, id) {
   .vl-num{background:var(--gm);color:#fff;border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;font-size:.68rem;font-weight:700;flex-shrink:0}
   .vl-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0;border:1.5px solid rgba(0,0,0,.15)}
   .cta{display:inline-block;border-radius:30px;padding:14px 32px;text-decoration:none;font-weight:700}
+  @media(max-width:600px){.vl-bluehzeit{display:none}}
   </style>
   </head><body>
   <div style="background:linear-gradient(135deg,#1b4332,#2d6a4f);padding:40px 20px 30px;color:#fff;text-align:center">
@@ -1373,7 +1413,7 @@ function renderSharedPlan(plan, id) {
     <h1 style="font-size:clamp(1.3rem,4vw,1.9rem);font-weight:800;margin:0 auto;max-width:640px;line-height:1.3">${konzept}</h1>
   </div>
   <div style="max-width:900px;margin:0 auto;padding:32px 16px 60px">
-    ${renderBeispielPlanSSR(plan, flaeche)}
+    ${renderBeispielPlanSSR(plan, flaeche, g)}
     <div style="background:linear-gradient(135deg,#1b4332,#2d6a4f);border-radius:14px;padding:28px;color:#fff;margin-bottom:24px;text-align:center">
       <h2 style="font-size:1.2rem;margin:0 0 8px">Erstelle deinen eigenen Bepflanzungsplan</h2>
       <p style="opacity:.88;font-size:.92rem;margin:0 0 18px;line-height:1.6">Kostenlos, in 2 Minuten, ohne Anmeldung — abgestimmt auf deine Fläche, deinen Boden und deine Vorlieben.</p>
@@ -3630,9 +3670,10 @@ const BLOOM_COLORS_SSR = {
   'Grün':'#4ade80','Gruen':'#4ade80','Silber':'#d1d5db','Bronze':'#d97706',
 };
 function bloomColorSSR(farbe) {
-  if (!farbe) return '#86efac';
+  if (typeof farbe !== 'string' || !farbe) return '#86efac';
   const k = (farbe.split(/[|,]/)[0] || '').trim();
-  return BLOOM_COLORS_SSR[k] || '#86efac';
+  const c = Object.prototype.hasOwnProperty.call(BLOOM_COLORS_SSR, k) ? BLOOM_COLORS_SSR[k] : null;
+  return (typeof c === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(c)) ? c : '#86efac';
 }
 function hexLightenSSR(hex, amt) {
   const n = parseInt(hex.replace('#',''), 16);
@@ -3641,31 +3682,331 @@ function hexLightenSSR(hex, amt) {
 }
 function hexDarkenSSR(hex, amt) { return hexLightenSSR(hex, -amt); }
 
-function renderGrafischSSR(pflanzen, flaeche) {
-  const W = 720, H = Math.round(720 * 0.48), PAD = 16;
-  const bedW = W - PAD * 2, bedH = H - PAD * 2;
-  const gartW = parseFloat(Math.sqrt(flaeche * 3).toFixed(1));
-  const gartH = parseFloat((flaeche / gartW).toFixed(1));
+// Rolle einer Pflanze für die Visualisierung (identisch zur Client-Logik getRolleViz).
+function plantRolleSSR(p) {
+  if (p.rolle === 'Leitstaude') return 'leit';
+  if (p.rolle === 'Begleitstaude') return 'begleit';
+  if (p.rolle === 'Füllstaude') return 'fuell';
+  return (p.hoehe_cm || 50) >= 80 ? 'leit' : (p.hoehe_cm || 50) >= 40 ? 'begleit' : 'fuell';
+}
 
-  const all = [];
-  pflanzen.forEach((p, pi) => {
-    const n = p.stueckzahl || 1;
+// Server-Port des Client-Placement-Algorithmus (stauden-portal.html calcPlacements),
+// beschränkt auf RECHTECK-Beete (keine Freihand-Polygone; Saison = alle). Deterministisch
+// (pseudoRand, kein Math.random). WICHTIG: bei Änderungen am Client-Algorithmus hier
+// nachziehen, damit geteilte Pläne & Beispielseiten wie die App aussehen.
+function calcPlacementsSSR(pflanzen, bedW, bedH, opts) {
+  opts = opts || {};
+  const gartW_m = Number(opts.gartW) > 0 ? Number(opts.gartW) : 4;
+  const dichte = ['locker', 'normal', 'dicht'].includes(opts.dichte) ? opts.dichte : 'normal';
+  const gartenflaeche = Number(opts.gartenflaeche) > 0 ? Number(opts.gartenflaeche) : 10;
+  const sichtseite = typeof opts.sichtseite === 'string' ? opts.sichtseite : '';
+  const pxPerM = bedW / Math.max(0.5, gartW_m);
+  const rScale = Math.min(1, (bedW + 32) / 700);
+  const isRund = /rundbeet|inselbeet/i.test(sichtseite);
+  const cxBed = bedW / 2, cyBed = bedH / 2;
+
+  const SICHT_TEXTS = ['von hinten','von hinten-rechts','von rechts-hinten','von rechts','von rechts-vorne','von vorne-rechts','von vorne','von vorne-links','von links-vorne','von links','von links-hinten','von hinten-links'];
+  let sichtIdx = 6;
+  if (!isRund && sichtseite) { const f = SICHT_TEXTS.findIndex(t => sichtseite.includes(t)); if (f >= 0) sichtIdx = f; }
+  const rotAngle = sichtIdx / 12 * 2 * Math.PI - Math.PI;
+
+  function rotateAroundCenter(x, y, angle) {
+    const dx = x - bedW / 2, dy = y - bedH / 2;
+    return { x: bedW / 2 + dx * Math.cos(angle) - dy * Math.sin(angle),
+             y: bedH / 2 + dx * Math.sin(angle) + dy * Math.cos(angle) };
+  }
+  function pseudoRand(seed) { return Math.abs(Math.sin(seed * 127.1 + 1.3)) % 1; }
+  function yZone(p) {
     const h = p.hoehe_cm || 50;
-    const yZone = 1 - Math.min(0.85, (h / 160) * 0.7 + 0.15);
-    for (let i = 0; i < n; i++) {
-      const seed = pi * 37 + i * 19;
-      const xRand = (Math.sin(seed * 127.1 + 0.3) * 0.5 + 0.5);
-      const yRand = (Math.sin(seed * 311.7 + 1.1) * 0.5 + 0.5) * 0.28 - 0.14;
-      const xBase = (pi / pflanzen.length) + (i + 0.5) / (pflanzen.length * n);
-      const x = (xBase + (xRand - 0.5) * 0.12) * bedW;
-      const y = (yZone + yRand) * bedH;
-      all.push({
-        x: Math.max(0.06 * bedW, Math.min(0.94 * bedW, x)),
-        y: Math.max(0.06 * bedH, Math.min(0.94 * bedH, y)),
-        pflanze: p, pi
+    const st = (p.standort || '').toLowerCase().trim();
+    if (st.includes('hintergrund') || st === 'ecke/hintergrund') return { yMin: 0.00, yMax: 0.36 };
+    if (st === 'mitte' || st === 'mittelzone')                   return { yMin: 0.28, yMax: 0.62 };
+    if (st.includes('vordergrund'))                              return { yMin: 0.56, yMax: 1.00 };
+    if (h >= 100) return { yMin: 0.00, yMax: 0.45 };
+    if (h >= 70)  return { yMin: 0.08, yMax: 0.62 };
+    if (h >= 40)  return { yMin: 0.32, yMax: 0.82 };
+    return              { yMin: 0.55, yMax: 1.00 };
+  }
+  function rZone(p) {
+    const h = p.hoehe_cm || 50;
+    const st = (p.standort || '').toLowerCase().trim();
+    if (st === 'mitte')      return { rMin: 0.00, rMax: 0.36 };
+    if (st === 'mittelzone') return { rMin: 0.25, rMax: 0.62 };
+    if (st === 'rand')       return { rMin: 0.55, rMax: 1.00 };
+    if (h >= 100) return { rMin: 0.00, rMax: 0.36 };
+    if (h >= 70)  return { rMin: 0.18, rMax: 0.55 };
+    if (h >= 40)  return { rMin: 0.40, rMax: 0.76 };
+    return              { rMin: 0.60, rMax: 1.00 };
+  }
+  const getRolle = plantRolleSSR;
+  function getR(p) {
+    const spacing_cm = p.pflanzabstand_cm || Math.max(20, Math.min(90, (p.hoehe_cm || 50) * 0.55 + 10));
+    return Math.max(7, Math.min(36 * rScale, (spacing_cm / 200) * pxPerM));
+  }
+
+  // ── 1. Leit- & Begleitstauden: Goldener-Schnitt-Platzierung ──────────────
+  const PHI = 0.6180339887;
+  const all = [];
+  const kombiIdx = {};
+  pflanzen.forEach((p, pi) => {
+    if (p.name_botanisch) kombiIdx[String(p.name_botanisch).toLowerCase()] = pi;
+    if (p.name_deutsch) kombiIdx[String(p.name_deutsch).toLowerCase()] = pi;
+  });
+  const nonFuellXIdx = {};
+  let _nfxCount = 0;
+  pflanzen.forEach((p, pi) => { if (getRolle(p) !== 'fuell') nonFuellXIdx[pi] = _nfxCount++; });
+  const anchorX = pflanzen.map((p, pi) => getRolle(p) === 'fuell' ? 0.5 : (nonFuellXIdx[pi] * PHI + 0.05) % 1);
+  function partnerAnchorX(p, pi) {
+    if (!p.kombinationspartner) return null;
+    for (const raw of String(p.kombinationspartner).split(/[,;|]/)) {
+      const s = raw.trim().toLowerCase();
+      if (kombiIdx[s] !== undefined && kombiIdx[s] !== pi) return anchorX[kombiIdx[s]];
+      const genus = s.split(' ')[0];
+      const match = Object.keys(kombiIdx).find(k => k.startsWith(genus + ' ') || k === genus);
+      if (match && kombiIdx[match] !== pi) return anchorX[kombiIdx[match]];
+    }
+    return null;
+  }
+
+  pflanzen.forEach((p, pi) => {
+    if (getRolle(p) === 'fuell') return;
+    if (all.length >= 400) return; // DoS-Schutz: Platzierungen deckeln (reale Pläne erreichen das nie)
+    const n = Math.min(p.stueckzahl || 1, 120);
+    const rolle = getRolle(p);
+    const nDrifts = n <= 3 ? 1 : n <= 8 ? 2 : 3;
+    const sX = rolle === 'leit' ? 0.09 : 0.18;
+    const sY = rolle === 'leit' ? 0.07 : 0.13;
+    const r = getR(p);
+    const pX = partnerAnchorX(p, pi);
+    let drifts;
+    if (isRund) {
+      const maxRad = Math.min(bedW, bedH) * 0.48;
+      const zone = rZone(p);
+      drifts = Array.from({ length: nDrifts }, (_, di) => {
+        const angle = (pi * PHI + di * 0.31) * Math.PI * 2;
+        const rFrac = zone.rMin + pseudoRand(pi * 53 + di * 31 + 5) * (zone.rMax - zone.rMin);
+        return { xFrac: 0.5 + Math.cos(angle) * rFrac * (maxRad / bedW) * 1.8,
+                 yFrac: 0.5 + Math.sin(angle) * rFrac * (maxRad / bedH) * 1.8, rFrac, angle, zone };
+      });
+    } else {
+      const zone = yZone(p);
+      const nfi = nonFuellXIdx[pi] ?? 0;
+      drifts = Array.from({ length: nDrifts }, (_, di) => {
+        const rawX = 0.12 + ((nfi * PHI + di * 0.31) % 0.76);
+        return { xFrac: (pX !== null && di === 0) ? rawX * 0.5 + pX * 0.5 : rawX,
+                 yFrac: zone.yMin + pseudoRand(pi * 53 + di * 31 + 5) * (zone.yMax - zone.yMin), zone };
       });
     }
+    for (let i = 0; i < n; i++) {
+      if (all.length >= 400) break;
+      const seed = pi * 127 + i * 37;
+      const dr = drifts[i % drifts.length];
+      const xFrac = Math.min(0.96, Math.max(0.04, dr.xFrac + (pseudoRand(seed) - 0.5) * 2 * sX));
+      let yFrac;
+      if (isRund) {
+        yFrac = Math.min(0.96, Math.max(0.04, dr.yFrac + (pseudoRand(seed + 13) - 0.5) * 2 * sY));
+      } else {
+        const zone = dr.zone;
+        yFrac = Math.min(zone.yMax, Math.max(zone.yMin, dr.yFrac + (pseudoRand(seed + 13) - 0.5) * 2 * sY));
+      }
+      const x = xFrac * bedW, y = yFrac * bedH;
+      all.push({ x: Math.max(r, Math.min(bedW - r, x)), y: Math.max(r, Math.min(bedH - r, y)), r, pflanze: p, pi });
+    }
   });
+
+  function applyZoneForce(strength) {
+    const maxRad = Math.min(bedW, bedH) * 0.48;
+    all.forEach(pl => {
+      if (isRund) {
+        const zone = rZone(pl.pflanze);
+        const targetR = (zone.rMin + zone.rMax) / 2 * maxRad;
+        const dx = pl.x - cxBed, dy = pl.y - cyBed;
+        const currR = Math.hypot(dx, dy) || 0.1;
+        const pull = (targetR - currR) * strength;
+        pl.x += (dx / currR) * pull; pl.y += (dy / currR) * pull;
+      } else {
+        const zone = yZone(pl.pflanze);
+        const targetY = (zone.yMin + zone.yMax) / 2 * bedH;
+        pl.y += (targetY - pl.y) * strength;
+      }
+    });
+  }
+
+  const GAP = 3;
+  for (let iter = 0; iter < 80; iter++) {
+    let moved = false;
+    for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) {
+      const dx = all[j].x - all[i].x, dy = all[j].y - all[i].y;
+      const dist2 = dx * dx + dy * dy, minDist = all[i].r + all[j].r + GAP;
+      if (dist2 < minDist * minDist) {
+        const dist = Math.sqrt(dist2) || 0.1, push = (minDist - dist) / 2;
+        const nx = dx / dist, ny = dy / dist;
+        all[i].x -= nx * push * 0.5; all[i].y -= ny * push * 0.5;
+        all[j].x += nx * push * 0.5; all[j].y += ny * push * 0.5;
+        moved = true;
+      }
+    }
+    applyZoneForce(0.022);
+    all.forEach(p => { p.x = Math.max(p.r, Math.min(bedW - p.r, p.x)); p.y = Math.max(p.r, Math.min(bedH - p.r, p.y)); });
+    if (!moved) break;
+  }
+
+  // Anti-Kollinearitäts-Pass: verhindert dass Pflanzen direkt hintereinander stehen
+  for (let colIter = 0; colIter < 14; colIter++) {
+    for (let i = 0; i < all.length; i++) {
+      const p = all[i];
+      const near = [];
+      for (let j = 0; j < all.length; j++) {
+        if (j === i) continue;
+        const d = Math.hypot(all[j].x - p.x, all[j].y - p.y);
+        if (d < (p.r + all[j].r) * 3.8) near.push({ j, d });
+      }
+      if (near.length < 2) continue;
+      for (let a = 0; a < near.length; a++) {
+        for (let b = a + 1; b < near.length; b++) {
+          const ja = near[a].j, jb = near[b].j;
+          const ax = all[ja].x - p.x, ay = all[ja].y - p.y;
+          const bx = all[jb].x - p.x, by = all[jb].y - p.y;
+          const da = near[a].d, db = near[b].d;
+          if (da < 1 || db < 1) continue;
+          const dot = (ax * bx + ay * by) / (da * db);
+          if (dot < -0.80) {
+            const lineX = all[jb].x - all[ja].x, lineY = all[jb].y - all[ja].y;
+            const lineLen = Math.hypot(lineX, lineY);
+            if (lineLen < 1) continue;
+            const perpX = -lineY / lineLen, perpY = lineX / lineLen;
+            const side = (i + ja + jb) % 2 === 0 ? 1 : -1;
+            const strength = (-dot - 0.80) / 0.20;
+            p.x += perpX * side * p.r * 0.55 * strength;
+            p.y += perpY * side * p.r * 0.55 * strength;
+          }
+        }
+      }
+    }
+    all.forEach(p => { p.x = Math.max(p.r, Math.min(bedW - p.r, p.x)); p.y = Math.max(p.r, Math.min(bedH - p.r, p.y)); });
+    for (let si = 0; si < 10; si++) {
+      for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) {
+        const dx = all[j].x - all[i].x, dy = all[j].y - all[i].y;
+        const d2 = dx * dx + dy * dy, md = all[i].r + all[j].r + GAP;
+        if (d2 < md * md) {
+          const d = Math.sqrt(d2) || 0.1, push = (md - d) / 2;
+          const nx = dx / d, ny = dy / d;
+          all[i].x -= nx * push * 0.5; all[i].y -= ny * push * 0.5;
+          all[j].x += nx * push * 0.5; all[j].y += ny * push * 0.5;
+        }
+      }
+      all.forEach(p => { p.x = Math.max(p.r, Math.min(bedW - p.r, p.x)); p.y = Math.max(p.r, Math.min(bedH - p.r, p.y)); });
+    }
+  }
+
+  // ── Artengruppen-Spread: Rand-Gruppen zur Kante, innere gleichmäßig verteilen ──
+  if (!isRund && all.length >= 2) {
+    const xGroups = {};
+    all.forEach(pl => { const key = pl.pi; if (!xGroups[key]) xGroups[key] = { pls: [], cx: 0 }; xGroups[key].pls.push(pl); });
+    const grps = Object.values(xGroups);
+    const recalc = () => grps.forEach(g => { g.cx = g.pls.reduce((s, p) => s + p.x, 0) / g.pls.length; });
+    recalc();
+    for (let xIter = 0; xIter < 40; xIter++) {
+      grps.sort((a, b) => a.cx - b.cx);
+      if (grps.length >= 2) {
+        const edgePull = 0.06;
+        const r0 = grps[0].pls.reduce((m, p) => Math.max(m, p.r), 0);
+        const rL = grps[grps.length - 1].pls.reduce((m, p) => Math.max(m, p.r), 0);
+        grps[0].cx += (r0 * 2.5 - grps[0].cx) * edgePull;
+        grps[grps.length - 1].cx += (bedW - rL * 2.5 - grps[grps.length - 1].cx) * edgePull;
+      }
+      for (let i = 1; i < grps.length - 1; i++) {
+        const ideal = (grps[i - 1].cx + grps[i + 1].cx) / 2;
+        grps[i].cx += (ideal - grps[i].cx) * 0.09;
+      }
+      grps.forEach(g => {
+        const currCx = g.pls.reduce((s, p) => s + p.x, 0) / g.pls.length;
+        const dx = g.cx - currCx;
+        g.pls.forEach(pl => { pl.x = Math.max(pl.r, Math.min(bedW - pl.r, pl.x + dx)); });
+      });
+      recalc();
+      for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) {
+        const dx = all[j].x - all[i].x, dy = all[j].y - all[i].y;
+        const d2 = dx * dx + dy * dy, md = all[i].r + all[j].r + GAP;
+        if (d2 < md * md) {
+          const d = Math.sqrt(d2) || 0.1, push = (md - d) / 2;
+          all[i].x -= (dx / d) * push * 0.5; all[i].y -= (dy / d) * push * 0.5;
+          all[j].x += (dx / d) * push * 0.5; all[j].y += (dy / d) * push * 0.5;
+        }
+      }
+      all.forEach(p => { p.x = Math.max(p.r, Math.min(bedW - p.r, p.x)); p.y = Math.max(p.r, Math.min(bedH - p.r, p.y)); });
+      recalc();
+    }
+  }
+
+  // ── 2. Füllstauden: Jitter-Grid in freie Flächen (Matrixbepflanzung) ──────
+  const fuellArten = pflanzen.filter(p => getRolle(p) === 'fuell');
+  if (fuellArten.length > 0) {
+    const plantsPerM2 = dichte === 'locker' ? 2.5 : dichte === 'dicht' ? 7 : 4;
+    const aiTotal = fuellArten.reduce((s, p) => s + (p.stueckzahl || 1), 0);
+    const minByDichte = Math.round(gartenflaeche * plantsPerM2) - all.length;
+    const totalFuell = Math.min(600, Math.max(aiTotal, Math.max(0, minByDichte)));
+    const cellSize = Math.sqrt((bedW * bedH) / Math.max(1, totalFuell)) * 0.88;
+    const candidates = [];
+    const cols = Math.ceil(bedW / cellSize), rows = Math.ceil(bedH / cellSize);
+    const clearance = Math.min(...fuellArten.map(p => getR(p))) * 0.8;
+    for (let col = 0; col < cols; col++) {
+      for (let row = 0; row < rows; row++) {
+        const seed = col * 997 + row * 31;
+        const jx = (col + 0.15 + pseudoRand(seed) * 0.7) * cellSize;
+        const jy = (row + 0.15 + pseudoRand(seed + 500) * 0.7) * cellSize;
+        if (jx < bedW * 0.97 && jy < bedH * 0.97 && jx > bedW * 0.03 && jy > bedH * 0.03) {
+          if (!all.some(pl => Math.hypot(jx - pl.x, jy - pl.y) < pl.r + clearance)) {
+            candidates.push({ x: jx, y: jy });
+          }
+        }
+      }
+    }
+    candidates.sort((a, b) => a.x + a.y * 0.15 - b.x - b.y * 0.15);
+    const nSpecies = fuellArten.length;
+    const aiTotalCheck = fuellArten.reduce((s, p) => s + (p.stueckzahl || 1), 0);
+    const scale = aiTotalCheck > 0 ? totalFuell / aiTotalCheck : 1;
+    fuellArten.forEach((p, fi) => {
+      const pi = pflanzen.indexOf(p);
+      const r = getR(p);
+      const mine = candidates.filter((_, ci) => ci % nSpecies === fi);
+      const n = Math.min(Math.round((p.stueckzahl || 1) * scale), mine.length);
+      for (let i = 0; i < n; i++) {
+        const idx = Math.round(i * (mine.length - 1) / Math.max(1, n - 1));
+        const c = mine[Math.min(idx, mine.length - 1)];
+        if (c) all.push({ x: c.x, y: c.y, r, pflanze: p, pi });
+      }
+    });
+  }
+
+  // Blickrichtung anwenden: alle Positionen um Beetmittelpunkt drehen
+  if (rotAngle !== 0 && !isRund) {
+    all.forEach(p => {
+      const rot = rotateAroundCenter(p.x, p.y, rotAngle);
+      p.x = Math.max(p.r, Math.min(bedW - p.r, rot.x));
+      p.y = Math.max(p.r, Math.min(bedH - p.r, rot.y));
+    });
+  }
+  return all;
+}
+
+// Grafischer Draufsicht-Plan (SSR) — spiegelt renderGrafisch aus stauden-portal.html:
+// echtes Placement (calcPlacementsSSR), Füllstauden als weiche Drift-Patches (Blur),
+// Leit-/Begleitstauden als Einzelkreise. opts: { beetLaenge, beetBreite, sichtseite, dichte }.
+function renderGrafischSSR(pflanzen, flaeche, opts) {
+  opts = opts || {};
+  const W = 720, PAD = 16;
+  const bedW = W - PAD * 2;
+  // Maße robust aus (ggf. untrusted) opts ableiten: immer endliche, positive Zahlen (>=0.1 m),
+  // damit meterPxX/Y nie 0/negativ/Infinity werden (sonst Endlosschleife bei den Gitterlinien).
+  const blNum = Number(opts.beetLaenge), bbNum = Number(opts.beetBreite);
+  let gartW = parseFloat(((blNum > 0 ? blNum : Math.sqrt((flaeche || 15) * 3))).toFixed(1));
+  if (!(gartW >= 0.1)) gartW = 0.1;
+  let gartH = parseFloat(((bbNum > 0 ? bbNum : (flaeche || 15) / gartW)).toFixed(1));
+  if (!(gartH >= 0.1)) gartH = 0.1;
+  const aspect = Math.max(0.18, Math.min(1.2, gartH / gartW));
+  const bedH = Math.round(bedW * aspect);
+  const H = bedH + PAD * 2;
 
   const gradDefs = pflanzen.map((p, pi) => {
     const c = bloomColorSSR(p.farbe);
@@ -3679,7 +4020,7 @@ function renderGrafischSSR(pflanzen, flaeche) {
   const soilDots = Array.from({length:120}, (_,i) => {
     const sx = 20 + (i * 73.1) % (bedW - 30);
     const sy = 10 + (i * 47.3) % (bedH - 20);
-    return `<circle cx="${PAD+sx}" cy="${PAD+sy}" r="1.2" fill="rgba(0,0,0,.12)"/>`;
+    return `<circle cx="${(PAD+sx).toFixed(1)}" cy="${(PAD+sy).toFixed(1)}" r="1.2" fill="rgba(0,0,0,.12)"/>`;
   }).join('');
 
   const meterPxX = bedW / gartW, meterPxY = bedH / gartH;
@@ -3689,20 +4030,55 @@ function renderGrafischSSR(pflanzen, flaeche) {
   for (let y = meterPxY; y < bedH; y += meterPxY)
     gridLines.push(`<line x1="${PAD}" y1="${(PAD+y).toFixed(1)}" x2="${PAD+bedW}" y2="${(PAD+y).toFixed(1)}" stroke="rgba(255,255,255,.12)" stroke-width="1" stroke-dasharray="4,4"/>`);
 
-  const circles = [...all].sort((a,b) => a.y - b.y).map(({x, y, pflanze, pi}) => {
-    const r = Math.max(11, Math.min(26, (pflanze.hoehe_cm || 50) / 5.5));
-    const num = pflanzen.findIndex(pp => pp.name_botanisch === pflanze.name_botanisch) + 1;
+  const placements = calcPlacementsSSR(pflanzen, bedW, bedH, {
+    gartW, gartenflaeche: (flaeche || 15), dichte: opts.dichte, sichtseite: opts.sichtseite
+  });
+  const sorted = [...placements].sort((a, b) => a.y - b.y);
+  const numOf = (pflanze) => pflanzen.findIndex(pp => pp.name_botanisch === pflanze.name_botanisch) + 1;
+
+  // Füllstauden: weiche Drift-Patches (Blur) — unter Leit-/Begleitstauden.
+  // Nach Art (pi) gruppieren wie der Client, damit die Z-Reihenfolge bei überlappenden
+  // (halbtransparenten) Patches identisch zur App ist.
+  const fuellGroups = {};
+  sorted.forEach(pl => {
+    if (plantRolleSSR(pl.pflanze) !== 'fuell') return;
+    (fuellGroups[pl.pi] = fuellGroups[pl.pi] || []).push(pl);
+  });
+  const driftPatches = Object.values(fuellGroups).map(pts => pts.map(({ x, y, r: fr, pflanze }) => {
+    const c = bloomColorSSR(pflanze.farbe);
+    const num = numOf(pflanze);
+    return `<g>
+      <circle cx="${(PAD+x).toFixed(1)}" cy="${(PAD+y).toFixed(1)}" r="${(fr+1).toFixed(1)}" fill="rgba(0,0,0,.15)"/>
+      <circle cx="${(PAD+x).toFixed(1)}" cy="${(PAD+y).toFixed(1)}" r="${fr.toFixed(1)}" fill="${c}" filter="url(#fuellBlur)" stroke="rgba(255,255,255,.5)" stroke-width="1"/>
+      <text x="${(PAD+x).toFixed(1)}" y="${(PAD+y+3).toFixed(1)}" text-anchor="middle" font-size="${Math.max(7, fr*0.65).toFixed(1)}px" font-weight="700" fill="rgba(0,0,0,.6)" font-family="system-ui">${num}</text>
+    </g>`;
+  }).join('')).join('');
+
+  // Leit- & Begleitstauden: Einzelkreise (Leit größer + dickerer Rand)
+  const circles = sorted.filter(({ pflanze }) => plantRolleSSR(pflanze) !== 'fuell').map(({ x, y, r: rBase, pflanze, pi }) => {
+    const rolle = plantRolleSSR(pflanze);
+    const r = rolle === 'leit' ? rBase * 1.1 : rBase;
+    const strokeW = rolle === 'leit' ? '2.5' : '1.5';
+    const strokeC = rolle === 'leit' ? 'rgba(255,255,255,.95)' : 'rgba(255,255,255,.6)';
+    const num = numOf(pflanze);
     return `<g>
       <circle cx="${(PAD+x).toFixed(1)}" cy="${(PAD+y).toFixed(1)}" r="${(r+2).toFixed(1)}" fill="rgba(0,0,0,.2)"/>
-      <circle cx="${(PAD+x).toFixed(1)}" cy="${(PAD+y).toFixed(1)}" r="${r.toFixed(1)}" fill="url(#pg${pi})" stroke="rgba(255,255,255,.6)" stroke-width="1.5"/>
+      <circle cx="${(PAD+x).toFixed(1)}" cy="${(PAD+y).toFixed(1)}" r="${r.toFixed(1)}" fill="url(#pg${pi})" stroke="${strokeC}" stroke-width="${strokeW}"/>
       <text x="${(PAD+x).toFixed(1)}" y="${(PAD+y+4).toFixed(1)}" text-anchor="middle" font-size="${Math.max(8, r*0.55).toFixed(1)}px" font-weight="800" fill="rgba(0,0,0,.6)" font-family="system-ui">${num}</text>
     </g>`;
   }).join('');
 
   const scaleY = PAD + bedH + 8;
+  const sichtseite = typeof opts.sichtseite === 'string' ? opts.sichtseite : '';
+  const topLabel = sichtseite.includes('von hinten') ? 'Vorne' : 'Hinten';
+  const blickText = sichtseite.includes('Blick ') ? sichtseite.replace(/.*Blick /, 'Blick ')
+    : sichtseite.includes('Rundbeet') ? 'Rundbeet'
+    : sichtseite.includes('Eckbeet') ? 'Eckbeet' : 'Blick von vorne';
+
   const svg = `<svg width="${W}" height="${H+24}" xmlns="http://www.w3.org/2000/svg" style="max-width:100%;border-radius:12px;display:block">
     <defs>
       ${gradDefs}
+      <filter id="fuellBlur" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur in="SourceGraphic" stdDeviation="2.5"/></filter>
       <linearGradient id="soilGrad" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0%" stop-color="#7a5230"/>
         <stop offset="100%" stop-color="#4e3019"/>
@@ -3712,21 +4088,26 @@ function renderGrafischSSR(pflanzen, flaeche) {
     <rect x="${PAD}" y="${PAD}" width="${bedW}" height="${bedH}" rx="8" fill="url(#soilGrad)"/>
     <g clip-path="url(#bedClip)">${soilDots}${gridLines.join('')}</g>
     <rect x="${PAD}" y="${PAD}" width="${bedW}" height="${bedH}" rx="8" fill="none" stroke="#a0714f" stroke-width="2.5"/>
+    <g clip-path="url(#bedClip)">${driftPatches}</g>
     <g clip-path="url(#bedClip)">${circles}</g>
-    <text x="${W/2}" y="${PAD-4}" text-anchor="middle" font-size="10" fill="#888" font-family="system-ui">↑ Hinten (${gartW} m)</text>
-    <text x="8" y="${PAD+bedH/2}" text-anchor="middle" font-size="10" fill="#888" font-family="system-ui" transform="rotate(-90,8,${PAD+bedH/2})">${gartH} m</text>
+    <text x="${W/2}" y="${PAD-4}" text-anchor="middle" font-size="10" fill="#888" font-family="system-ui">↑ ${topLabel} (${gartW.toFixed(1)} m)</text>
+    <text x="8" y="${PAD+bedH/2}" text-anchor="middle" font-size="10" fill="#888" font-family="system-ui" transform="rotate(-90,8,${PAD+bedH/2})">${gartH.toFixed(1)} m</text>
     <rect x="${PAD+10}" y="${scaleY}" width="${Math.round(meterPxX)}" height="5" rx="2" fill="#666"/>
     <text x="${PAD+10}" y="${scaleY+14}" font-size="10" fill="#888" font-family="system-ui">1 m</text>
-    <text x="${W/2}" y="${scaleY+14}" text-anchor="middle" font-size="10" fill="#aaa" font-family="system-ui">Vorne (${gartW} m)</text>
+    <text x="${W/2}" y="${scaleY+14}" text-anchor="middle" font-size="10" fill="#aaa" font-family="system-ui">&#128065; ${escHtml(blickText)} · ↓ Vordergrund</text>
   </svg>`;
 
   const legend = pflanzen.map((p, i) => {
     const c = bloomColorSSR(p.farbe);
+    const rolle = plantRolleSSR(p);
+    const dotStyle = rolle === 'fuell' ? `background:${c};opacity:.7;border-radius:3px;` : `background:${c};border-radius:50%;`;
+    const rolleLabel = rolle === 'leit' ? '⭐' : rolle === 'begleit' ? '🌿' : '▪';
     return `<div class="vl-item">
       <span class="vl-num">${i+1}</span>
-      <span class="vl-dot" style="background:${c}"></span>
+      <span class="vl-dot" style="${dotStyle}"></span>
       <span>${escHtml(p.name_deutsch)}</span>
-      ${p.bluehzeit ? `<span style="color:#999;font-size:.72rem">${escHtml(p.bluehzeit)}</span>` : ''}
+      <span style="color:#bbb;font-size:.7rem">${rolleLabel}</span>
+      ${p.bluehzeit ? `<span class="vl-bluehzeit" style="color:#999;font-size:.72rem">${escHtml(p.bluehzeit)}</span>` : ''}
     </div>`;
   }).join('');
 
@@ -3739,17 +4120,17 @@ function renderGrafischSSR(pflanzen, flaeche) {
   </div>`;
 }
 
-function renderBeispielPlanSSR(plan, flaeche) {
+function renderBeispielPlanSSR(plan, flaeche, grafikOpts) {
   if (!plan || !plan.pflanzen) return '';
   const emojis = ['🌸','🌺','🌼','🌻','🌹','💐','🌷','🌿','🍃','🌾'];
   const jez = {'Frühling':'🌱','Sommer':'☀️','Herbst':'🍂','Winter':'❄️'};
   const pflanzen = plan.pflanzen;
 
-  const gesamt = pflanzen.reduce((s,p) => s + (p.stueckzahl||0), 0);
+  const gesamt = pflanzen.reduce((s,p) => s + (Number(p.stueckzahl) || 0), 0);
   const meta = `<div class="em-bar">
     <div class="em-item"><strong>${pflanzen.length}</strong> Pflanzenarten</div>
     <div class="em-item"><strong>${gesamt}</strong> Pflanzen gesamt</div>
-    <div class="em-item"><strong>${escHtml(String(plan.gesamtkosten_geschaetzt||'–'))} €</strong> Gesamtkosten ca.</div>
+    <div class="em-item"><strong>${escHtml(String(typeof plan.gesamtkosten_geschaetzt === 'number' ? Math.round(plan.gesamtkosten_geschaetzt) : (plan.gesamtkosten_geschaetzt || '–')))} €</strong> Gesamtkosten ca.</div>
   </div>`;
 
   const cards = pflanzen.map((p, i) => {
@@ -3757,7 +4138,7 @@ function renderBeispielPlanSSR(plan, flaeche) {
     const cLight = hexLightenSSR(c, 40);
     const farbenTag = p.farbe
       ? `<span class="tag" style="background:${hexLightenSSR(c,50)};color:${hexDarkenSSR(c,40)}">${escHtml(p.farbe)}</span>` : '';
-    const st = Math.min(p.pflege_sterne || 1, 3);
+    const st = Math.max(0, Math.min(Math.floor(Number(p.pflege_sterne) || 1), 3));
     const stars = '★'.repeat(st) + '☆'.repeat(3 - st);
     const preis = ((p.preis_stueck_eur||0) * (p.stueckzahl||1)).toFixed(2);
     const imgTop = p.bild_url
@@ -3795,7 +4176,7 @@ function renderBeispielPlanSSR(plan, flaeche) {
   const tippsAll = (plan.tipps||[]).concat(plan.pflanzabstand_hinweis ? [plan.pflanzabstand_hinweis] : []);
   const tippsList = tippsAll.map(t => `<li>${escHtml(String(t))}</li>`).join('');
 
-  const grafisch = flaeche ? renderGrafischSSR(pflanzen, flaeche) : '';
+  const grafisch = flaeche ? renderGrafischSSR(pflanzen, flaeche, grafikOpts) : '';
 
   return `<div class="card-wrap">
     <h2 class="sec-title">🌿 KI-Pflanzplan für dieses Beet</h2>
@@ -3972,6 +4353,7 @@ ${NAV_LINKS}
 .vl-item{display:flex;align-items:center;gap:6px;font-size:.8rem;color:var(--tx);background:var(--gp);border-radius:6px;padding:4px 10px}
 .vl-num{background:var(--gm);color:#fff;border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;font-size:.68rem;font-weight:700;flex-shrink:0}
 .vl-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0;border:1.5px solid rgba(0,0,0,.15)}
+@media(max-width:600px){.vl-bluehzeit{display:none}}
 </style>
 </head><body style="font-family:system-ui,sans-serif;background:#f6faf7;margin:0">
 

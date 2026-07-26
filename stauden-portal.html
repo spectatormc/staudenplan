@@ -4228,7 +4228,9 @@
     try {
       const res = await fetch('/api/plan-teilen', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan: currentPlan, flaeche: formData.gartenflaeche })
+        body: JSON.stringify({ plan: currentPlan, flaeche: formData.gartenflaeche, grafik: {
+          flaeche: formData.gartenflaeche, beetLaenge: formData.beetLaenge, beetBreite: formData.beetBreite,
+          sichtseite: formData.sichtseite, dichte: formData.dichte } })
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'Fehler beim Teilen.');
