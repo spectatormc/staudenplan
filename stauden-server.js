@@ -3979,14 +3979,9 @@ function calcPlacementsSSR(pflanzen, bedW, bedH, opts) {
     });
   }
 
-  // Blickrichtung anwenden: alle Positionen um Beetmittelpunkt drehen
-  if (rotAngle !== 0 && !isRund) {
-    all.forEach(p => {
-      const rot = rotateAroundCenter(p.x, p.y, rotAngle);
-      p.x = Math.max(p.r, Math.min(bedW - p.r, rot.x));
-      p.y = Math.max(p.r, Math.min(bedH - p.r, rot.y));
-    });
-  }
+  // (Layout-Rotation nach Blickrichtung entfernt — quetschte bei schrägen Winkeln die
+  //  Pflanzen in eine Ecke. Beettyp wirkt nur noch über die Höhenzonen: einseitig = hoch
+  //  hinten, Rundbeet = hoch Mitte. Muss mit dem Client synchron bleiben.)
   return all;
 }
 

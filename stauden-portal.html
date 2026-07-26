@@ -1122,13 +1122,11 @@
         <input type="text" id="plz-input-p" maxlength="5" placeholder="z.B. 80331" pattern="[0-9]{5}" oninput="formData.plz=this.value.trim()">
       </div>
     </div>
-    <label class="field-label" style="margin-top:20px;margin-bottom:8px;display:block">Blickrichtung aufs Beet <span style="font-size:.8rem;font-weight:400;color:#888">(optional)</span></label>
-    <div id="sichtseite-grid-pro" style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin-bottom:0">
-      <div id="sicht-svg-wrap-pro"></div>
-      <div>
-        <div id="sicht-label-pro" style="font-size:.88rem;font-weight:600;color:var(--green-dark)">Blickrichtung wählen</div>
-        <div id="sicht-hint-pro" style="font-size:.8rem;color:#aaa;margin-top:3px">Klicke auf einen der 12 Punkte</div>
-      </div>
+    <label class="field-label" style="margin-top:20px;margin-bottom:8px;display:block">Beettyp <span style="font-size:.8rem;font-weight:400;color:#888">(bestimmt die Höhenanordnung)</span></label>
+    <div class="pflegezeit-grid beettyp-grid-p">
+      <div class="pz-card selected" onclick="selectSichtseite('Einseitig',this,'.beettyp-grid-p')"><div class="pz-icon">🏡</div><div class="pz-label">Einseitig</div><div class="pz-sub">hoch → hinten</div></div>
+      <div class="pz-card" onclick="selectSichtseite('Rundbeet',this,'.beettyp-grid-p')"><div class="pz-icon">🌸</div><div class="pz-label">Rundbeet</div><div class="pz-sub">hoch → Mitte</div></div>
+      <div class="pz-card" onclick="selectSichtseite('Eckbeet',this,'.beettyp-grid-p')"><div class="pz-icon">📐</div><div class="pz-label">Eckbeet</div><div class="pz-sub">hoch → Ecke</div></div>
     </div>
     <div id="pro-err-1" class="error-msg" style="display:none">Bitte Fläche eingeben.</div>
     <div class="btn-row" style="margin-top:20px">
@@ -1398,13 +1396,11 @@
         <input type="text" id="plz-input-s" maxlength="5" placeholder="z.B. 80331" pattern="[0-9]{5}" oninput="formData.plz=this.value.trim()">
       </div>
     </div>
-    <label class="field-label" style="margin-top:20px;margin-bottom:8px;display:block">Blickrichtung aufs Beet <span style="font-size:.8rem;font-weight:400;color:#888">(optional)</span></label>
-    <div id="sichtseite-grid-einfach" style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin-bottom:0">
-      <div id="sicht-svg-wrap-einfach"></div>
-      <div>
-        <div id="sicht-label-einfach" style="font-size:.88rem;font-weight:600;color:var(--green-dark)">Blickrichtung wählen</div>
-        <div id="sicht-hint-einfach" style="font-size:.8rem;color:#aaa;margin-top:3px">Klicke auf einen der 12 Punkte</div>
-      </div>
+    <label class="field-label" style="margin-top:20px;margin-bottom:8px;display:block">Beettyp <span style="font-size:.8rem;font-weight:400;color:#888">(bestimmt die Höhenanordnung)</span></label>
+    <div class="pflegezeit-grid beettyp-grid-s">
+      <div class="pz-card selected" onclick="selectSichtseite('Einseitig',this,'.beettyp-grid-s')"><div class="pz-icon">🏡</div><div class="pz-label">Einseitig</div><div class="pz-sub">hoch → hinten</div></div>
+      <div class="pz-card" onclick="selectSichtseite('Rundbeet',this,'.beettyp-grid-s')"><div class="pz-icon">🌸</div><div class="pz-label">Rundbeet</div><div class="pz-sub">hoch → Mitte</div></div>
+      <div class="pz-card" onclick="selectSichtseite('Eckbeet',this,'.beettyp-grid-s')"><div class="pz-icon">📐</div><div class="pz-label">Eckbeet</div><div class="pz-sub">hoch → Ecke</div></div>
     </div>
     <div id="err-1" class="error-msg" style="display:none">Bitte Fläche eingeben.</div>
     <div class="btn-row">
@@ -1864,7 +1860,7 @@
   // ── State ──────────────────────────────────────────────────────────────────
   let formData = {
     gartenflaeche: null, beetLaenge: null, beetBreite: null,
-    licht: '', boden: '', stil: '', sichtseite: '', farbe: '', saison: '',
+    licht: '', boden: '', stil: '', sichtseite: 'Einseitig', farbe: '', saison: '',
     modus: 'einfach',
     lieblingspflanzen: [], budget: null, nutzung: [], pflegezeit: '',
     vielfalt: 'ausgewogen', dichte: 'normal'
@@ -2096,9 +2092,10 @@
     if (mode === 'pro') validateProStep1(); else validateStep1();
   }
 
-  function selectSichtseite(value, el, mode) {
+  function selectSichtseite(value, el, gridSel) {
+    document.querySelector(gridSel).querySelectorAll('.pz-card').forEach(c => c.classList.remove('selected'));
+    el.classList.add('selected');
     formData.sichtseite = value;
-    if (mode === 'pro') validateProStep1(); else validateStep1();
   }
 
   function validateStep1() {
@@ -3156,14 +3153,9 @@
       });
     }
 
-    // Blickrichtung anwenden: alle Positionen um Beetmittelpunkt drehen
-    if (rotAngle !== 0 && !isRund) {
-      all.forEach(p => {
-        const rot = rotateAroundCenter(p.x, p.y, rotAngle);
-        p.x = Math.max(p.r, Math.min(bedW - p.r, rot.x));
-        p.y = Math.max(p.r, Math.min(bedH - p.r, rot.y));
-      });
-    }
+    // (Layout-Rotation nach Blickrichtung entfernt: drehte das Rechteck-Layout um krumme
+    //  Winkel und quetschte die Pflanzen in eine Ecke. Beettyp steuert die Anordnung jetzt
+    //  nur noch über die Höhenzonen: einseitig = hoch hinten, Rundbeet = hoch Mitte.)
 
     return all;
   }
@@ -4255,7 +4247,7 @@
   function neustart() {
     formData = {
       gartenflaeche: null, beetLaenge: null, beetBreite: null,
-      licht: '', boden: '', stil: '', farbe: '', saison: '',
+      licht: '', boden: '', stil: '', sichtseite: 'Einseitig', farbe: '', saison: '',
       modus: 'einfach', lieblingspflanzen: [], budget: null, nutzung: [], pflegezeit: '',
       vielfalt: 'ausgewogen', dichte: 'normal'
     };
@@ -4272,6 +4264,7 @@
     document.querySelectorAll('.nutzung-card').forEach(c => c.classList.remove('selected'));
     document.querySelectorAll('.pz-card').forEach(c => c.classList.remove('selected'));
     document.querySelectorAll('.vielfalt-grid-s .pz-card:nth-child(2), .vielfalt-grid-p .pz-card:nth-child(2), .dichte-grid-s .pz-card:nth-child(2), .dichte-grid-p .pz-card:nth-child(2)').forEach(c => c.classList.add('selected'));
+    document.querySelectorAll('.beettyp-grid-s .pz-card:nth-child(1), .beettyp-grid-p .pz-card:nth-child(1)').forEach(c => c.classList.add('selected'));
     try { document.getElementById('budget-slider').value = 0; document.getElementById('budget-display').textContent = 'Kein Limit'; } catch {}
     try { document.getElementById('wishlist-chips').innerHTML = ''; document.getElementById('wishlist-label').style.display='none'; } catch {}
     try { document.getElementById('pflanzsuche-results').innerHTML = ''; document.getElementById('pflanz-search').value = ''; } catch {}
