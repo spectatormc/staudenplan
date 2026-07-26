@@ -20,7 +20,7 @@ const PORT = process.env.PORT || 3000;
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
 
-app.use(express.json({ limit: '1mb' })); // 1mb statt Default 100kb: Anfragen tragen den ganzen ki_plan mit
+app.use(express.json({ limit: '2mb' })); // 2mb statt Default 100kb: Anfragen tragen den ganzen ki_plan mit
 
 // Security-Header. CSP erlaubt 'unsafe-inline' für script/style, weil die Seite
 // durchgängig Inline-<script>/-style="" nutzt (kein Nonce/Hash-Rewrite ohne
@@ -123,6 +123,12 @@ db.exec(`
     id TEXT PRIMARY KEY,
     erstellt_am TEXT DEFAULT (datetime('now')),
     plan_json TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS quiz_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    erstellt_am TEXT DEFAULT (datetime('now')),
+    event TEXT NOT NULL,
+    quiz TEXT
   );
 `);
 
@@ -921,7 +927,7 @@ app.post('/api/plan', planLimiter, async (req, res) => {
   const systemPrompt = buildSystemPrompt(kandidaten, wissen, geophytenKandidaten);
 
   const lieblingsList = Array.isArray(lieblingspflanzen) && lieblingspflanzen.length > 0
-    ? lieblingspflanzen.map(p => `${p.name_deutsch} (${p.name_botanisch})`).join(', ')
+    ? lieblingspflanzen.filter(p => p && p.name_deutsch).map(p => `${p.name_deutsch} (${p.name_botanisch || ''})`).join(', ') || null
     : null;
   const nutzungList = Array.isArray(nutzung) && nutzung.length > 0
     ? nutzung.join(', ')
@@ -1436,6 +1442,54 @@ app.get('/admin/anfragen', (req, res) => {
   <div class="big">${anfragen.length}</div>
   <p class="muted">Direkt aus der Datenbank — unabhängig vom E-Mail-Versand. Neueste zuerst (max. 500).</p>
   ${anfragen.length ? `<table><tr><th>Datum</th><th>Name</th><th>E-Mail</th><th>PLZ</th><th>Telefon</th><th>Garten</th><th>Plan</th><th>Anmerkungen</th></tr>${rows}</table>` : '<p class="muted">Noch keine Anfragen.</p>'}
+  </body></html>`);
+});
+
+// ─── Quiz-Tracking (serverseitig, adblocker-fest) → /admin/quiz ──────────────
+const quizTrackLimiter = rl({ windowMs: 60 * 1000, max: 60, message: { error: 'Zu viele Anfragen.' } });
+const insertQuizEvent = db.prepare('INSERT INTO quiz_events (event, quiz) VALUES (?, ?)');
+app.post('/api/quiz-track', quizTrackLimiter, (req, res) => {
+  const event = ((req.body && req.body.event) || '').toString();
+  const quizRaw = ((req.body && req.body.quiz) || '').toString();
+  if (['start', 'complete', 'to_planer'].includes(event)) {
+    const quiz = ['wissen', 'gartentyp'].includes(quizRaw) ? quizRaw : null;
+    try { insertQuizEvent.run(event, quiz); } catch { /* Tracking darf die Seite nie stören */ }
+  }
+  res.status(204).end(); // Beacon braucht keine Antwort
+});
+
+app.get('/admin/quiz', (req, res) => {
+  if (!isAdmin(req)) return res.redirect('/admin/login?next=/admin/quiz');
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const agg = db.prepare('SELECT quiz, event, COUNT(*) AS n FROM quiz_events GROUP BY quiz, event').all();
+  const get = (quiz, event) => (agg.find(r => r.quiz === quiz && r.event === event) || {}).n || 0;
+  const proTag = db.prepare("SELECT substr(erstellt_am,1,10) AS tag, COUNT(*) AS n FROM quiz_events WHERE event='start' GROUP BY tag ORDER BY tag DESC LIMIT 30").all();
+  const rate = (a, b) => b > 0 ? Math.round(a / b * 100) + ' %' : '–';
+  const card = (titel, quiz) => {
+    const s = get(quiz, 'start'), c = get(quiz, 'complete'), p = get(quiz, 'to_planer');
+    return `<div style="background:#fff;border-radius:12px;padding:20px 24px;box-shadow:0 2px 10px rgba(0,0,0,.06);flex:1;min-width:240px">
+      <h2 style="font-size:1.05rem;color:#1b4332;margin:0 0 12px">${titel}</h2>
+      <div style="display:flex;gap:22px;flex-wrap:wrap">
+        <div><div class="big">${s}</div><div class="muted">gestartet</div></div>
+        <div><div class="big">${c}</div><div class="muted">abgeschlossen</div></div>
+        <div><div class="big">${p}</div><div class="muted">→ Planer</div></div>
+      </div>
+      <p class="muted" style="margin-top:12px">Abschlussrate ${rate(c, s)} · Planer-Klick ${rate(p, c)} der Abschlüsse</p>
+    </div>`;
+  };
+  res.send(`<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
+  <title>Quiz-Auswertung · Admin</title>
+  <style>body{font-family:'Segoe UI',system-ui,sans-serif;background:#f8f4ef;color:#1a1a1a;max-width:900px;margin:0 auto;padding:32px 20px}
+  h1{color:#1b4332;font-size:1.5rem}.big{font-size:2rem;font-weight:800;color:#2d6a4f;line-height:1}
+  table{width:100%;border-collapse:collapse;margin-top:12px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.06)}
+  th,td{text-align:left;padding:10px 14px;border-bottom:1px solid #eee;font-size:.9rem}th{background:#1b4332;color:#fff}
+  td:nth-child(2),th:nth-child(2){text-align:right;font-weight:700}.muted{color:#999;font-size:.82rem}a{color:#2d6a4f}</style></head><body>
+  <h1>🧠 Quiz-Auswertung <a href="/admin/logout" style="float:right;font-size:.8rem;font-weight:400;color:#999;text-decoration:none">Abmelden →</a></h1>
+  <p class="muted">Serverseitig gezählt — unabhängig von Adblockern/Plausible. <a href="/admin/klicks">Gaißmayer-Klicks</a> · <a href="/admin/anfragen">Anfragen</a></p>
+  <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:16px">${card('Wissenstest', 'wissen')}${card('Gartentyp-Quiz', 'gartentyp')}</div>
+  <h2 style="font-size:1.05rem;color:#1b4332;margin-top:28px">Quiz-Starts pro Tag (letzte 30)</h2>
+  ${proTag.length ? `<table><tr><th>Tag</th><th>Starts</th></tr>${proTag.map(r => `<tr><td>${esc(r.tag)}</td><td>${r.n}</td></tr>`).join('')}</table>` : '<p class="muted">Noch keine Quiz-Aktivität.</p>'}
   </body></html>`);
 });
 
@@ -4081,6 +4135,18 @@ app.get('/quiz', (req, res) => {
 
 // ─── Static Files (nach allen Routes!) ────────────────────────────────────────
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Globaler Error-Handler: verhindert rohe HTML-Fehlerseiten (die das Frontend als
+// „Generierungsfehler" zeigt). PayloadTooLarge → 413-JSON; jeder uncaught Fehler in
+// einer Route → sauberes 500-JSON + Log (mit Pfad, damit die Ursache auffindbar ist).
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  if (err && (err.type === 'entity.too.large' || err.status === 413)) {
+    return res.status(413).json({ error: 'Anfrage zu groß.' });
+  }
+  console.error(`Unbehandelter Fehler bei ${req.method} ${req.originalUrl}:`, err && (err.stack || err.message));
+  res.status(500).json({ error: 'Serverfehler. Bitte versuche es erneut.' });
+});
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 

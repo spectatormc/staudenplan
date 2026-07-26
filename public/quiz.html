@@ -196,7 +196,7 @@
       <p class="score-text" id="ergebnis-text"></p>
       <div class="cta-block">
         <p>Jetzt deinen individuellen Pflanzplan erstellen – kostenlos und in 2 Minuten!</p>
-        <a href="/" class="cta-btn" onclick="if(window.plausible)plausible('Quiz → Planer',{props:{quiz:'wissen'}})">🌿 Pflanzplan erstellen</a>
+        <a href="/" class="cta-btn" onclick="qzTrack('to_planer','wissen')">🌿 Pflanzplan erstellen</a>
       </div>
       <button class="btn-retry" onclick="starteWissenstest()">Quiz wiederholen</button>
     </div>
@@ -280,8 +280,16 @@ function switchTab(tab) {
 // ─── WISSENSTEST ─────────────────────────────────────────────────────────────
 let fragen = [], frageIdx = 0, punkte = 0;
 
+// Server-seitiges Quiz-Tracking (adblocker-fest, → /admin/quiz). sendBeacon überlebt Navigation.
+function qzTrack(event, quiz) {
+  try {
+    const body = JSON.stringify({ event, quiz });
+    if (navigator.sendBeacon) navigator.sendBeacon('/api/quiz-track', new Blob([body], { type: 'application/json' }));
+    else fetch('/api/quiz-track', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true });
+  } catch (e) {}
+}
 async function starteWissenstest() {
-  if (window.plausible) plausible('Quiz gestartet', { props: { quiz: 'wissen' } });
+  qzTrack('start', 'wissen');
   document.getElementById('wissenstest-start').style.display = 'none';
   document.getElementById('wissenstest-quiz').style.display = 'none';
   document.getElementById('wissenstest-ergebnis').classList.remove('sichtbar');
@@ -362,7 +370,7 @@ function naechsteFrage() {
 }
 
 function zeigeErgebnis() {
-  if (window.plausible) plausible('Quiz abgeschlossen', { props: { quiz: 'wissen' } });
+  qzTrack('complete', 'wissen');
   document.getElementById('wissenstest-quiz').style.display = 'none';
   const erg = document.getElementById('wissenstest-ergebnis');
   erg.classList.add('sichtbar');
@@ -511,7 +519,7 @@ const TYPEN = {
 let pqAntworten = {}, pqAktuell = 0;
 
 function starteTypQuiz() {
-  if (window.plausible) plausible('Quiz gestartet', { props: { quiz: 'gartentyp' } });
+  qzTrack('start', 'gartentyp');
   pqAntworten = {}; pqAktuell = 0;
   document.getElementById('pq-ergebnis').classList.remove('sichtbar');
   renderPqFragen();
@@ -604,7 +612,7 @@ function pqZeigeErgebnis() {
   document.getElementById('pq-fragen-container').style.display = 'none';
   const ergebnisDiv = document.getElementById('pq-ergebnis');
   ergebnisDiv.classList.add('sichtbar');
-  if (window.plausible) plausible('Quiz abgeschlossen', { props: { quiz: 'gartentyp' } });
+  qzTrack('complete', 'gartentyp');
 
   document.getElementById('typ-karte').innerHTML = `
     <div class="typ-header" style="background:${typ.grad};color:#fff">
@@ -622,7 +630,7 @@ function pqZeigeErgebnis() {
     </div>
     <div class="typ-cta">
       <p>Lass den KI-Planer einen individuellen Pflanzplan für deinen Gartentyp erstellen!</p>
-      <a href="/" class="cta-btn" style="background:${typ.farbe};color:#fff" onclick="if(window.plausible)plausible('Quiz → Planer',{props:{quiz:'gartentyp'}})">🌿 Meinen Pflanzplan erstellen</a>
+      <a href="/" class="cta-btn" style="background:${typ.farbe};color:#fff" onclick="qzTrack('to_planer','gartentyp')">🌿 Meinen Pflanzplan erstellen</a>
     </div>`;
 
   ergebnisDiv.scrollIntoView({ behavior: 'smooth' });
