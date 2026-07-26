@@ -9,6 +9,9 @@
 <meta property="og:description" content="Erkenne Stauden am Bild und finde deinen Gartentyp. Jetzt kostenlos mitmachen!">
 <meta property="og:image" content="/images/og-quiz.jpg">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">
+<!-- Privacy-friendly analytics by Plausible -->
+<script async src="https://plausible.io/js/pa-CQxds67VLWtj57jHuhY1V.js"></script>
+<script>window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};plausible.init()</script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -193,7 +196,7 @@
       <p class="score-text" id="ergebnis-text"></p>
       <div class="cta-block">
         <p>Jetzt deinen individuellen Pflanzplan erstellen – kostenlos und in 2 Minuten!</p>
-        <a href="/" class="cta-btn">🌿 Pflanzplan erstellen</a>
+        <a href="/" class="cta-btn" onclick="if(window.plausible)plausible('Quiz → Planer',{props:{quiz:'wissen'}})">🌿 Pflanzplan erstellen</a>
       </div>
       <button class="btn-retry" onclick="starteWissenstest()">Quiz wiederholen</button>
     </div>
@@ -278,6 +281,7 @@ function switchTab(tab) {
 let fragen = [], frageIdx = 0, punkte = 0;
 
 async function starteWissenstest() {
+  if (window.plausible) plausible('Quiz gestartet', { props: { quiz: 'wissen' } });
   document.getElementById('wissenstest-start').style.display = 'none';
   document.getElementById('wissenstest-quiz').style.display = 'none';
   document.getElementById('wissenstest-ergebnis').classList.remove('sichtbar');
@@ -358,6 +362,7 @@ function naechsteFrage() {
 }
 
 function zeigeErgebnis() {
+  if (window.plausible) plausible('Quiz abgeschlossen', { props: { quiz: 'wissen' } });
   document.getElementById('wissenstest-quiz').style.display = 'none';
   const erg = document.getElementById('wissenstest-ergebnis');
   erg.classList.add('sichtbar');
@@ -506,6 +511,7 @@ const TYPEN = {
 let pqAntworten = {}, pqAktuell = 0;
 
 function starteTypQuiz() {
+  if (window.plausible) plausible('Quiz gestartet', { props: { quiz: 'gartentyp' } });
   pqAntworten = {}; pqAktuell = 0;
   document.getElementById('pq-ergebnis').classList.remove('sichtbar');
   renderPqFragen();
@@ -598,6 +604,7 @@ function pqZeigeErgebnis() {
   document.getElementById('pq-fragen-container').style.display = 'none';
   const ergebnisDiv = document.getElementById('pq-ergebnis');
   ergebnisDiv.classList.add('sichtbar');
+  if (window.plausible) plausible('Quiz abgeschlossen', { props: { quiz: 'gartentyp' } });
 
   document.getElementById('typ-karte').innerHTML = `
     <div class="typ-header" style="background:${typ.grad};color:#fff">
@@ -615,7 +622,7 @@ function pqZeigeErgebnis() {
     </div>
     <div class="typ-cta">
       <p>Lass den KI-Planer einen individuellen Pflanzplan für deinen Gartentyp erstellen!</p>
-      <a href="/" class="cta-btn" style="background:${typ.farbe};color:#fff">🌿 Meinen Pflanzplan erstellen</a>
+      <a href="/" class="cta-btn" style="background:${typ.farbe};color:#fff" onclick="if(window.plausible)plausible('Quiz → Planer',{props:{quiz:'gartentyp'}})">🌿 Meinen Pflanzplan erstellen</a>
     </div>`;
 
   ergebnisDiv.scrollIntoView({ behavior: 'smooth' });
