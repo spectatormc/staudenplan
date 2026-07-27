@@ -3663,17 +3663,28 @@ function loadBeispielPlan(slug) {
 }
 
 // HINWEIS: identisch mit BLOOM_COLORS in stauden-portal.html (Client) halten — bei Änderung beide anpassen.
+// Farb-Keys KLEINGESCHRIEBEN (DB liefert gemischte Groß-/Kleinschreibung: "Gelb", "gelb",
+// "Rosa", "rosa" …) — Lookup erfolgt case-insensitiv. Deckt alle in der DB vorkommenden
+// Farbwerte ab. Muss mit BLOOM_COLORS in stauden-portal.html synchron bleiben.
 const BLOOM_COLORS_SSR = {
-  'Rosa':'#f472b6','Pink':'#f472b6','Purpur':'#a855f7','Lila':'#a855f7','Violett':'#818cf8',
-  'Blau':'#3b82f6','Weiß':'#e2e8f0','Weiss':'#e2e8f0','Creme':'#fef3c7','Weiß / Creme':'#fef3c7',
-  'Gelb':'#facc15','Orange':'#fb923c','Gelb / Orange':'#fbbf24','Rot':'#ef4444','Weinrot':'#b91c1c','Rot / Weinrot':'#dc2626',
-  'Grün':'#4ade80','Gruen':'#4ade80','Silber':'#d1d5db','Bronze':'#d97706',
+  'rosa':'#f472b6','pink':'#f472b6','lachs':'#fb7185','aprikose':'#fdba74',
+  'purpur':'#a855f7','purpurrot':'#a21caf','lila':'#a855f7',
+  'violett':'#818cf8','dunkelviolett':'#6d28d9','blauviolett':'#7c3aed','lavendel':'#c4b5fd',
+  'blau':'#3b82f6','hellblau':'#7dd3fc',
+  'weiß':'#e2e8f0','weiss':'#e2e8f0','creme':'#fef3c7','beige':'#e7d9b0',
+  'gelb':'#facc15','gelbgrün':'#bef264','gelb-grün':'#bef264','gelbgruen':'#bef264',
+  'orange':'#fb923c','karamell':'#d97706','bronze':'#d97706',
+  'rot':'#ef4444','dunkelrot':'#991b1b','weinrot':'#b91c1c','rubinrot':'#be123c','burgunderrot':'#7f1d1d',
+  'rotbraun':'#9a3412','braun':'#a16207',
+  'grün':'#4ade80','gruen':'#4ade80','grünlich':'#86efac',
+  'silber':'#d1d5db','silbrig':'#cbd5e1','silbrig-grün':'#c3d0c3','grau':'#cbd5e1',
+  'schwarz':'#334155','mehrfarbig':'#e879f9',
 };
 function bloomColorSSR(farbe) {
-  if (typeof farbe !== 'string' || !farbe) return '#86efac';
-  const k = (farbe.split(/[|,]/)[0] || '').trim();
+  if (typeof farbe !== 'string' || !farbe) return '#cbd5e1';
+  const k = (farbe.split(/[|,\/]/)[0] || '').trim().toLowerCase();
   const c = Object.prototype.hasOwnProperty.call(BLOOM_COLORS_SSR, k) ? BLOOM_COLORS_SSR[k] : null;
-  return (typeof c === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(c)) ? c : '#86efac';
+  return (typeof c === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(c)) ? c : '#cbd5e1';
 }
 function hexLightenSSR(hex, amt) {
   const n = parseInt(hex.replace('#',''), 16);
