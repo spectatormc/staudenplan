@@ -3114,33 +3114,94 @@ app.get('/bienenfreundliche-stauden', (req, res) => {
 app.get('/staudenbeet-planen', (req, res) => {
   const pflanzenCount = db.prepare("SELECT COUNT(*) as n FROM pflanzen").get().n;
   let artikel = [];
-  try { artikel = db.prepare(`SELECT titel FROM wissen WHERE titel LIKE '%plan%' OR titel LIKE '%Planung%' OR inhalt LIKE '%Bepflanzungsplan%' LIMIT 5`).all(); } catch {}
+  try { artikel = db.prepare(`SELECT titel FROM wissen WHERE titel LIKE '%plan%' OR titel LIKE '%Planung%' OR titel LIKE '%kombin%' OR titel LIKE '%Standort%' OR inhalt LIKE '%Bepflanzungsplan%' LIMIT 6`).all(); } catch {}
   const artikelHtml = artikel.map(a => `<a href="/ratgeber/${slugify(a.titel)}" style="display:flex;align-items:center;gap:10px;background:#fff;border-radius:10px;padding:14px 18px;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.06);transition:background .12s;margin-bottom:10px" onmouseover="this.style.background='#f0fdf4'" onmouseout="this.style.background='#fff'"><span style="font-size:1.2rem">📖</span><span style="font-size:.9rem;font-weight:600;color:#1b4332">${a.titel}</span><span style="margin-left:auto;color:#2d6a4f;font-weight:700;font-size:.82rem">Lesen →</span></a>`).join('');
+
+  // Schritt-für-Schritt-Anleitung (informationell, klar getrennt von der kommerziellen Startseite)
+  const schritte = [
+    ['Standort ehrlich analysieren', 'Jede Planung beginnt mit dem, was <strong>vorgegeben</strong> ist: Licht und Boden. Beobachte über einen sonnigen Tag, wie viele Stunden direkte Sonne die Fläche bekommt — 6+ Stunden = vollsonnig (Präriestauden, mediterrane Arten), 3–6 Stunden = halbschattig, unter 3 Stunden = schattig (Funkien, Astilben, Farne). Prüfe den Boden mit einer Handvoll: krümelig-dunkel = humos, klebt und glänzt = lehmig-schwer, rieselt = sandig-trocken. Staunässe nach Regen? Dann brauchst du Feuchtezeiger statt Trockenkünstler. <em>Regel: nicht gegen den Standort planen — die passende Pflanze für den Ort schlägt jede Wunschpflanze am falschen Platz.</em>'],
+    ['Größe & Form festlegen', 'Für eine echte Höhenstaffelung sollte ein einseitig einsehbares Beet mindestens <strong>1,5–2 m tief</strong> sein — schmalere Beete (ab 60 cm) tragen nur zwei Höhenebenen. Beim <strong>Rundbeet/Inselbeet</strong> (von allen Seiten sichtbar) kommen die hohen Stauden in die Mitte, nach außen wird es niedriger. Zeichne die Fläche maßstäblich auf Papier oder miss Länge × Breite — daraus ergibt sich später die Stückzahl.'],
+    ['Höhenstaffelung — das Rückgrat', 'Der wichtigste Gestaltungsschritt. Teile die Pflanzen in drei Rollen: <strong>Leitstauden</strong> (über 80 cm, geben Struktur — Rittersporn, Chinaschilf, Sonnenhut) nach hinten; <strong>Begleitstauden</strong> (40–80 cm, die Hauptblüher — Salbei, Katzenminze, Schafgarbe) in die Mitte; <strong>Füll- und Bodendecker</strong> (unter 40 cm — Storchschnabel, Frauenmantel, Fetthenne) nach vorn. So verdeckt nichts die Blüte dahinter, und das Beet wirkt tief und ruhig.'],
+    ['Blütezeiten staffeln (das „Nektarband")', 'Ein gutes Staudenbeet blüht nicht nur im Juli. Ziel ist eine durchgehende Abfolge von <strong>März bis Oktober</strong> — plane pro Monat mindestens eine blühende Art ein. Frühling: Bergenie, Lungenkraut, Wolfsmilch. Frühsommer: Storchschnabel, Salbei, Katzenminze. Hochsommer: Sonnenhut, Schafgarbe, Flammenblume. Herbst: Herbstaster, Fetthenne, Anemone. Gräser und Samenstände tragen die Struktur bis in den Winter — nicht zu früh zurückschneiden.'],
+    ['Farbkonzept wählen', 'Zwei bewährte Wege: <strong>Harmonie</strong> (benachbarte Farben, z. B. Rosa–Violett–Blau) wirkt elegant und ruhig; <strong>Kontrast</strong> (Komplementärfarben, z. B. Blau-Violett + Gelb) macht Spannung. Weiß und silbriges Laub (Wollziest, Katzenminze) vermitteln zwischen kräftigen Tönen und lassen das Beet abends leuchten. Begrenze dich auf 2–3 Leitfarben plus Grün- und Silbertöne — zu viele Farben wirken unruhig.'],
+    ['Pflanzabstände & Stückzahl', 'Faustregel: <strong>5–9 Stauden pro m²</strong> bei normaler Pflanzung (locker 3–4, dicht bis 11). Große Leitstauden 1–3/m², niedrige Füllstauden 7–11/m². Der Abstand richtet sich nach der <strong>Endbreite</strong> der Pflanze, nicht nach der Topfgröße. Pflanze in <strong>ungeraden Gruppen</strong> (3er, 5er, 7er) derselben Art — das wirkt natürlicher als Einzelstücke und ergibt ruhige Farbflächen. Lücken lieber vermeiden: freier Boden ist eine Einladung fürs Unkraut.'],
+    ['Boden vorbereiten & pflanzen', 'Fläche gründlich von Wurzelunkräutern (Quecke, Giersch, Winde) befreien, den Boden ein Spatenblatt tief lockern und 3–5 l reifen Kompost pro m² einarbeiten. Stauden wässern, einsetzen, andrücken, angießen und eine Mulchschicht auftragen. Beste Pflanzzeit ist der <strong>Herbst (September–Oktober)</strong> — der warme Boden lässt die Wurzeln vor dem Winter einwachsen; zweitbeste Zeit ist das <strong>Frühjahr (April–Mai)</strong>. Containerware geht fast ganzjährig, außer bei Frost und Hochsommerhitze.'],
+  ];
+  const schritteHtml = schritte.map(([t, s], i) => `
+    <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:22px">
+      <div style="flex-shrink:0;background:#2d6a4f;color:#fff;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1rem">${i + 1}</div>
+      <div><h2 style="font-size:1.12rem;color:#1b4332;font-weight:700;margin:4px 0 8px">${t}</h2><p style="line-height:1.75;color:#333;font-size:.95rem">${s}</p></div>
+    </div>`).join('');
+
+  const faqs = [
+    ['Wie tief sollte ein Staudenbeet sein?', 'Für eine saubere Höhenstaffelung mindestens 1,5–2 m Tiefe. Schmalere Beete ab etwa 60 cm funktionieren mit zwei Höhenebenen. Bei Rundbeeten zählt der Radius (ab ca. 1 m), da die Staffelung von der Mitte nach außen verläuft.'],
+    ['Wie viele Stauden braucht man pro Quadratmeter?', 'Als Faustregel 5–9 Stauden pro m² bei normaler Pflanzung — lockerer 3–4, dicht bis etwa 11. Große Leitstauden 1–3/m², niedrige Füllstauden 7–11/m². Lieber etwas dichter pflanzen: geschlossene Flächen unterdrücken Unkraut.'],
+    ['Wann legt man ein Staudenbeet am besten an?', 'Ideal ist der Herbst (September–Oktober): Der Boden ist warm, die Stauden wurzeln vor dem Winter ein. Zweitbeste Zeit ist das Frühjahr (April–Mai). Container-Stauden lassen sich fast ganzjährig pflanzen, außer bei Frost oder Hitze.'],
+    ['Was sind Leit-, Begleit- und Füllstauden?', 'Leitstauden (über 80 cm) geben Struktur und Höhe (z. B. Rittersporn, Chinaschilf). Begleitstauden (40–80 cm) sind die Hauptblüher der Beetmitte (Sonnenhut, Salbei). Füllstauden (unter 40 cm) schließen Boden und Lücken (Storchschnabel, Frauenmantel).'],
+    ['Wie staffelt man Blütezeiten richtig?', 'Ziel ist ein durchgehendes „Nektarband" von März bis Oktober — pro Monat mindestens eine blühende Art. Kombiniere Frühlingsblüher (Bergenie, Lungenkraut), Sommerblüher (Sonnenhut, Salbei) und Herbstblüher (Herbstaster, Fetthenne) und lass Blühzeiten überlappen.'],
+  ];
+  const faqHtml = faqs.map(([q, a]) => `
+    <details style="background:#fff;border-radius:10px;padding:16px 20px;margin-bottom:10px;box-shadow:0 2px 8px rgba(0,0,0,.06)">
+      <summary style="font-weight:700;color:#1b4332;font-size:.95rem;cursor:pointer">${q}</summary>
+      <p style="line-height:1.7;color:#444;font-size:.9rem;margin-top:10px">${a}</p>
+    </details>`).join('');
+  const faqSchema = escJsonLd({
+    "@context": "https://schema.org", "@type": "FAQPage",
+    "mainEntity": faqs.map(([q, a]) => ({ "@type": "Question", "name": q, "acceptedAnswer": { "@type": "Answer", "text": a.replace(/<[^>]+>/g, '') } }))
+  });
+  const howtoSchema = escJsonLd({
+    "@context": "https://schema.org", "@type": "HowTo", "name": "Staudenbeet planen und anlegen",
+    "description": "Schritt-für-Schritt-Anleitung, um ein Staudenbeet zu planen: Standort, Höhenstaffelung, Blütezeiten, Farbkonzept, Pflanzabstände und Pflanzung.",
+    "step": schritte.map(([t, s], i) => ({ "@type": "HowToStep", "position": i + 1, "name": t, "text": s.replace(/<[^>]+>/g, '') }))
+  });
+
   res.send(`<!DOCTYPE html><html lang="de"><head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Staudenbeet planen — Kostenloser Online-Planer mit KI | Staudenplan.de</title>
-  <meta name="description" content="Staudenbeet kostenlos online planen: KI-Bepflanzungsplan in 2 Minuten — mit ${pflanzenCount} winterharten Stauden, Pflanzplan-Grafik und Stückliste.">
+  <title>Staudenbeet planen: Anleitung in 7 Schritten | Staudenplan.de</title>
+  <meta name="description" content="Staudenbeet planen wie ein Profi: Schritt-für-Schritt-Anleitung zu Standort, Höhenstaffelung, Blütezeiten, Farbkonzept und Pflanzabständen — mit Praxisbeispielen und kostenlosem Pflanzplan.">
   <link rel="canonical" href="https://www.staudenplan.de/staudenbeet-planen">
   <link rel="icon" href="/favicon.ico" sizes="any"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
-  <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',system-ui,sans-serif;background:#f8f4ef;color:#1a1a1a}</style>
+  <script type="application/ld+json">${faqSchema}</script>
+  <script type="application/ld+json">${howtoSchema}</script>
+  <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',system-ui,sans-serif;background:#f8f4ef;color:#1a1a1a}summary::-webkit-details-marker{display:none}</style>
   </head><body>
   ${NAV_LINKS}
-  <div style="background:linear-gradient(160deg,#1b4332,#2d6a4f);color:#fff;padding:56px 24px 48px;text-align:center">
-    <h1 style="font-size:clamp(1.6rem,4vw,2.2rem);font-weight:800;line-height:1.2;margin-bottom:14px">Staudenbeet online planen — kostenlos & mit KI</h1>
-    <p style="opacity:.88;max-width:620px;margin:0 auto 28px;font-size:1rem;line-height:1.65">Standort, Größe und Stil eingeben — unser KI-Planer erstellt deinen individuellen Bepflanzungsplan mit ${pflanzenCount} winterharten Stauden.</p>
-    <a href="/" style="background:#fff;color:#1b4332;border-radius:50px;padding:15px 40px;text-decoration:none;font-weight:800;font-size:1rem;display:inline-block">Jetzt kostenlosen Plan erstellen →</a>
-  </div>
-  <main style="max-width:900px;margin:0 auto;padding:48px 20px 60px">
-    <div style="background:#fff;border-radius:14px;padding:28px;box-shadow:0 2px 12px rgba(0,0,0,.07);margin-bottom:36px">
-      <h2 style="font-size:1.2rem;color:#1b4332;margin-bottom:16px;font-weight:700">So funktioniert der KI-Bepflanzungsplan</h2>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;margin-bottom:20px">
-        ${[['1','Garten beschreiben','Fläche, Lichtbedingungen, Bodentyp und Gartenstil eingeben — oder Fläche direkt einzeichnen.'],['2','KI generiert deinen Plan',`Unsere KI durchsucht ${pflanzenCount} geprüfte Stauden und erstellt einen standortgerechten Plan.`],['3','Pflanzen bestellen','Mit Stückliste, grafischem Pflanzplan und Jahreskalender. Komplettpaket direkt bestellbar.']].map(([n,t,s]) => `<div style="background:#f8f4ef;border-radius:10px;padding:18px"><div style="background:#2d6a4f;color:#fff;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.88rem;margin-bottom:10px">${n}</div><h3 style="font-size:.95rem;font-weight:700;color:#1b4332;margin-bottom:6px">${t}</h3><p style="font-size:.83rem;color:#555;line-height:1.6">${s}</p></div>`).join('')}
-      </div>
-      <h2 style="font-size:1.1rem;color:#1b4332;margin-bottom:12px;font-weight:700">Was kostet ein Bepflanzungsplan?</h2>
-      <p style="line-height:1.75;color:#333;font-size:.95rem;margin-bottom:12px">Unser KI-Bepflanzungsplan ist vollständig <strong>kostenlos und ohne Anmeldung</strong>. Ein professioneller Gartenplaner kostet für einen einfachen Plan oft 150–500 €. Unser Tool liefert einen ähnlich individualisierten Plan — in 2 Minuten, rund um die Uhr, für 0 €.</p>
-      <p style="line-height:1.75;color:#333;font-size:.95rem">Die einzigen Kosten entstehen beim optionalen Kauf der empfohlenen Pflanzen. Der Plan selbst ist und bleibt kostenlos.</p>
+  <div style="background:linear-gradient(160deg,#1b4332,#2d6a4f);color:#fff;padding:52px 24px 44px;text-align:center">
+    <div style="max-width:720px;margin:0 auto">
+      <h1 style="font-size:clamp(1.6rem,4vw,2.2rem);font-weight:800;line-height:1.22;margin-bottom:14px">Staudenbeet planen &amp; anlegen: die Schritt-für-Schritt-Anleitung</h1>
+      <p style="opacity:.9;font-size:1.02rem;line-height:1.65">Von der Standort­analyse bis zur Pflanzung — wie du ein Staudenbeet planst, das von Frühling bis Herbst blüht und pflegeleicht bleibt. Mit konkreten Zahlen und Pflanzenbeispielen.</p>
     </div>
-    ${artikel.length > 0 ? `<h2 style="font-size:1.15rem;color:#1b4332;margin-bottom:16px;font-weight:700">📚 Ratgeber: Staudenbeet richtig planen</h2>${artikelHtml}` : ''}
+  </div>
+  <main style="max-width:820px;margin:0 auto;padding:44px 20px 60px">
+
+    <p style="line-height:1.8;color:#333;font-size:1rem;margin-bottom:14px">Ein gelungenes Staudenbeet ist kein Zufall, sondern das Ergebnis weniger klarer Entscheidungen: der richtige Standort, eine durchdachte Höhenstaffelung, eine über die Saison gestaffelte Blüte und stimmige Farben. Wer diese Schritte der Reihe nach geht, vermeidet die häufigsten Fehler — Pflanzen am falschen Platz, kahle Phasen und ein unruhiges Farbbild. Diese Anleitung führt dich durch die komplette Planung.</p>
+    <p style="line-height:1.8;color:#333;font-size:1rem;margin-bottom:30px">Wenn du die Arbeit abkürzen möchtest: Unser <a href="/" style="color:#2d6a4f;font-weight:700">kostenloser Staudenbeet-Planer</a> nimmt dir die Schritte 1–6 automatisch ab — er gleicht Standort, Höhen, Blühzeiten und Stückzahlen mit ${pflanzenCount} winterharten Stauden ab. Die Anleitung hilft dir trotzdem, den Plan zu verstehen und zu verfeinern.</p>
+
+    <div style="background:#fff;border-radius:14px;padding:26px 24px 8px;box-shadow:0 2px 12px rgba(0,0,0,.07);margin-bottom:34px">
+      ${schritteHtml}
+    </div>
+
+    <div style="background:#f0faf3;border:1px solid #d6efe0;border-radius:12px;padding:22px 24px;margin-bottom:20px">
+      <h2 style="font-size:1.12rem;color:#1b4332;font-weight:700;margin-bottom:8px">Schritt 8: Pflege im ersten Jahr</h2>
+      <p style="line-height:1.75;color:#333;font-size:.95rem">Im ersten Jahr entscheidet sich, ob das Beet anwächst: In Trockenphasen <strong>durchdringend wässern</strong> (lieber selten und viel als täglich wenig), bis die Stauden eingewurzelt sind. Verblühtes kannst du für eine zweite Blüte zurückschneiden — die Samenstände von Gräsern, Sonnenhut und Fetthenne aber über den Winter stehen lassen: Sie sind Struktur bei Raureif und Nahrung für Vögel und Insekten. Der große Rückschnitt erfolgt erst im <strong>Frühjahr (Februar/März)</strong>, kurz vor dem Neuaustrieb.</p>
+    </div>
+
+    <div style="background:linear-gradient(135deg,#1b4332,#2d6a4f);border-radius:14px;padding:30px 26px;color:#fff;text-align:center;margin-bottom:40px">
+      <h2 style="font-size:1.25rem;margin-bottom:8px">Alle Schritte automatisch — in 2 Minuten</h2>
+      <p style="opacity:.9;font-size:.95rem;line-height:1.6;max-width:560px;margin:0 auto 18px">Gib Standort, Größe und Stil ein — der KI-Planer erledigt Standortabgleich, Höhenstaffelung, Blüh-Staffelung und Stückzahl für dich und liefert einen grafischen Pflanzplan mit Stückliste. Kostenlos, ohne Anmeldung.</p>
+      <a href="/" style="display:inline-block;background:#fff;color:#1b4332;border-radius:50px;padding:14px 34px;text-decoration:none;font-weight:800;font-size:.98rem">🌿 Kostenlosen Pflanzplan erstellen →</a>
+    </div>
+
+    <h2 style="font-size:1.3rem;color:#1b4332;font-weight:800;margin-bottom:16px">Häufige Fragen zur Staudenbeet-Planung</h2>
+    ${faqHtml}
+
+    <div style="display:flex;flex-wrap:wrap;gap:10px;margin:30px 0 10px">
+      <a href="/stauden-kombinieren" style="background:#fff;border-radius:30px;padding:9px 18px;text-decoration:none;color:#1b4332;font-size:.86rem;font-weight:600;box-shadow:0 1px 6px rgba(0,0,0,.08)">🌸 Stauden kombinieren</a>
+      <a href="/pflanzen" style="background:#fff;border-radius:30px;padding:9px 18px;text-decoration:none;color:#1b4332;font-size:.86rem;font-weight:600;box-shadow:0 1px 6px rgba(0,0,0,.08)">🔎 Stauden-Lexikon</a>
+      <a href="/beispiele" style="background:#fff;border-radius:30px;padding:9px 18px;text-decoration:none;color:#1b4332;font-size:.86rem;font-weight:600;box-shadow:0 1px 6px rgba(0,0,0,.08)">🌿 Beet-Beispiele</a>
+      <a href="/ratgeber" style="background:#fff;border-radius:30px;padding:9px 18px;text-decoration:none;color:#1b4332;font-size:.86rem;font-weight:600;box-shadow:0 1px 6px rgba(0,0,0,.08)">📖 Garten-Ratgeber</a>
+    </div>
+    ${artikel.length > 0 ? `<h2 style="font-size:1.15rem;color:#1b4332;margin:28px 0 16px;font-weight:700">Weiterlesen im Ratgeber</h2>${artikelHtml}` : ''}
   </main>
   ${SITE_FOOTER}
   </body></html>`);
