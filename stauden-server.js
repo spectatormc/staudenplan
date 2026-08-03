@@ -1648,7 +1648,7 @@ function pflanzeToSlug(name_botanisch) {
 // ─── Impressum & Datenschutz ─────────────────────────────────────────────────
 
 const LEGAL_STYLE = `
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">
+  <link rel="icon" href="/favicon.ico" sizes="any"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <style>
     *{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',system-ui,sans-serif;background:#f8f4ef;color:#1a1a1a}
     nav{background:#1b4332;padding:14px 24px;display:flex;align-items:center;gap:12px}
@@ -2273,7 +2273,7 @@ app.get('/pflanzen', (req, res) => {
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Stauden suchen & filtern — ${total} winterharte Gartenstauden | Staudenplan.de</title>
   <meta name="description" content="Alle ${total} winterharten Gartenstauden filtern nach Standort, Blühzeit, Farbe, Höhe, Feuchtigkeit und mehr — mit Fotos, Pflege-Tipps und Kauflink.">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">
+  <link rel="icon" href="/favicon.ico" sizes="any"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="canonical" href="https://www.staudenplan.de/pflanzen">
   <meta property="og:title" content="Stauden suchen — ${total} winterharte Arten">
   <meta property="og:image" content="https://www.staudenplan.de/images/og-default.jpg">
@@ -2763,7 +2763,7 @@ app.get('/pflanze/:slug', (req, res) => {
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>${escHtml(pflanze.name_deutsch)} (${escHtml(pflanze.name_botanisch)}) — Pflege, Standort & Verwendung | Staudenplan.de</title>
   <meta name="description" content="${escHtml(pflanze.name_deutsch)} (${escHtml(pflanze.name_botanisch)}): ${escHtml((pflanze.beschreibung || '').substring(0, 130))} — Standort ${escHtml(pflanze.licht||'')}, Blühzeit ${escHtml(pflanze.bluehzeit||'')}, Pflege und Kauftipp.">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">
+  <link rel="icon" href="/favicon.ico" sizes="any"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="canonical" href="https://www.staudenplan.de/pflanze/${slug}">
   <meta property="og:title" content="${escHtml(pflanze.name_deutsch)} — Pflege, Standort & Kauftipp">
   <meta property="og:description" content="${escHtml((pflanze.beschreibung || '').substring(0, 155))}">
@@ -3009,7 +3009,7 @@ function kategorieSeitenHTML({ titel, metaDesc, h1, intro, pflanzen, artikelLink
   <title>${titel} | Staudenplan.de</title>
   <meta name="description" content="${metaDesc}">
   <link rel="canonical" href="https://www.staudenplan.de/${slug}">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">
+  <link rel="icon" href="/favicon.ico" sizes="any"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <meta property="og:title" content="${titel}">
   <meta property="og:description" content="${metaDesc}">
   <meta property="og:type" content="website">
@@ -3121,7 +3121,7 @@ app.get('/staudenbeet-planen', (req, res) => {
   <title>Staudenbeet planen — Kostenloser Online-Planer mit KI | Staudenplan.de</title>
   <meta name="description" content="Staudenbeet kostenlos online planen: KI-Bepflanzungsplan in 2 Minuten — mit ${pflanzenCount} winterharten Stauden, Pflanzplan-Grafik und Stückliste.">
   <link rel="canonical" href="https://www.staudenplan.de/staudenbeet-planen">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">
+  <link rel="icon" href="/favicon.ico" sizes="any"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',system-ui,sans-serif;background:#f8f4ef;color:#1a1a1a}</style>
   </head><body>
   ${NAV_LINKS}
@@ -3177,7 +3177,7 @@ const KAT_CONFIG = {
 function katCfg(k) { return KAT_CONFIG[k] || { icon: '🌱', grad: 'linear-gradient(135deg,#1b4332,#52b788)', img: '' }; }
 function readingTime(text) { return Math.max(1, Math.round(text.split(/\s+/).length / 200)); }
 
-const FAVICON = `<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">`;
+const FAVICON = `<link rel="icon" href="/favicon.ico" sizes="any"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="apple-touch-icon" href="/apple-touch-icon.png">`;
 
 const PLAUSIBLE = `<!-- Privacy-friendly analytics by Plausible -->
 <script async src="https://plausible.io/js/pa-CQxds67VLWtj57jHuhY1V.js"></script>
@@ -3316,7 +3316,7 @@ app.get('/ratgeber', (req, res) => {
 
   res.send(`<!DOCTYPE html><html lang="de"><head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">
+  <link rel="icon" href="/favicon.ico" sizes="any"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <title>Garten-Ratgeber — Staudenbeete planen, pflegen und gestalten | Staudenplan.de</title>
   <meta name="description" content="Ratgeber für Staudenbeete: ${artikel.length} Expertentexte zu Standorten, Pflanzkombinationen, Pflege und Gestaltung — von Grundprinzipien bis Praxistipps.">
   <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',system-ui,sans-serif;background:#f8f4ef;color:#1a1a1a}@media(max-width:640px){a[style*="grid-template-columns:1fr 1fr"]{display:flex!important;flex-direction:column!important}}</style>
@@ -3442,7 +3442,7 @@ app.get('/ratgeber/:slug', (req, res) => {
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>${escHtml(artikel.titel)} | Staudenplan.de Ratgeber</title>
   <meta name="description" content="${escHtml(artikel.inhalt.substring(0, 155))}">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">
+  <link rel="icon" href="/favicon.ico" sizes="any"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="canonical" href="https://www.staudenplan.de/ratgeber/${slug}">
   <meta property="og:title" content="${escHtml(artikel.titel)}">
   <meta property="og:type" content="article">
