@@ -183,6 +183,19 @@ const escJsonLd = (obj) => JSON.stringify(obj).replace(/</g, '\\u003c');
   'CREATE INDEX IF NOT EXISTS idx_pflanzen_status ON pflanzen(status)',
 ].forEach(sql => { try { db.exec(sql); } catch (_) {} });
 
+// Sichtbarkeit für den bis 08/2026 stillen Parse-Fehler: inhalt_lang soll JSON sein, ein Teil
+// des Bestands ist aber Prosa. Diese Zeilen verlieren die Feld-Sektionen und vier FAQ-Einträge
+// (der Text wird als Freitext gerendert, aber das ist der schwächere Weg). Zahl bei jedem Start
+// loggen, damit ein Rückfall auffällt statt jahrelang unbemerkt zu bleiben.
+(function zaehleInhaltLangFormat() {
+  try {
+    const zeilen = db.prepare("SELECT inhalt_lang FROM pflanzen WHERE inhalt_lang IS NOT NULL AND inhalt_lang != ''").all();
+    let prosa = 0;
+    for (const z of zeilen) { try { JSON.parse(z.inhalt_lang); } catch { prosa++; } }
+    if (prosa) console.log(`Hinweis: ${prosa} von ${zeilen.length} inhalt_lang-Feldern sind kein JSON — diese Pflanzenseiten zeigen nur den Freitext (kein Pflegeraster, kein voller FAQ).`);
+  } catch (_) { /* Zählung darf den Start nie verhindern */ }
+})();
+
 // ─── SEO-Migrationen (läuft bei jedem Start, idempotent) ─────────────────────
 (function runSeoMigrations() {
   // Ratgeber-Titel auf Keywords optimieren
@@ -1302,13 +1315,22 @@ const QUELLEN = [
   [/^\/$/,               'Planer'],
 ];
 
+// Innerhalb des Planers liegen Pflanzenkarten und Stückliste auf derselben URL ("/"), der Referer
+// kann sie also nicht trennen. Dafür hängt das Frontend ein &q=… an den Kauflink. Der Marker
+// verfeinert nur, was der Referer ohnehin schon erlaubt — fälschen lässt sich damit nichts.
+const QUELLE_MARKER = { karte: 'Planer (Karte)', stueckliste: 'Planer (Stückliste)' };
+
 function klickQuelle(req) {
   const ref = String(req.get('referer') || '');
   if (!EIGENE_HERKUNFT.test(ref)) return null;
   let pfad;
   try { pfad = new URL(ref).pathname || '/'; } catch { return null; }
   const treffer = QUELLEN.find(([muster]) => muster.test(pfad));
-  return treffer ? treffer[1] : 'Sonstige';
+  const quelle = treffer ? treffer[1] : 'Sonstige';
+  if (quelle === 'Planer' && typeof req.query.q === 'string' && QUELLE_MARKER[req.query.q]) {
+    return QUELLE_MARKER[req.query.q];
+  }
+  return quelle;
 }
 
 // quelle === null bedeutet: kein Referer von der eigenen Seite → keine Nutzerinteraktion.
@@ -1768,7 +1790,10 @@ app.get('/impressum', (req, res) => {
   ${LEGAL_NAV}
   <main>
     <h1>Impressum</h1>
-    <h2>Angaben gemäß § 5 TMG</h2>
+    <!-- Das TMG wurde im Mai 2024 durch das Digitale-Dienste-Gesetz (DDG) abgelöst; die
+         Impressumspflicht steht seither in § 5 DDG, die Verantwortlichkeit in § 7 DDG. Der
+         Rundfunkstaatsvertrag ist seit 2020 durch den Medienstaatsvertrag ersetzt (§ 18 MStV). -->
+    <h2>Angaben gemäß § 5 DDG</h2>
     <p><strong>Gartenschmiede GmbH</strong><br>
     Ortsstraße 7<br>85354 Freising</p>
     <h2>Kontakt</h2>
@@ -1777,15 +1802,18 @@ app.get('/impressum', (req, res) => {
     <h2>Vertreten durch</h2>
     <p>Marco Holmer, Bastian Rohrhuber</p>
     <h2>Handelsregister</h2>
+    <!-- TODO Betreiber: echte HRB-Nummer eintragen. Eine GmbH entsteht erst mit der Eintragung,
+         eine "nachzutragende" Registernummer kann es also nicht geben — sie steht im
+         Handelsregisterauszug bzw. auf dem Gesellschaftsvertrag. Pflichtangabe nach § 5 DDG. -->
     <p>Registergericht: Amtsgericht München<br>
-    Registernummer: wird nachgetragen</p>
-    <h2>Umsatzsteuer-ID</h2>
-    <p>Umsatzsteuer-Identifikationsnummer gemäß § 27a UStG: wird nachgetragen</p>
-    <h2>Verantwortlich für den Inhalt nach § 55 Abs. 2 RStV</h2>
+    Registernummer: HRB &lt;bitte eintragen&gt;</p>
+    <!-- Umsatzsteuer-ID nur angeben, wenn tatsächlich eine erteilt wurde. "wird nachgetragen"
+         ist keine zulässige Angabe; ohne USt-IdNr. entfällt die Zeile ersatzlos. -->
+    <h2>Verantwortlich für den Inhalt nach § 18 Abs. 2 MStV</h2>
     <p>Bastian Rohrhuber<br>Ortsstraße 7, 85354 Freising</p>
     <h2 id="haftung">Haftungsausschluss</h2>
     <h3>1. Allgemeine Inhalte</h3>
-    <p>Die Inhalte dieser Website wurden mit größtmöglicher Sorgfalt erstellt. Für die Richtigkeit, Vollständigkeit und Aktualität der Inhalte können wir jedoch keine Gewähr übernehmen. Als Diensteanbieter sind wir gemäß § 7 Abs. 1 TMG für eigene Inhalte auf diesen Seiten nach den allgemeinen Gesetzen verantwortlich.</p>
+    <p>Die Inhalte dieser Website wurden mit größtmöglicher Sorgfalt erstellt. Für die Richtigkeit, Vollständigkeit und Aktualität der Inhalte können wir jedoch keine Gewähr übernehmen. Als Diensteanbieter sind wir gemäß § 7 Abs. 1 DDG für eigene Inhalte auf diesen Seiten nach den allgemeinen Gesetzen verantwortlich.</p>
     <h3>2. KI-generierte Bepflanzungspläne</h3>
     <p>Die auf Staudenplan.de erstellten Bepflanzungspläne werden mithilfe künstlicher Intelligenz (KI) generiert und stellen <strong>ausdrücklich keine professionelle Gartenberatung</strong> dar. Die Pläne sind als unverbindliche Anregung und Entscheidungshilfe zu verstehen.</p>
     <p>Wir übernehmen keinerlei Haftung für:</p>
@@ -2703,32 +2731,16 @@ app.get('/pflanze/:slug', (req, res) => {
       "brand": { "@type": "Brand", "name": "Staudenplan.de" },
       "additionalProperty": additionalProps,
       "mpn": pflanze.name_botanisch,
-      "offers": {
-        "@type": "Offer",
-        "priceCurrency": "EUR",
-        "price": pflanze.preis_stueck_eur || 0,
-        "availability": "https://schema.org/InStock",
-        "url": `https://www.staudenplan.de/pflanze/${slug}`,
-        "seller": { "@type": "Organization", "name": "Staudenplan.de" },
-        "shippingDetails": {
-          "@type": "OfferShippingDetails",
-          "shippingRate": { "@type": "MonetaryAmount", "value": "4.95", "currency": "EUR" },
-          "shippingDestination": { "@type": "DefinedRegion", "addressCountry": "DE" },
-          "deliveryTime": {
-            "@type": "ShippingDeliveryTime",
-            "handlingTime": { "@type": "QuantitativeValue", "minValue": 1, "maxValue": 2, "unitCode": "DAY" },
-            "transitTime": { "@type": "QuantitativeValue", "minValue": 2, "maxValue": 5, "unitCode": "DAY" }
-          }
-        },
-        "hasMerchantReturnPolicy": {
-          "@type": "MerchantReturnPolicy",
-          "applicableCountry": "DE",
-          "returnPolicyCategory": "https://schema.org/MerchantReturnFiniteReturnWindow",
-          "merchantReturnDays": 14,
-          "returnMethod": "https://schema.org/ReturnByMail",
-          "returnFees": "https://schema.org/FreeReturn"
-        }
-      }
+      // BEWUSST KEIN "offers": Staudenplan.de verkauft nichts. Der Block enthielt bis 08/2026
+      // einen Verkaufspreis unter dem Händlernamen "Staudenplan.de", Versandkosten von 4,95 €,
+      // 1-2 Tage Bearbeitung und 14 Tage kostenlose Rückgabe — alles frei erfunden, auf allen
+      // 713 Pflanzenseiten, ohne AGB und ohne Widerrufsbelehrung. Die Preise in der DB sind
+      // Kalkulationsgrößen für die Plansumme, keine Handelspreise (Stichprobe: Echinacea
+      // purpurea 8,00 € in der DB gegen 5,10 € bei Gaißmayer).
+      // Der Block ist ursprünglich als Reaktion auf die Search-Console-Warnung
+      // "Missing field offers" entstanden (Commit bd1e628). Diese Warnung ist folgenlos:
+      // Product-Rich-Results ohne Angebot gibt es ohnehin nicht, wir verlieren also nichts.
+      // NICHT wieder einbauen, solange hier nicht wirklich verkauft wird.
     },
     {
       "@context": "https://schema.org",
@@ -2769,9 +2781,16 @@ app.get('/pflanze/:slug', (req, res) => {
       </div>
     </section>` : '';
 
-  // Inhalt-Lang vorab parsen (für FAQ + Verlinkung)
+  // Inhalt-Lang vorab parsen (für FAQ + Verlinkung).
+  // 288 der 713 Zeilen enthalten Prosa statt JSON. Bis 08/2026 wurde der Parse-Fehler still zu
+  // null — und damit fielen auf diesen Seiten "Pflege im Detail", Kombinationspartner, "Häufige
+  // Fehler" und vier von sieben FAQ-Einträgen ersatzlos weg. Der Text lag die ganze Zeit in der
+  // DB. Jetzt wird er als freitext durchgereicht und gerendert.
   const inhaltLang = pflanze.inhalt_lang
-    ? (() => { try { return JSON.parse(pflanze.inhalt_lang); } catch { return null; } })()
+    ? (() => {
+        try { return JSON.parse(pflanze.inhalt_lang); }
+        catch { return { freitext: String(pflanze.inhalt_lang) }; }
+      })()
     : null;
 
   // FAQ automatisch aus DB-Feldern generieren
@@ -2901,7 +2920,9 @@ app.get('/pflanze/:slug', (req, res) => {
             ['↕ Höhe', hoehe],
             ['🎨 Farbe', (pflanze.farbe||'—').replace(/\|/g,' · ')],
             ['🌱 Pflege', pflegeSterne],
-            ['💶 Preis', pflanze.preis_stueck_eur ? pflanze.preis_stueck_eur.toFixed(2)+' €/Stück' : '—'],
+            // "Richtpreis" statt "Preis": die DB-Werte sind Kalkulationsgrößen für die Plansumme,
+            // keine Kassenpreise (Echinacea purpurea 8,00 € hier gegen 5,10 € bei Gaißmayer).
+            ['💶 Richtpreis', pflanze.preis_stueck_eur ? 'ca. ' + pflanze.preis_stueck_eur.toFixed(2)+' €/Stück' : '—'],
           ].map(([l,v]) => `
             <div style="background:#fff;border-radius:10px;padding:12px 14px;box-shadow:0 1px 6px rgba(0,0,0,.06)">
               <div style="font-size:.72rem;color:#aaa;margin-bottom:3px;text-transform:uppercase;letter-spacing:.05em">${l}</div>
@@ -2945,29 +2966,40 @@ app.get('/pflanze/:slug', (req, res) => {
     ${(() => {
       const d = inhaltLang;
       if (!d) return '';
+      // Die Feldliste zuerst bilden: bei Freitext-Einträgen ist d zwar truthy, aber leer —
+      // ohne diese Prüfung stünde auf 288 Seiten die Überschrift über einem leeren Raster.
+      const pflegeFelder = [
+        ['📅 Pflanzzeit', d.pflanzzeit],
+        ['📐 Pflanzabstand', d.pflanzabstand],
+        ['💧 Gießen', d.giessen],
+        ['🌱 Düngen', d.duengen],
+        ['✂️ Rückschnitt', d.rueckschnitt],
+        ['❄️ Überwinterung', d.ueberwinterung],
+      ].filter(([, v]) => v);
       return `
+    ${d.freitext ? `
+    <!-- Pflege & Verwendung (Freitext-Bestand: noch nicht ins Feldschema überführt) -->
+    <section style="background:#fff;border-radius:14px;padding:24px;box-shadow:0 2px 12px rgba(0,0,0,.07);margin-bottom:24px">
+      <h2 style="font-size:1.15rem;color:#1b4332;margin-bottom:16px;font-weight:700">🌿 Pflege &amp; Verwendung</h2>
+      ${String(d.freitext).split(/\n{2,}/).map(abs => abs.trim()).filter(Boolean)
+        .map(abs => `<p style="line-height:1.75;color:#333;margin-bottom:12px">${escHtml(abs)}</p>`).join('')}
+    </section>` : ''}
+    ${pflegeFelder.length || d.tipp ? `
     <!-- Pflege im Detail -->
     <section style="background:#fff;border-radius:14px;padding:24px;box-shadow:0 2px 12px rgba(0,0,0,.07);margin-bottom:24px">
       <h2 style="font-size:1.15rem;color:#1b4332;margin-bottom:20px;font-weight:700">🌿 Pflege im Detail</h2>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px">
-        ${[
-          ['📅 Pflanzzeit', d.pflanzzeit],
-          ['📐 Pflanzabstand', d.pflanzabstand],
-          ['💧 Gießen', d.giessen],
-          ['🌱 Düngen', d.duengen],
-          ['✂️ Rückschnitt', d.rueckschnitt],
-          ['❄️ Überwinterung', d.ueberwinterung],
-        ].filter(([,v]) => v).map(([label, val]) => `
+      ${pflegeFelder.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px">
+        ${pflegeFelder.map(([label, val]) => `
           <div style="background:#f8f4ef;border-radius:10px;padding:14px 16px">
             <div style="font-size:.75rem;font-weight:700;color:#2d6a4f;margin-bottom:5px;text-transform:uppercase;letter-spacing:.04em">${label}</div>
-            <p style="font-size:.88rem;color:#333;line-height:1.6;margin:0">${val}</p>
+            <p style="font-size:.88rem;color:#333;line-height:1.6;margin:0">${escHtml(val)}</p>
           </div>`).join('')}
-      </div>
+      </div>` : ''}
       ${d.tipp ? `<div style="background:linear-gradient(135deg,#d8f3dc,#b7e4c7);border-radius:10px;padding:14px 18px;margin-top:14px;display:flex;gap:12px;align-items:flex-start">
         <span style="font-size:1.4rem;flex-shrink:0">💡</span>
-        <div><div style="font-size:.75rem;font-weight:700;color:#1b4332;margin-bottom:3px;text-transform:uppercase">Experten-Tipp</div><p style="font-size:.88rem;color:#1b4332;line-height:1.6;margin:0">${d.tipp}</p></div>
+        <div><div style="font-size:.75rem;font-weight:700;color:#1b4332;margin-bottom:3px;text-transform:uppercase">Experten-Tipp</div><p style="font-size:.88rem;color:#1b4332;line-height:1.6;margin:0">${escHtml(d.tipp)}</p></div>
       </div>` : ''}
-    </section>
+    </section>` : ''}
 
     <!-- Kombinationen -->
     ${(() => {
@@ -2993,16 +3025,16 @@ app.get('/pflanze/:slug', (req, res) => {
           ? `<a href="/pflanze/${k.slug}" style="display:flex;gap:14px;align-items:center;background:#f8f4ef;border-radius:10px;padding:12px 16px;text-decoration:none;color:inherit;transition:background .12s" onmouseover="this.style.background='#d8f3dc'" onmouseout="this.style.background='#f8f4ef'">
               <span style="font-size:1.5rem;flex-shrink:0">🌿</span>
               <div>
-                <div style="font-weight:700;font-size:.92rem;color:#1b4332">${k.name_deutsch} <span style="font-style:italic;color:#aaa;font-weight:400;font-size:.8rem">${k.name_botanisch}</span></div>
-                <div style="font-size:.82rem;color:#555;margin-top:2px">${k.grund}</div>
+                <div style="font-weight:700;font-size:.92rem;color:#1b4332">${escHtml(k.name_deutsch)} <span style="font-style:italic;color:#aaa;font-weight:400;font-size:.8rem">${escHtml(k.name_botanisch)}</span></div>
+                <div style="font-size:.82rem;color:#555;margin-top:2px">${escHtml(k.grund)}</div>
               </div>
               <span style="margin-left:auto;color:#2d6a4f;font-size:.8rem;font-weight:600;white-space:nowrap">Ansehen →</span>
             </a>`
           : `<div style="display:flex;gap:14px;align-items:center;background:#f8f4ef;border-radius:10px;padding:12px 16px;">
               <span style="font-size:1.5rem;flex-shrink:0">🌿</span>
               <div>
-                <div style="font-weight:700;font-size:.92rem;color:#1b4332">${k.name_deutsch} <span style="font-style:italic;color:#aaa;font-weight:400;font-size:.8rem">${k.name_botanisch}</span></div>
-                <div style="font-size:.82rem;color:#555;margin-top:2px">${k.grund}</div>
+                <div style="font-weight:700;font-size:.92rem;color:#1b4332">${escHtml(k.name_deutsch)} <span style="font-style:italic;color:#aaa;font-weight:400;font-size:.8rem">${escHtml(k.name_botanisch)}</span></div>
+                <div style="font-size:.82rem;color:#555;margin-top:2px">${escHtml(k.grund)}</div>
               </div>
             </div>`
         ).join('')}
@@ -3011,11 +3043,11 @@ app.get('/pflanze/:slug', (req, res) => {
     })()}
 
     <!-- Häufige Fehler -->
-    ${d.fehler && d.fehler.length > 0 ? `
+    ${Array.isArray(d.fehler) && d.fehler.length > 0 ? `
     <section style="background:#fff5f5;border-radius:14px;padding:24px;box-shadow:0 2px 12px rgba(0,0,0,.07);margin-bottom:24px">
       <h2 style="font-size:1.15rem;color:#9b2335;margin-bottom:14px;font-weight:700">⚠️ Häufige Fehler vermeiden</h2>
       <ul style="list-style:none;padding:0;display:flex;flex-direction:column;gap:8px">
-        ${d.fehler.map(f => `<li style="display:flex;gap:10px;font-size:.88rem;color:#333;line-height:1.6"><span style="color:#e53e3e;font-weight:700;flex-shrink:0">✗</span>${f}</li>`).join('')}
+        ${d.fehler.map(f => `<li style="display:flex;gap:10px;font-size:.88rem;color:#333;line-height:1.6"><span style="color:#e53e3e;font-weight:700;flex-shrink:0">✗</span>${escHtml(f)}</li>`).join('')}
       </ul>
     </section>` : ''}`;
     })()}
@@ -4321,7 +4353,8 @@ function renderBeispielPlanSSR(plan, flaeche, grafikOpts, quelle = '') {
           <span>Pflege: <span class="pflege-sterne">${stars}</span></span>
           <strong>${preis} €</strong>
         </div>
-        <a class="btn-kaufen" href="${escHtml(kaufHref)}" target="_blank" rel="noopener nofollow" data-kauf="${escHtml(p.name_botanisch || p.name_deutsch || '')}" data-quelle="${escHtml(quelle)}">Kaufen →</a>
+        <a class="btn-kaufen" href="${escHtml(kaufHref)}" target="_blank" rel="noopener nofollow" data-kauf="${escHtml(p.name_botanisch || p.name_deutsch || '')}" data-quelle="${escHtml(quelle)}">Bei Gaißmayer ansehen ↗</a>
+        <div style="text-align:center;font-size:.7rem;color:#999;margin-top:4px;line-height:1.4">Staudengärtnerei Gaißmayer · öffnet in neuem Tab</div>
       </div>
     </div>`;
   }).join('');

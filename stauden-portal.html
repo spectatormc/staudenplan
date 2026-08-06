@@ -379,6 +379,9 @@
       transition: background 0.15s;
     }
     .btn-kaufen:hover { background: var(--green-dark); }
+    /* Zielt der Button ins Nichts? Nein — Empfänger und neues Tab werden ausgeschrieben,
+       damit der Klick keine Überraschung ist. */
+    .kauf-hinweis { text-align: center; font-size: .7rem; color: #999; margin-top: 4px; line-height: 1.4; }
     .btn-alt {
       display: block; width: 100%; background: transparent;
       color: var(--green-mid); border: 1px solid var(--green-light);
@@ -412,29 +415,44 @@
     .tipps-list li::before { content: '🌿'; flex-shrink: 0; }
 
     /* CTA Anfrage */
-    .anfrage-cta {
-      background: linear-gradient(135deg, var(--earth), #9a5e38);
-      color: #fff;
-      border-radius: var(--radius);
-      padding: 32px;
+    /* Die Anfrage-Box war bis 08/2026 der optisch dominanteste Block der Ergebnisseite (Verlauf,
+       32px Padding, dreimal vorhanden) und hat in 28 Tagen null echte Leads erzeugt. Jetzt eine
+       Textzeile; die Kauffläche gehört dem, was gemessen konvertiert. */
+    .anfrage-zeile {
       text-align: center;
-      margin-bottom: 36px;
+      font-size: .9rem;
+      color: #666;
+      margin: 4px 0 28px;
     }
-    .anfrage-cta h3 { font-size: 1.4rem; margin-bottom: 10px; }
-    .anfrage-cta p { opacity: 0.88; margin-bottom: 24px; font-size: 0.95rem; line-height: 1.6; }
-    .btn-anfrage {
+    .anfrage-zeile a { color: var(--earth); font-weight: 600; text-decoration: underline; }
+    /* Kaufblock unter der Stückliste: bewusst UNTER der Tabelle statt als 9. Spalte — die Tabelle
+       hat min-width 560px und scrollt auf Mobil bereits horizontal, eine weitere Spalte läge auf
+       einem 390px-Gerät garantiert außerhalb des Sichtfensters. */
+    .sl-kauf {
       background: #fff;
-      color: var(--earth);
-      border: none;
-      border-radius: 50px;
-      padding: 14px 40px;
-      font-size: 1rem;
-      font-weight: 700;
-      cursor: pointer;
-      transition: transform 0.15s, box-shadow 0.15s;
-      font-family: inherit;
+      border: 1px solid #e8e2d9;
+      border-radius: var(--radius);
+      padding: 22px;
+      margin-bottom: 20px;
     }
-    .btn-anfrage:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.2); }
+    .sl-kauf h3 { font-size: 1.1rem; margin-bottom: 6px; color: var(--green-dark); }
+    .sl-kauf-hinweis { font-size: .84rem; color: #777; line-height: 1.5; margin-bottom: 16px; }
+    .sl-kauf-liste { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+    .sl-kauf-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--green-mid, #2d6a4f);
+      color: #fff;
+      border-radius: 50px;
+      padding: 8px 16px;
+      font-size: .85rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: background .15s;
+    }
+    .sl-kauf-item:hover { background: var(--green-dark, #1b4332); }
+    .sl-kauf-item .slk-anzahl { opacity: .75; font-weight: 400; }
     .btn-neustart {
       display: block;
       width: 100%;
@@ -949,7 +967,9 @@
     .wl-chip button:hover { color: #fff; }
 
     @media print {
-      header, .result-tabs, .rtab, .viz-toolbar, .btn-print, .btn-neustart, .anfrage-cta, .modal-overlay { display: none !important; }
+      /* .sl-kauf/.anfrage-zeile mit ausblenden: Links drucken sich als toter Text. */
+      header, .result-tabs, .rtab, .viz-toolbar, .btn-print, .btn-neustart,
+      .anfrage-zeile, .sl-kauf, .modal-overlay { display: none !important; }
       .tab-panel { display: block !important; }
       .sl-table { box-shadow: none; }
     }
@@ -1699,11 +1719,7 @@
       <div id="kalender-grid" style="display:none"></div>
       <div class="section-title">💡 Tipps</div>
       <ul class="tipps-list" id="tipps-list"></ul>
-      <div class="anfrage-cta">
-        <h3>🌿 Paket bei der Gärtnerei anfragen</h3>
-        <p>Lass dir alle Pflanzen deines Plans als fertiges Paket liefern. Schick uns deine Anfrage — wir leiten sie an unsere Gärtnerei weiter, die sich mit einem Angebot bei dir meldet.</p>
-        <button class="btn-anfrage" onclick="openModal()">Paket bei Gärtnerei anfragen</button>
-      </div>
+      <p class="anfrage-zeile">Lieber alles auf einmal? <a href="#" onclick="openModal();return false">Komplettpaket bei der Gartenschmiede GmbH anfragen →</a></p>
       <button class="btn-neustart" onclick="planTeilen(this)">🔗 Plan teilen</button>
       <button class="btn-neustart" onclick="neustart()">↩ Neuen Plan erstellen</button>
     </div>
@@ -1724,7 +1740,7 @@
             <th>Pflanze</th>
             <th>Botanisch</th>
             <th>Anzahl</th>
-            <th>Einzelpreis</th>
+            <th>Richtpreis</th>
             <th>Gesamt</th>
             <th>Blühzeit</th>
             <th>Standort</th>
@@ -1743,10 +1759,14 @@
       </table>
       </div>
       <div style="margin-top:24px">
-        <div class="anfrage-cta">
-          <h3>🌿 Komplettpaket bei der Gärtnerei anfragen</h3>
-          <p>Alle Pflanzen deiner Stückliste als fertiges Paket — sortiert, beschriftet, versandfertig. Stell deine Anfrage, wir leiten sie an unsere Gärtnerei weiter.</p>
-          <button class="btn-anfrage" onclick="openModal()">Paket bei Gärtnerei anfragen</button>
+        <!-- Kaufwege der Stückliste: Einzelbezug bei Gaißmayer (unentgeltliche Empfehlung) ODER
+             Komplettpaket über die eigene Gartenschmiede GmbH. Beides bewusst benannt, damit
+             erkennbar bleibt, wer jeweils dahintersteht. -->
+        <div class="sl-kauf" id="sl-kauf">
+          <h3>🌿 Pflanzen beziehen</h3>
+          <p class="sl-kauf-hinweis">Einzeln bei der Staudengärtnerei Gaißmayer ansehen — jeder Link öffnet die Sortimentssuche in einem neuen Tab. Wir verdienen an diesen Links nichts.</p>
+          <div class="sl-kauf-liste" id="sl-kauf-liste"></div>
+          <p class="anfrage-zeile">Lieber alles auf einmal? <a href="#" onclick="openModal();return false">Komplettpaket bei der Gartenschmiede GmbH anfragen →</a></p>
         </div>
         <button class="btn-neustart" onclick="planTeilen(this)">🔗 Plan teilen</button>
         <button class="btn-neustart" onclick="neustart()">↩ Neuen Plan erstellen</button>
@@ -1810,11 +1830,7 @@
         </div>
       </div>
 
-      <div class="anfrage-cta">
-        <h3>🌿 Paket bei der Gärtnerei anfragen</h3>
-        <p>Lass dir alle Pflanzen deines Plans als fertiges Paket liefern. Schick uns deine Anfrage — wir leiten sie an unsere Gärtnerei weiter, die sich mit einem Angebot bei dir meldet.</p>
-        <button class="btn-anfrage" onclick="openModal()">Paket bei Gärtnerei anfragen</button>
-      </div>
+      <p class="anfrage-zeile">Lieber alles auf einmal? <a href="#" onclick="openModal();return false">Komplettpaket bei der Gartenschmiede GmbH anfragen →</a></p>
       <button class="btn-neustart" onclick="planTeilen(this)">🔗 Plan teilen</button>
       <button class="btn-neustart" onclick="neustart()">↩ Neuen Plan erstellen</button>
 
@@ -2652,8 +2668,20 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || 'Unbekannter Fehler');
+      // res.json() lief bis 08/2026 VOR der res.ok-Prüfung. Bei einem Gateway-Timeout liefert
+      // nginx eine HTML-Fehlerseite → der Parser warf, und der Nutzer sah wörtlich
+      // "Fehler: Unexpected token '<'". Die sorgfältige deutsche Meldung des Servers war
+      // dadurch toter Code. Erst Status prüfen, dann parsen, und nur JSON als JSON behandeln.
+      let data = null;
+      const istJson = (res.headers.get('content-type') || '').includes('application/json');
+      if (istJson) { try { data = await res.json(); } catch { data = null; } }
+      if (!res.ok) {
+        throw new Error((data && data.error)
+          || (res.status === 504 || res.status === 502
+              ? 'Die Planerstellung hat zu lange gedauert. Bitte versuch es noch einmal — bei kleineren Flächen geht es meist schneller.'
+              : `Der Server hat mit Status ${res.status} geantwortet. Bitte versuch es in einem Moment noch einmal.`));
+      }
+      if (!data || !data.success) throw new Error((data && data.error) || 'Unbekannter Fehler');
       if (window.plausible) plausible('Plan erstellt');
       currentPlan = data.plan;
       // Leitstauden immer mind. 3 Exemplare (Profipraxis)
@@ -3531,6 +3559,23 @@
     }).join('');
     document.getElementById('sl-total-stueck').textContent = totalStueck + ' Stück';
     document.getElementById('sl-total-preis').textContent = totalPreis.toFixed(2) + ' €';
+
+    // Kaufwege unter der Tabelle: bis 08/2026 war die Stückliste eine Preisliste ohne
+    // Bezugsquelle — Menge, Einzelpreis und Summe, aber kein einziger Link zum Shop.
+    const kaufListe = document.getElementById('sl-kauf-liste');
+    if (kaufListe) {
+      kaufListe.innerHTML = plan.pflanzen.map((p, i) => !p.kauflink ? '' :
+        `<a class="sl-kauf-item" href="${escapeHtml(kaufUrl(p, 'stueckliste'))}" target="_blank" rel="noopener nofollow" onclick="trackKauf(${i},'stueckliste')"
+          >${escapeHtml(p.name_deutsch)}<span class="slk-anzahl">× ${p.stueckzahl || 1}</span> ↗</a>`
+      ).join('');
+    }
+  }
+
+  // Hängt den Herkunftsmarker an den Kauflink. Der Planer liegt für Karten und Stückliste auf
+  // derselben URL — ohne Marker kann der Server die beiden Flächen im Referer nicht trennen.
+  function kaufUrl(p, quelle) {
+    if (!p || !p.kauflink) return '#';
+    return p.kauflink + (p.kauflink.indexOf('?') === -1 ? '?' : '&') + 'q=' + encodeURIComponent(quelle);
   }
 
   // ── Höhenansicht (SVG) ────────────────────────────────────────────────────
@@ -3754,6 +3799,9 @@
     if (name === 'visualisierung' && currentPlan) {
       setTimeout(() => { renderGrafisch(currentPlan, currentSaison); renderSchematisch(currentPlan); renderHoehenansicht(currentPlan, currentSaison); renderIsometrie(currentPlan, currentSaison); }, 50);
     }
+    // Ohne diese Messung ist unbekannt, ob die Stückliste überhaupt jemand öffnet — der
+    // Kaufblock dort wäre sonst nicht bewertbar.
+    try { if (window.plausible) plausible('Tab: ' + name); } catch {}
   }
 
   function setSaison(saison) {
@@ -4072,7 +4120,8 @@
             <span>Pflege: <span class="pflege-sterne">${'★'.repeat(stars)}${'☆'.repeat(3-stars)}</span></span>
             <strong id="preis-${i}">${((p.preis_stueck_eur||0) * (p.stueckzahl||1)).toFixed(2)} €</strong>
           </div>
-          <a class="btn-kaufen" href="${p.kauflink}" target="_blank" rel="noopener nofollow" onclick="trackKauf(${i})">Kaufen →</a>
+          <a class="btn-kaufen" href="${escapeHtml(kaufUrl(p, 'karte'))}" target="_blank" rel="noopener nofollow" onclick="trackKauf(${i},'karte')">Bei Gaißmayer ansehen ↗</a>
+          <div class="kauf-hinweis">Staudengärtnerei Gaißmayer · öffnet in neuem Tab</div>
           <button class="btn-alt" data-idx="${i}" onclick="alternativVorschlagen(${i})">🔄 Alternative vorschlagen</button>
           ${p.fehler && p.fehler.length ? `<details class="pflanze-fehler"><summary>⚠️ Häufige Fehler (${p.fehler.length})</summary><ul>${p.fehler.map(f=>`<li>${escapeHtml(f)}</li>`).join('')}</ul></details>` : ''}
         </div>
@@ -4166,6 +4215,9 @@
 
   function openModal() {
     document.getElementById('modal-overlay').classList.add('open');
+    // Trennt "Formular geöffnet" von "Anfrage abgeschickt" — sonst ist nach der Herabstufung
+    // der CTA nicht unterscheidbar, ob niemand klickt oder alle im Formular abbrechen.
+    try { if (window.plausible) plausible('Anfrage-Modal'); } catch {}
   }
   function closeModal() {
     document.getElementById('modal-overlay').classList.remove('open');
@@ -4281,10 +4333,10 @@
 
   // Gaißmayer-Kaufklick als Plausible-Custom-Event (Link öffnet in neuem Tab,
   // die Seite bleibt bestehen → das Event hat Zeit zu senden).
-  function trackKauf(i) {
+  function trackKauf(i, quelle) {
     try {
       const p = currentPlan && currentPlan.pflanzen && currentPlan.pflanzen[i];
-      if (window.plausible) plausible('Gärtnerei-Klick', { props: { pflanze: p ? (p.name_botanisch || p.name_deutsch || '') : '', quelle: 'planer' } });
+      if (window.plausible) plausible('Gärtnerei-Klick', { props: { pflanze: p ? (p.name_botanisch || p.name_deutsch || '') : '', quelle: 'planer-' + (quelle || 'karte') } });
     } catch {}
   }
 </script>
