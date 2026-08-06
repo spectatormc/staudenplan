@@ -170,6 +170,9 @@ const escJsonLd = (obj) => JSON.stringify(obj).replace(/</g, '\\u003c');
   'ALTER TABLE pflanzen ADD COLUMN bild_vorschlag TEXT',
   'ALTER TABLE pflanzen ADD COLUMN bild_geprueft INTEGER DEFAULT 0',
   'ALTER TABLE pflanzen ADD COLUMN bild_check_info TEXT',
+  // Klicks: maschinelle Aufrufe werden markiert statt verworfen — die Weiterleitung
+  // funktioniert weiter, die Statistik zeigt aber nur echte Nachfrage.
+  'ALTER TABLE klicks ADD COLUMN bot INTEGER DEFAULT 0',
 ].forEach(sql => { try { db.exec(sql); } catch (_) {} });
 
 // Indizes (idempotent) — Prefix-Lookups auf name_botanisch (Plan-Anreicherung) + status-Filter (RAG)
@@ -1266,11 +1269,44 @@ app.post('/api/feedback', feedbackLimiter, async (req, res) => {
 });
 
 // ─── Gaißmayer-Weiterleitung + Klickzählung ──────────────────────────────────
-const insertKlick = db.prepare('INSERT INTO klicks (ziel, pflanze) VALUES (?, ?)');
+// Bot-Erkennung: maschinelle Klicks werden als bot=1 gespeichert, nicht verworfen.
+// Grund: die Zahl muss belastbar sein, wenn sie Gaißmayer als Nachfragebeleg vorgelegt wird —
+// ein einzelner Scraper hat die Statistik am 03.08.2026 um 58 Klicks aufgebläht.
+const BOT_UA = /bot|crawler|spider|slurp|headless|python|curl|wget|scrapy|axios|okhttp|java\/|go-http|libwww|perl|phantom|puppeteer|playwright|semrush|ahrefs|mj12|dotbot|bytespider|gptbot|claudebot|ccbot|petalbot|yandex|baidu|facebookexternalhit|preview/i;
+const KLICK_FENSTER_MS = 60 * 60 * 1000;  // Beobachtungsfenster: 1 Stunde
+const KLICK_MAX = 5;                      // mehr als 5 Kaufklicks/Stunde ist kein echter Kaufinteressent
+const KLICK_VERLAUF_MAX = 5000;           // Obergrenze gegen Speicherwachstum bei IP-Rotation
+// Nur im Arbeitsspeicher und nur als Hash mit prozess-zufälligem Salt — die IP selbst wird
+// nirgends gespeichert und ist nach einem Neustart auch nicht mehr rekonstruierbar.
+const KLICK_SALT = crypto.randomBytes(16);
+const klickVerlauf = new Map();
+
+function istBotKlick(req) {
+  const ua = String(req.get('user-agent') || '');
+  if (!ua || ua.length < 15 || BOT_UA.test(ua)) return true;
+
+  const jetzt = Date.now();
+  const kennung = crypto.createHash('sha256').update(KLICK_SALT).update(String(req.ip || '')).digest('hex').slice(0, 16);
+  const bisher = (klickVerlauf.get(kennung) || []).filter(t => jetzt - t < KLICK_FENSTER_MS);
+  bisher.push(jetzt);
+  klickVerlauf.set(kennung, bisher);
+
+  // Aufräumen: abgelaufene Einträge raus, notfalls die ältesten opfern.
+  if (klickVerlauf.size > KLICK_VERLAUF_MAX) {
+    for (const [k, ts] of klickVerlauf) {
+      if (!ts.length || jetzt - ts[ts.length - 1] >= KLICK_FENSTER_MS) klickVerlauf.delete(k);
+      if (klickVerlauf.size <= KLICK_VERLAUF_MAX) break;
+    }
+    while (klickVerlauf.size > KLICK_VERLAUF_MAX) klickVerlauf.delete(klickVerlauf.keys().next().value);
+  }
+  return bisher.length > KLICK_MAX;
+}
+
+const insertKlick = db.prepare('INSERT INTO klicks (ziel, pflanze, bot) VALUES (?, ?, ?)');
 app.get('/go/gaissmayer', (req, res) => {
   const raw = typeof req.query.p === 'string' ? req.query.p : '';
   const pflanze = raw.replace(/[^\p{L}0-9 .×'’()\-]/gu, '').trim().slice(0, 120) || null;
-  try { insertKlick.run('gaissmayer', pflanze); } catch { /* Zählung darf die Weiterleitung nie blockieren */ }
+  try { insertKlick.run('gaissmayer', pflanze, istBotKlick(req) ? 1 : 0); } catch { /* Zählung darf die Weiterleitung nie blockieren */ }
   res.set('X-Robots-Tag', 'noindex, nofollow');
   // Deeplink auf die Produktsuche mit Binomial (Gattung+Art) für robuste Treffer; sonst generischer Shop.
   const suchbegriff = pflanze ? pflanze.split(' ').slice(0, 2).join(' ') : '';
@@ -1429,13 +1465,19 @@ app.get('/admin/klicks', (req, res) => {
   if (!isAdmin(req)) return res.redirect('/admin/login?next=/admin/klicks');
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const ZIEL = 100;
-  const gesamt = db.prepare("SELECT COUNT(*) AS n FROM klicks WHERE ziel = 'gaissmayer'").get().n;
+  // Nur bot=0 zählt: Scraper und Klickserien aus derselben Quelle sind als bot=1 markiert
+  // (siehe istBotKlick), damit die Zahl gegenüber Gaißmayer belastbar bleibt.
+  const ECHT = "ziel = 'gaissmayer' AND COALESCE(bot,0) = 0";
+  const gesamt = db.prepare(`SELECT COUNT(*) AS n FROM klicks WHERE ${ECHT}`).get().n;
+  const bots = db.prepare("SELECT COUNT(*) AS n FROM klicks WHERE ziel = 'gaissmayer' AND COALESCE(bot,0) = 1").get().n;
   const proPflanze = db.prepare(`
     SELECT pflanze, COUNT(*) AS n, MAX(erstellt_am) AS letzter
-    FROM klicks WHERE ziel = 'gaissmayer' AND pflanze IS NOT NULL
+    FROM klicks WHERE ${ECHT} AND pflanze IS NOT NULL
     GROUP BY pflanze ORDER BY n DESC, letzter DESC`).all();
   const proTag = db.prepare(`
-    SELECT substr(erstellt_am,1,10) AS tag, COUNT(*) AS n
+    SELECT substr(erstellt_am,1,10) AS tag,
+           SUM(CASE WHEN COALESCE(bot,0) = 0 THEN 1 ELSE 0 END) AS n,
+           SUM(CASE WHEN COALESCE(bot,0) = 1 THEN 1 ELSE 0 END) AS b
     FROM klicks WHERE ziel = 'gaissmayer' GROUP BY tag ORDER BY tag DESC LIMIT 30`).all();
   const pct = Math.min(100, Math.round(gesamt / ZIEL * 100));
   res.send(`<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8">
@@ -1453,14 +1495,16 @@ app.get('/admin/klicks', (req, res) => {
   <h1>🌿 Gaißmayer-Kaufklicks <a href="/admin/logout" style="float:right;font-size:.8rem;font-weight:400;color:#999;text-decoration:none">Abmelden →</a></h1>
   <div class="big">${gesamt}<span style="font-size:1rem;color:#999;font-weight:400"> / ${ZIEL}</span></div>
   <div class="bar"><span style="width:${pct}%"></span></div>
-  <p class="muted">${pct}% des Ziels${gesamt >= ZIEL ? ' — erreicht! Gaißmayer kann jetzt mit Daten angesprochen werden 🎉' : ''}</p>
+  <p class="muted">${pct}% des Ziels${gesamt >= ZIEL ? ' — erreicht! Gaißmayer kann jetzt mit Daten angesprochen werden 🎉' : ''}
+  ${bots ? ` · zusätzlich <strong>${bots}</strong> maschinelle Klicks erkannt und nicht mitgezählt` : ''}</p>
   <h2>Nachfrage pro Pflanze</h2>
   ${proPflanze.length ? `<table><tr><th>Pflanze (botanisch)</th><th>Klicks</th><th>Letzter Klick</th></tr>
   ${proPflanze.map(r => `<tr><td>${esc(r.pflanze)}</td><td>${r.n}</td><td class="muted">${esc(r.letzter)}</td></tr>`).join('')}</table>`
     : '<p class="muted">Noch keine Klicks erfasst.</p>'}
   <h2>Klicks pro Tag (letzte 30)</h2>
-  ${proTag.length ? `<table><tr><th>Tag</th><th>Klicks</th></tr>
-  ${proTag.map(r => `<tr><td>${esc(r.tag)}</td><td>${r.n}</td></tr>`).join('')}</table>` : '<p class="muted">—</p>'}
+  ${proTag.length ? `<table><tr><th>Tag</th><th>Echt</th><th>Bots</th></tr>
+  ${proTag.map(r => `<tr><td>${esc(r.tag)}</td><td>${r.n}</td><td class="muted" style="text-align:right">${r.b || '—'}</td></tr>`).join('')}</table>` : '<p class="muted">—</p>'}
+  <p class="muted">Als maschinell gilt: fehlender/verdächtiger User-Agent oder mehr als ${KLICK_MAX} Kaufklicks pro Stunde aus derselben Quelle. Die IP wird dafür nur als Hash im Arbeitsspeicher gehalten, nie gespeichert.</p>
   </body></html>`);
 });
 
