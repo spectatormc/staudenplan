@@ -1458,7 +1458,7 @@ function renderSharedPlan(plan, id) {
     <h1 style="font-size:clamp(1.3rem,4vw,1.9rem);font-weight:800;margin:0 auto;max-width:640px;line-height:1.3">${konzept}</h1>
   </div>
   <div style="max-width:900px;margin:0 auto;padding:32px 16px 60px">
-    ${renderBeispielPlanSSR(plan, flaeche, g)}
+    ${renderBeispielPlanSSR(plan, flaeche, g, 'geteilter-plan')}
     <div style="background:linear-gradient(135deg,#1b4332,#2d6a4f);border-radius:14px;padding:28px;color:#fff;margin-bottom:24px;text-align:center">
       <h2 style="font-size:1.2rem;margin:0 0 8px">Erstelle deinen eigenen Bepflanzungsplan</h2>
       <p style="opacity:.88;font-size:.92rem;margin:0 0 18px;line-height:1.6">Kostenlos, in 2 Minuten, ohne Anmeldung — abgestimmt auf deine Fläche, deinen Boden und deine Vorlieben.</p>
@@ -2880,7 +2880,7 @@ app.get('/pflanze/:slug', (req, res) => {
 
         <!-- CTA Buttons -->
         <div style="display:flex;gap:10px;flex-wrap:wrap">
-          <a href="${kauflink}" target="_blank" rel="noopener nofollow" style="background:#6b4226;color:#fff;border-radius:50px;padding:13px 28px;text-decoration:none;font-weight:700;font-size:.9rem;transition:background .15s">In der Gärtnerei ansehen →</a>
+          <a href="${kauflink}" target="_blank" rel="noopener nofollow" data-kauf="${escHtml(pflanze.name_botanisch || pflanze.name_deutsch || '')}" data-quelle="pflanzenseite" style="background:#6b4226;color:#fff;border-radius:50px;padding:13px 28px;text-decoration:none;font-weight:700;font-size:.9rem;transition:background .15s">In der Gärtnerei ansehen →</a>
           <button id="wl-btn" onclick="addToWunschliste()" style="background:#2d6a4f;color:#fff;border:none;border-radius:50px;padding:13px 28px;font-weight:700;font-size:.9rem;cursor:pointer;transition:background .2s">🌿 Zur Wunschliste</button>
           <script>
           (function(){
@@ -3295,7 +3295,12 @@ const FAVICON = `<link rel="icon" href="/favicon.ico" sizes="any"><link rel="ico
 
 const PLAUSIBLE = `<!-- Privacy-friendly analytics by Plausible -->
 <script async src="https://plausible.io/js/pa-CQxds67VLWtj57jHuhY1V.js"></script>
-<script>window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};plausible.init()</script>`;
+<script>window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};plausible.init()</script>
+<!-- Kaufklicks aller server-gerenderten Flaechen melden (Planer meldet selbst in stauden-portal.html).
+     Delegiert statt onclick pro Link: greift auch fuer spaeter ergaenzte Kaufflaechen. Der Link oeffnet
+     in einem neuen Tab, die Seite bleibt stehen -> das Event hat Zeit zu senden. -->
+<script>document.addEventListener('click',function(e){var a=e.target&&e.target.closest?e.target.closest('[data-kauf]'):null;
+if(a&&window.plausible)plausible('Gärtnerei-Klick',{props:{pflanze:a.getAttribute('data-kauf')||'',quelle:a.getAttribute('data-quelle')||''}});});</script>`;
 
 const NAV_LINKS = `${FAVICON}${PLAUSIBLE}
 <style>
@@ -4240,7 +4245,8 @@ function renderGrafischSSR(pflanzen, flaeche, opts) {
   </div>`;
 }
 
-function renderBeispielPlanSSR(plan, flaeche, grafikOpts) {
+// quelle: landet als Plausible-Property am Kaufklick, damit sichtbar wird, welche Fläche verkauft.
+function renderBeispielPlanSSR(plan, flaeche, grafikOpts, quelle = '') {
   if (!plan || !plan.pflanzen) return '';
   const emojis = ['🌸','🌺','🌼','🌻','🌹','💐','🌷','🌿','🍃','🌾'];
   const jez = {'Frühling':'🌱','Sommer':'☀️','Herbst':'🍂','Winter':'❄️'};
@@ -4282,7 +4288,7 @@ function renderBeispielPlanSSR(plan, flaeche, grafikOpts) {
           <span>Pflege: <span class="pflege-sterne">${stars}</span></span>
           <strong>${preis} €</strong>
         </div>
-        <a class="btn-kaufen" href="${escHtml(kaufHref)}" target="_blank" rel="noopener nofollow">Kaufen →</a>
+        <a class="btn-kaufen" href="${escHtml(kaufHref)}" target="_blank" rel="noopener nofollow" data-kauf="${escHtml(p.name_botanisch || p.name_deutsch || '')}" data-quelle="${escHtml(quelle)}">Kaufen →</a>
       </div>
     </div>`;
   }).join('');
@@ -4499,7 +4505,7 @@ ${NAV_LINKS}
     <p style="color:#444;line-height:1.75">${b.intro2}</p>
   </div>
 
-  ${renderBeispielPlanSSR(plan, b.flaeche)}
+  ${renderBeispielPlanSSR(plan, b.flaeche, undefined, 'beispielbeet')}
 
   <div style="background:linear-gradient(135deg,#1b4332,#2d6a4f);border-radius:14px;padding:28px;color:#fff;margin-bottom:32px">
     <h2 style="font-size:1.1rem;margin-bottom:8px">Diesen Plan für deinen Garten anpassen</h2>

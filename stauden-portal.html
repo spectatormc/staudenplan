@@ -4284,7 +4284,7 @@
   function trackKauf(i) {
     try {
       const p = currentPlan && currentPlan.pflanzen && currentPlan.pflanzen[i];
-      if (window.plausible) plausible('Gärtnerei-Klick', { props: { pflanze: p ? (p.name_botanisch || p.name_deutsch || '') : '' } });
+      if (window.plausible) plausible('Gärtnerei-Klick', { props: { pflanze: p ? (p.name_botanisch || p.name_deutsch || '') : '', quelle: 'planer' } });
     } catch {}
   }
 </script>
