@@ -173,6 +173,8 @@ const escJsonLd = (obj) => JSON.stringify(obj).replace(/</g, '\\u003c');
   // Klicks: maschinelle Aufrufe werden markiert statt verworfen — die Weiterleitung
   // funktioniert weiter, die Statistik zeigt aber nur echte Nachfrage.
   'ALTER TABLE klicks ADD COLUMN bot INTEGER DEFAULT 0',
+  // Herkunftsfläche des Klicks (aus dem Referer abgeleitet) — zeigt, welche Seite verkauft.
+  'ALTER TABLE klicks ADD COLUMN quelle TEXT',
 ].forEach(sql => { try { db.exec(sql); } catch (_) {} });
 
 // Indizes (idempotent) — Prefix-Lookups auf name_botanisch (Plan-Anreicherung) + status-Filter (RAG)
@@ -1288,8 +1290,30 @@ const klickVerlauf = new Map();
 // Scraper-Flotte mit gefälschtem iPhone-UA aus Rechenzentrums-IPs oder eigene Tests.
 const EIGENE_HERKUNFT = /^https?:\/\/([a-z0-9-]+\.)*staudenplan\.de(\/|$|\?)/i;
 
-function istBotKlick(req) {
-  if (!EIGENE_HERKUNFT.test(String(req.get('referer') || ''))) return true;
+// Herkunftsfläche aus dem Referer, damit auf /admin/klicks sichtbar wird, welche Seite
+// tatsächlich verkauft. Serverseitig und damit adblockerfest — die gleichnamige
+// Plausible-Property sieht nur die Hälfte der Klicks und braucht einen teureren Tarif.
+const QUELLEN = [
+  [/^\/pflanze\//i,      'Pflanzenseite'],
+  [/^\/plan\//i,         'Geteilter Plan'],
+  [/^\/beispiel(e\/?$|\/)/i, 'Beispielbeet'],
+  [/^\/ratgeber/i,       'Ratgeber'],
+  [/^\/pflanzen\/?$/i,   'Pflanzenlexikon'],
+  [/^\/$/,               'Planer'],
+];
+
+function klickQuelle(req) {
+  const ref = String(req.get('referer') || '');
+  if (!EIGENE_HERKUNFT.test(ref)) return null;
+  let pfad;
+  try { pfad = new URL(ref).pathname || '/'; } catch { return null; }
+  const treffer = QUELLEN.find(([muster]) => muster.test(pfad));
+  return treffer ? treffer[1] : 'Sonstige';
+}
+
+// quelle === null bedeutet: kein Referer von der eigenen Seite → keine Nutzerinteraktion.
+function istBotKlick(req, quelle) {
+  if (!quelle) return true;
 
   const ua = String(req.get('user-agent') || '');
   if (!ua || ua.length < 15 || BOT_UA.test(ua)) return true;
@@ -1311,11 +1335,12 @@ function istBotKlick(req) {
   return bisher.length > KLICK_MAX;
 }
 
-const insertKlick = db.prepare('INSERT INTO klicks (ziel, pflanze, bot) VALUES (?, ?, ?)');
+const insertKlick = db.prepare('INSERT INTO klicks (ziel, pflanze, bot, quelle) VALUES (?, ?, ?, ?)');
 app.get('/go/gaissmayer', (req, res) => {
   const raw = typeof req.query.p === 'string' ? req.query.p : '';
   const pflanze = raw.replace(/[^\p{L}0-9 .×'’()\-]/gu, '').trim().slice(0, 120) || null;
-  try { insertKlick.run('gaissmayer', pflanze, istBotKlick(req) ? 1 : 0); } catch { /* Zählung darf die Weiterleitung nie blockieren */ }
+  const quelle = klickQuelle(req);
+  try { insertKlick.run('gaissmayer', pflanze, istBotKlick(req, quelle) ? 1 : 0, quelle); } catch { /* Zählung darf die Weiterleitung nie blockieren */ }
   res.set('X-Robots-Tag', 'noindex, nofollow');
   // Deeplink auf die Produktsuche mit Binomial (Gattung+Art) für robuste Treffer; sonst generischer Shop.
   const suchbegriff = pflanze ? pflanze.split(' ').slice(0, 2).join(' ') : '';
@@ -1483,6 +1508,9 @@ app.get('/admin/klicks', (req, res) => {
     SELECT pflanze, COUNT(*) AS n, MAX(erstellt_am) AS letzter
     FROM klicks WHERE ${ECHT} AND pflanze IS NOT NULL
     GROUP BY pflanze ORDER BY n DESC, letzter DESC`).all();
+  const proQuelle = db.prepare(`
+    SELECT COALESCE(quelle,'unbekannt') AS quelle, COUNT(*) AS n
+    FROM klicks WHERE ${ECHT} GROUP BY quelle ORDER BY n DESC`).all();
   const proTag = db.prepare(`
     SELECT substr(erstellt_am,1,10) AS tag,
            SUM(CASE WHEN COALESCE(bot,0) = 0 THEN 1 ELSE 0 END) AS n,
@@ -1506,6 +1534,11 @@ app.get('/admin/klicks', (req, res) => {
   <div class="bar"><span style="width:${pct}%"></span></div>
   <p class="muted">${pct}% des Ziels${gesamt >= ZIEL ? ' — erreicht! Gaißmayer kann jetzt mit Daten angesprochen werden 🎉' : ''}
   ${bots ? ` · zusätzlich <strong>${bots}</strong> maschinelle Klicks erkannt und nicht mitgezählt` : ''}</p>
+  <h2>Welche Fläche verkauft?</h2>
+  ${proQuelle.length ? `<table><tr><th>Herkunft des Klicks</th><th>Klicks</th><th>Anteil</th></tr>
+  ${proQuelle.map(r => `<tr><td>${esc(r.quelle)}</td><td>${r.n}</td><td class="muted" style="text-align:right">${gesamt ? Math.round(r.n / gesamt * 100) : 0} %</td></tr>`).join('')}</table>
+  <p class="muted">Aus dem Referer abgeleitet, serverseitig — erfasst im Gegensatz zu Plausible auch Besucher mit Adblocker. „unbekannt“ sind Klicks von vor der Einführung dieser Spalte.</p>`
+    : ''}
   <h2>Nachfrage pro Pflanze</h2>
   ${proPflanze.length ? `<table><tr><th>Pflanze (botanisch)</th><th>Klicks</th><th>Letzter Klick</th></tr>
   ${proPflanze.map(r => `<tr><td>${esc(r.pflanze)}</td><td>${r.n}</td><td class="muted">${esc(r.letzter)}</td></tr>`).join('')}</table>`
