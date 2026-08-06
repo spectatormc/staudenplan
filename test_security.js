@@ -27,18 +27,47 @@ async function main() {
   console.log('=== Sicherheitstest-Suite ===\n');
   if (!ADMIN_PW) { console.error('FATAL: ADMIN_PASSWORT fehlt in .env'); process.exit(1); }
 
+  // Seit Commit 31d2f90 läuft die Admin-Anmeldung über ein signiertes Cookie statt über ?pw= in
+  // der URL. Die Seiten-Routen antworten deshalb mit 302 auf /admin/login, nicht mehr mit 403,
+  // und ?pw= wird gar nicht mehr gelesen. Die Suite prüfte bis 06.08.2026 noch den alten Stand
+  // und meldete sechs Fehlschläge, die keine waren.
   console.log('1) Admin-Übersicht (/admin) — Zugriffsschutz …');
-  let r = await fetch(BASE + '/admin');
-  expect('Ohne Passwort: 403', r.status === 403, 'status=' + r.status);
+  const ohneFolgen = { redirect: 'manual' };
+  let r = await fetch(BASE + '/admin', ohneFolgen);
+  expect('Ohne Anmeldung: Weiterleitung auf /admin/login', r.status === 302 && String(r.headers.get('location')).startsWith('/admin/login'), 'status=' + r.status + ' location=' + r.headers.get('location'));
 
-  r = await fetch(BASE + '/admin?pw=definitiv-falsch');
-  expect('Falsches Passwort: 403', r.status === 403, 'status=' + r.status);
+  r = await fetch(BASE + '/admin?pw=definitiv-falsch', ohneFolgen);
+  expect('Passwort in der URL öffnet nichts mehr', r.status === 302, 'status=' + r.status);
 
-  r = await fetch(BASE + '/admin?key=preview2026');
-  expect('Alter hartcodierter Key "preview2026": 403 (Regressionstest)', r.status === 403, 'status=' + r.status);
+  r = await fetch(BASE + '/admin?key=preview2026', ohneFolgen);
+  expect('Alter hartcodierter Key "preview2026" wirkungslos (Regressionstest)', r.status === 302, 'status=' + r.status);
 
-  r = await fetch(BASE + '/admin?pw=' + encodeURIComponent(ADMIN_PW));
-  expect('Richtiges Passwort: kein 403/401 mehr', r.status !== 403 && r.status !== 401, 'status=' + r.status);
+  r = await fetch(BASE + '/admin?pw=' + encodeURIComponent(ADMIN_PW), ohneFolgen);
+  expect('Auch das RICHTIGE Passwort in der URL öffnet nichts — nur das Cookie zählt', r.status === 302, 'status=' + r.status);
+
+  // Anmeldung wie ein echter Nutzer, dann mit dem Cookie weiterarbeiten.
+  const login = await fetch(BASE + '/admin/login', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pw: ADMIN_PW }),
+  });
+  const loginBody = await login.json().catch(() => ({}));
+  expect('Login mit richtigem Passwort: success', login.status === 200 && loginBody.success === true, 'status=' + login.status);
+  const cookie = String(login.headers.get('set-cookie') || '').split(';')[0];
+  expect('Login setzt ein Cookie', /^sp_admin=/.test(cookie), 'cookie=' + cookie);
+  const alsAdmin = { headers: { Cookie: cookie } };
+
+  r = await fetch(BASE + '/admin', { ...alsAdmin, redirect: 'manual' });
+  expect('Mit Cookie: /admin liefert die Seite (200)', r.status === 200, 'status=' + r.status);
+
+  for (const pfad of ['/admin/klicks', '/admin/anfragen', '/admin/quiz']) {
+    const ohne = await fetch(BASE + pfad, ohneFolgen);
+    const mit = await fetch(BASE + pfad, { ...alsAdmin, redirect: 'manual' });
+    expect(pfad + ': ohne Cookie Weiterleitung, mit Cookie 200', ohne.status === 302 && mit.status === 200, `ohne=${ohne.status} mit=${mit.status}`);
+  }
+
+  const falschesCookie = { headers: { Cookie: 'sp_admin=' + 'a'.repeat(64) } };
+  r = await fetch(BASE + '/admin', { ...falschesCookie, redirect: 'manual' });
+  expect('Gefälschtes Cookie wird abgewiesen', r.status === 302, 'status=' + r.status);
 
   console.log('\n2) Admin-Aktions-Endpoints — vorher komplett offen & ohne Rate-Limit, jetzt geschützt …');
   const adminActionRoutes = [
@@ -54,14 +83,17 @@ async function main() {
     r = await fetch(BASE + route, { method: 'POST' });
     expect(route + ' ohne Passwort: 401', r.status === 401, 'status=' + r.status);
   }
-  r = await fetch(BASE + '/api/kandidaten-starten?pw=' + encodeURIComponent(ADMIN_PW), { method: 'POST' });
-  expect('Mit richtigem Passwort funktioniert die Aktion weiterhin (200)', r.status === 200, 'status=' + r.status);
-  r = await fetch(BASE + '/api/bild-approve/999999?pw=' + encodeURIComponent(ADMIN_PW), { method: 'POST' });
-  expect('bild-approve mit richtigem Passwort erreicht die Route (404 statt 401 — kein offener Vorschlag für die Fake-ID)', r.status === 404, 'status=' + r.status);
-  r = await fetch(BASE + '/api/antwort-generieren?pw=' + encodeURIComponent(ADMIN_PW), {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+  // Auch hier zählt das Cookie, nicht ?pw= — die Aktionen sollen mit Anmeldung erreichbar sein.
+  r = await fetch(BASE + '/api/kandidaten-starten', { method: 'POST', ...alsAdmin });
+  expect('Mit Cookie funktioniert die Aktion weiterhin (200)', r.status === 200, 'status=' + r.status);
+  r = await fetch(BASE + '/api/bild-approve/999999', { method: 'POST', ...alsAdmin });
+  expect('bild-approve mit Cookie erreicht die Route (404 statt 401 — kein offener Vorschlag für die Fake-ID)', r.status === 404, 'status=' + r.status);
+  r = await fetch(BASE + '/api/antwort-generieren', {
+    method: 'POST', headers: { ...alsAdmin.headers, 'Content-Type': 'application/json' }, body: '{}',
   });
-  expect('antwort-generieren mit richtigem Passwort erreicht die Route (400 statt 401 — "frage" fehlt; kein echter KI-Call im Test)', r.status === 400, 'status=' + r.status);
+  expect('antwort-generieren mit Cookie erreicht die Route (400 statt 401 — "frage" fehlt; kein echter KI-Call im Test)', r.status === 400, 'status=' + r.status);
+  r = await fetch(BASE + '/api/kandidaten-starten?pw=' + encodeURIComponent(ADMIN_PW), { method: 'POST' });
+  expect('Passwort in der URL öffnet auch die Aktions-Endpunkte nicht (401)', r.status === 401, 'status=' + r.status);
 
   console.log('\n3) /api/anfrage — serverseitige E-Mail-Validierung …');
   r = await fetch(BASE + '/api/anfrage', {

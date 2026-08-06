@@ -46,7 +46,10 @@ const EXPORT = opt('export');
 // einheitlich klingen, und bei 288 einmaligen Aufrufen fällt der Preisunterschied nicht ins Gewicht.
 const MODELL = opt('model', 'gpt-4o');
 
-const db = new Database(DB_PFAD);
+// Bei --dry-run wirklich schreibgeschützt öffnen: vorher war die Datei zum Schreiben offen und
+// nur der UPDATE-Aufruf ausgelassen — ein Tippfehler an der falschen Stelle hätte trotzdem in
+// die Produktionskopie geschrieben.
+const db = new Database(DB_PFAD, DRY_RUN ? { readonly: true } : {});
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const alle = db.prepare(`

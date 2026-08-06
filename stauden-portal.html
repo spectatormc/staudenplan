@@ -3892,7 +3892,11 @@
       ['Standort', formData.licht || '?'],
       ['Bodentyp', formData.boden || '?'],
       ['Gartenstil', formData.stil || '?'],
-      ['Geschätzte Gesamtkosten', plan.gesamtkosten_geschaetzt || '?'],
+      // Gerundet und mit Währung — sonst steht im PDF eine rohe Fließkommazahl wie "487.4",
+      // während die Tabelle darunter "487,40 €" ausweist.
+      ['Geschätzte Gesamtkosten', typeof plan.gesamtkosten_geschaetzt === 'number'
+        ? 'ca. ' + Math.round(plan.gesamtkosten_geschaetzt) + ' €'
+        : (plan.gesamtkosten_geschaetzt || '?')],
     ];
     doc.autoTable({ startY: y, head: [], body: gData, margin: { left: MARGIN, right: MARGIN },
       styles: { fontSize: 9, cellPadding: 1.5 },
@@ -4222,11 +4226,17 @@
       data.pflanze.standort = p.standort;
       if (data.pflanze.rolle === 'Leitstaude' && (data.pflanze.stueckzahl || 1) < 3) data.pflanze.stueckzahl = 3;
       currentPlan.pflanzen[idx] = data.pflanze;
-      // Die Ersatzpflanze übernimmt die aktuelle, also bereits skalierte Stückzahl — für die
-      // Basis muss der Dichte-Faktor wieder herausgerechnet werden, sonst wandert der
-      // Leitstauden-Aufschlag auf 3 in die Basis und verschiebt jede weitere Dichte-Änderung.
+      // Basis für die Ersatzpflanze setzen. Drei Fälle, die sich unterscheiden:
+      // - Geophyten überspringt setDichte() ganz, ihre Stückzahl ist nie skaliert → nicht teilen.
+      // - Bei allen anderen muss der aktuelle Dichte-Faktor herausgerechnet werden, sonst wandert
+      //   er in die Basis und verdoppelt sich beim nächsten Klick.
+      // - Leitstauden haben eine Mindestmenge von 3 (Profipraxis). Die darf nicht durch das
+      //   Herausrechnen unterlaufen werden, sonst zeigt der Plan bei "Normal" plötzlich zwei.
       if (_baseStueck && _baseStueck.length === currentPlan.pflanzen.length) {
-        _baseStueck[idx] = Math.max(1, Math.round((data.pflanze.stueckzahl || 1) / (_dichteFaktor || 1)));
+        const roh = data.pflanze.stueckzahl || 1;
+        let basis = data.pflanze.rolle === 'Geophyt' ? roh : Math.round(roh / (_dichteFaktor || 1));
+        if (data.pflanze.rolle === 'Leitstaude') basis = Math.max(3, basis);
+        _baseStueck[idx] = Math.max(1, basis);
       }
       currentPlan.gesamtkosten_geschaetzt = currentPlan.pflanzen.reduce((s, pp) => s + (pp.preis_stueck_eur || 0) * (pp.stueckzahl || 1), 0);
       renderErgebnis(currentPlan, false);

@@ -1228,8 +1228,18 @@ app.post('/api/anfrage', anfrageLimiter, async (req, res) => {
       ).join('\n')
     : '  — keine Pflanzenliste vorhanden';
 
-  const betreiberText = `Neue Bepflanzungsanfrage\n\nName: ${name}\nE-Mail: ${email}\nPLZ: ${plz}\nTelefon: ${telefon || '—'}\n\nGartenparameter:\n  Fläche: ${params.gartenflaeche || '—'} m²\n  Licht: ${params.licht || '—'}\n  Boden: ${params.boden || '—'}\n  Stil: ${params.stil || '—'}\n  Farbe: ${params.farbe || '—'}\n  Saison: ${params.saison || '—'}\n\nEmpfohlene Pflanzen:\n${pflanzenListe}\n\nGeschätzte Gesamtkosten: ${ki_plan?.gesamtkosten_geschaetzt || '—'}\n\nAnmerkungen:\n  ${anmerkungen || '—'}`;
-  const kundenText = `Hallo ${name},\n\nvielen Dank für Ihre Anfrage! Wir haben Ihren Bepflanzungsplan erhalten und leiten ihn an unsere Gärtnerei weiter, die sich mit einem konkreten Angebot für Ihr Pflanzenpaket bei Ihnen meldet.\n\nIhr Bepflanzungsplan umfasst:\n${pflanzenListe}\n\nGeschätzte Gesamtkosten: ${ki_plan?.gesamtkosten_geschaetzt || 'auf Anfrage'}\n\nFreundliche Grüße\nIhr Staudenplan-Team`;
+  // Gesamtkosten immer aus der Pflanzenliste nachrechnen statt das mitgeschickte Feld zu glauben:
+  // Der Kunde kann die Dichte verstellt haben, und die Summe soll zu den Einzelpreisen darüber
+  // passen. Gerundet und mit Währung — vorher stand hier eine rohe Fließkommazahl wie "487.4".
+  const kostenSumme = Array.isArray(ki_plan?.pflanzen)
+    ? ki_plan.pflanzen.reduce((s, p) => s + (Number(p.preis_stueck_eur) || 0) * (Number(p.stueckzahl) || 1), 0)
+    : null;
+  const kostenText = kostenSumme != null && kostenSumme > 0
+    ? `ca. ${Math.round(kostenSumme)} €`
+    : (typeof ki_plan?.gesamtkosten_geschaetzt === 'number' ? `ca. ${Math.round(ki_plan.gesamtkosten_geschaetzt)} €` : null);
+
+  const betreiberText = `Neue Bepflanzungsanfrage\n\nName: ${name}\nE-Mail: ${email}\nPLZ: ${plz}\nTelefon: ${telefon || '—'}\n\nGartenparameter:\n  Fläche: ${params.gartenflaeche || '—'} m²\n  Licht: ${params.licht || '—'}\n  Boden: ${params.boden || '—'}\n  Stil: ${params.stil || '—'}\n  Farbe: ${params.farbe || '—'}\n  Saison: ${params.saison || '—'}\n\nEmpfohlene Pflanzen:\n${pflanzenListe}\n\nGeschätzte Gesamtkosten: ${kostenText || '—'}\n\nAnmerkungen:\n  ${anmerkungen || '—'}`;
+  const kundenText = `Hallo ${name},\n\nvielen Dank für Ihre Anfrage! Wir haben Ihren Bepflanzungsplan erhalten und leiten ihn an unsere Gärtnerei weiter, die sich mit einem konkreten Angebot für Ihr Pflanzenpaket bei Ihnen meldet.\n\nIhr Bepflanzungsplan umfasst:\n${pflanzenListe}\n\nGeschätzte Gesamtkosten: ${kostenText || 'auf Anfrage'}\n\nFreundliche Grüße\nIhr Staudenplan-Team`;
 
   if (process.env.EMAIL_USER && process.env.EMAIL_BETREIBER) {
     // Zwei unabhängige Sends: schlägt die Betreiber-Mail fehl, soll die Kundenbestätigung
@@ -1322,7 +1332,13 @@ const QUELLEN = [
 // Innerhalb des Planers liegen Pflanzenkarten und Stückliste auf derselben URL ("/"), der Referer
 // kann sie also nicht trennen. Dafür hängt das Frontend ein &q=… an den Kauflink. Der Marker
 // verfeinert nur, was der Referer ohnehin schon erlaubt — fälschen lässt sich damit nichts.
-const QUELLE_MARKER = { karte: 'Planer (Karte)', stueckliste: 'Planer (Stückliste)' };
+// Object.create(null): ein einfaches Objektliteral würde bei ?q=constructor oder ?q=toString
+// einen Treffer aus der Prototypenkette liefern. Die Folge wäre kein Sicherheitsproblem, aber
+// ein stiller Datenverlust — die Zeile ginge mit einem Funktionsobjekt als quelle in den INSERT
+// und der Klick fehlte in genau der Statistik, die den Gaißmayer-Nachweis trägt.
+const QUELLE_MARKER = Object.assign(Object.create(null), {
+  karte: 'Planer (Karte)', stueckliste: 'Planer (Stückliste)',
+});
 
 function klickQuelle(req) {
   const ref = String(req.get('referer') || '');
@@ -1572,7 +1588,8 @@ app.get('/admin/klicks', (req, res) => {
   <h2>Klicks pro Tag (letzte 30)</h2>
   ${proTag.length ? `<table><tr><th>Tag</th><th>Echt</th><th>Bots</th></tr>
   ${proTag.map(r => `<tr><td>${esc(r.tag)}</td><td>${r.n}</td><td class="muted" style="text-align:right">${r.b || '—'}</td></tr>`).join('')}</table>` : '<p class="muted">—</p>'}
-  <p class="muted">Als maschinell gilt: Klick ohne Referer von der eigenen Seite, fehlender/verdächtiger User-Agent, oder mehr als ${KLICK_MAX} Kaufklicks pro Stunde aus derselben Quelle. Die IP wird dafür nur als Hash im Arbeitsspeicher gehalten, nie gespeichert.</p>
+  <p class="muted">Als maschinell gilt: Klick ohne Referer von der eigenen Seite, fehlender oder verdächtiger User-Agent, oder mehr als ${KLICK_MAX} Kaufklicks pro Stunde von derselben IP-Adresse. Die IP wird dafür nur als gesalzener Hash im Arbeitsspeicher gehalten und nie gespeichert.<br>
+  Hinweis zur Einordnung: Die Bot-Erkennung läuft seit dem 06.08.2026. Ältere Markierungen stammen aus einer einmaligen rückwirkenden Bereinigung anhand der nginx-Logs, nicht aus dieser Live-Prüfung.</p>
   </body></html>`);
 });
 
@@ -2695,10 +2712,12 @@ app.get('/pflanzen', (req, res) => {
 // Slugs zusammengeführter Dubletten. Die Zeilen sind aus der DB entfernt, ihre URLs waren aber
 // indexiert — deshalb 301 auf die verbleibende Seite statt 404. Bei künftigen Zusammenführungen
 // hier ergänzen.
-const SLUG_ALIASE = {
+// Object.create(null) wie bei QUELLE_MARKER: sonst liefe /pflanze/constructor auf einen
+// Prototypentreffer und würde mit 301 auf eine Unsinns-URL weiterleiten statt 404 zu geben.
+const SLUG_ALIASE = Object.assign(Object.create(null), {
   'cimicifuga-ramosa': 'actaea-simplex',   // Cimicifuga ramosa ist ein Synonym von Actaea simplex
   'camasia-quamash':   'camassia-quamash', // Tippfehler im botanischen Namen, eigene Zeile
-};
+});
 
 app.get('/pflanze/:slug', (req, res) => {
   const slug = req.params.slug;
@@ -3385,16 +3404,21 @@ app.get('/stauden-kombinieren', (req, res) => {
 // ─── Ratgeber-Seiten (SEO) ────────────────────────────────────────────────────
 
 // Kategorie-Design
-const KAT_CONFIG = {
-  'Grundprinzipien': { icon: '📚', grad: 'linear-gradient(135deg,#1b4332,#2d6a4f)', img: '/images/ratgeber-grundprinzipien.jpg' },
-  'Standorte':       { icon: '🗺️', grad: 'linear-gradient(135deg,#1e3a5f,#2563eb)', img: '/images/ratgeber-standorte.jpg' },
-  'Gestaltung':      { icon: '🎨', grad: 'linear-gradient(135deg,#4c1d95,#7c3aed)', img: '/images/ratgeber-gestaltung.jpg' },
-  'Oekologie':       { icon: '🌿', grad: 'linear-gradient(135deg,#064e3b,#059669)', img: '/images/ratgeber-oekologie.jpg' },
-  'Praxis':          { icon: '🔨', grad: 'linear-gradient(135deg,#78350f,#d97706)', img: '/images/ratgeber-praxis.jpg' },
-  'Kombinationen':   { icon: '🌸', grad: 'linear-gradient(135deg,#831843,#db2777)', img: '/images/ratgeber-kombinationen.jpg' },
-  'Stilpraegend':    { icon: '🏡', grad: 'linear-gradient(135deg,#134e4a,#0d9488)', img: '/images/ratgeber-stil.jpg' },
-  'Design':          { icon: '✏️', grad: 'linear-gradient(135deg,#1e293b,#475569)', img: '/images/ratgeber-design.jpg' },
-};
+// img zeigte auf acht Dateien, die es nie gab — sie liefen seit dem 23.07. als Dauer-404 im
+// nginx-Log. Sichtbar war davon nichts (die Bilder liegen als Overlay mit opacity .15 über dem
+// Gradienten), der Gradient trägt die Kachel allein. Deshalb die toten Pfade entfernt statt
+// acht Bilder zu erfinden. 'Pflanzenportraits' fehlte ganz und fiel auf das Fallback-Icon.
+const KAT_CONFIG = Object.assign(Object.create(null), {
+  'Grundprinzipien':   { icon: '📚', grad: 'linear-gradient(135deg,#1b4332,#2d6a4f)' },
+  'Standorte':         { icon: '🗺️', grad: 'linear-gradient(135deg,#1e3a5f,#2563eb)' },
+  'Gestaltung':        { icon: '🎨', grad: 'linear-gradient(135deg,#4c1d95,#7c3aed)' },
+  'Oekologie':         { icon: '🌿', grad: 'linear-gradient(135deg,#064e3b,#059669)' },
+  'Praxis':            { icon: '🔨', grad: 'linear-gradient(135deg,#78350f,#d97706)' },
+  'Kombinationen':     { icon: '🌸', grad: 'linear-gradient(135deg,#831843,#db2777)' },
+  'Stilpraegend':      { icon: '🏡', grad: 'linear-gradient(135deg,#134e4a,#0d9488)' },
+  'Design':            { icon: '✏️', grad: 'linear-gradient(135deg,#1e293b,#475569)' },
+  'Pflanzenportraits': { icon: '🌷', grad: 'linear-gradient(135deg,#3f2d1e,#a16207)' },
+});
 function katCfg(k) { return KAT_CONFIG[k] || { icon: '🌱', grad: 'linear-gradient(135deg,#1b4332,#52b788)', img: '' }; }
 function readingTime(text) { return Math.max(1, Math.round(text.split(/\s+/).length / 200)); }
 
