@@ -1804,8 +1804,8 @@ app.get('/impressum', (req, res) => {
     <h2>Handelsregister</h2>
     <p>Registergericht: Amtsgericht München<br>
     Registernummer: HRB 239683</p>
-    <!-- Umsatzsteuer-ID nur angeben, wenn tatsächlich eine erteilt wurde. "wird nachgetragen"
-         ist keine zulässige Angabe; ohne USt-IdNr. entfällt die Zeile ersatzlos. -->
+    <!-- Umsatzsteuer-ID hier nur eintragen, wenn tatsächlich eine erteilt wurde;
+         ohne USt-IdNr. entfällt die Zeile ersatzlos. Ein Platzhalter ist unzulässig. -->
     <h2>Verantwortlich für den Inhalt nach § 18 Abs. 2 MStV</h2>
     <p>Bastian Rohrhuber<br>Ortsstraße 7, 85354 Freising</p>
     <h2 id="haftung">Haftungsausschluss</h2>
@@ -2959,6 +2959,29 @@ app.get('/pflanze/:slug', (req, res) => {
       <p style="line-height:1.75;color:#333;margin-bottom:12px">Besonders gut eignet sich die Pflanze für den <strong>${(pflanze.stil||'Naturgarten').replace(/\|/g,', ')}</strong>. Bodentyp: ${(pflanze.boden||'normaler Gartenboden').replace(/\|/g,', ')}.</p>
       <p style="line-height:1.75;color:#333"><strong>Pflanzzeit:</strong> März–Mai (Frühjahr) oder September–Oktober (Herbst). ${pflanze.bienen_freundlich?'Als bienenfreundliche Staude leistet sie einen wichtigen Beitrag zur Gartenökologie.':''} ${pflanze.heimisch?'Als heimische Art ist sie besonders wertvoll für einheimische Insekten und Vögel.':''}</p>
     </section>
+
+    ${(() => {
+      // Giftigkeitshinweis: eigener, auffälliger Block VOR den Pflegeangaben. Der Text stammt
+      // aus der kuratierten Gattungsliste (scripts/pflanzen-giftigkeit.js), nicht aus der
+      // KI-Generierung — für eine Warnung dieser Art haftet der Betreiber, sie muss über den
+      // ganzen Bestand gleich lauten und nachschlagbar sein.
+      const g = inhaltLang && inhaltLang.giftig;
+      if (!g) return '';
+      const stark = inhaltLang.giftstufe === 'stark' || inhaltLang.giftstufe === 'katzen';
+      return `
+    <section style="background:${stark ? '#fff1f0' : '#fffbeb'};border:1px solid ${stark ? '#fca5a5' : '#fde68a'};border-radius:14px;padding:18px 22px;margin-bottom:24px;display:flex;gap:14px;align-items:flex-start">
+      <span style="font-size:1.5rem;flex-shrink:0" aria-hidden="true">${stark ? '☠️' : '⚠️'}</span>
+      <div>
+        <div style="font-weight:700;color:${stark ? '#991b1b' : '#92400e'};margin-bottom:4px">${
+          inhaltLang.giftstufe === 'katzen' ? 'Für Katzen lebensgefährlich'
+          : inhaltLang.giftstufe === 'stark' ? 'Stark giftige Pflanze'
+          : inhaltLang.giftstufe === 'reizend' ? 'Reizt Haut und Schleimhäute'
+          : inhaltLang.giftstufe === 'haustiere' ? 'Für Haustiere giftig'
+          : 'Giftige Pflanze'}</div>
+        <p style="font-size:.9rem;color:#333;line-height:1.65;margin:0">${escHtml(g)}</p>
+      </div>
+    </section>`;
+    })()}
 
     ${(() => {
       const d = inhaltLang;
