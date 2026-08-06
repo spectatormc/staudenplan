@@ -1281,7 +1281,16 @@ const KLICK_VERLAUF_MAX = 5000;           // Obergrenze gegen Speicherwachstum b
 const KLICK_SALT = crypto.randomBytes(16);
 const klickVerlauf = new Map();
 
+// Ein echter Kaufklick startet immer auf einer eigenen Seite (Planer, Pflanzenseite,
+// geteilter Plan, Beispielbeet). Wegen Referrer-Policy strict-origin-when-cross-origin
+// senden Browser dabei den Referer mit — fehlt er, war kein Klick im Spiel.
+// Belegt am nginx-Log: von 13 refererlosen Klicks waren 12 bingbot/Amazonbot, eine
+// Scraper-Flotte mit gefälschtem iPhone-UA aus Rechenzentrums-IPs oder eigene Tests.
+const EIGENE_HERKUNFT = /^https?:\/\/([a-z0-9-]+\.)*staudenplan\.de(\/|$|\?)/i;
+
 function istBotKlick(req) {
+  if (!EIGENE_HERKUNFT.test(String(req.get('referer') || ''))) return true;
+
   const ua = String(req.get('user-agent') || '');
   if (!ua || ua.length < 15 || BOT_UA.test(ua)) return true;
 
@@ -1504,7 +1513,7 @@ app.get('/admin/klicks', (req, res) => {
   <h2>Klicks pro Tag (letzte 30)</h2>
   ${proTag.length ? `<table><tr><th>Tag</th><th>Echt</th><th>Bots</th></tr>
   ${proTag.map(r => `<tr><td>${esc(r.tag)}</td><td>${r.n}</td><td class="muted" style="text-align:right">${r.b || '—'}</td></tr>`).join('')}</table>` : '<p class="muted">—</p>'}
-  <p class="muted">Als maschinell gilt: fehlender/verdächtiger User-Agent oder mehr als ${KLICK_MAX} Kaufklicks pro Stunde aus derselben Quelle. Die IP wird dafür nur als Hash im Arbeitsspeicher gehalten, nie gespeichert.</p>
+  <p class="muted">Als maschinell gilt: Klick ohne Referer von der eigenen Seite, fehlender/verdächtiger User-Agent, oder mehr als ${KLICK_MAX} Kaufklicks pro Stunde aus derselben Quelle. Die IP wird dafür nur als Hash im Arbeitsspeicher gehalten, nie gespeichert.</p>
   </body></html>`);
 });
 
