@@ -1,5 +1,10 @@
 node_modules/
-.env
+# Alle .env-Varianten sperren, nicht nur .env: eine .env.bak mit produktivem OpenAI-Key, SMTP-Zugang
+# und Pixabay-Key lag unignoriert im Arbeitsbaum dieses ÖFFENTLICHEN Repos (gefunden 06.08.2026,
+# nie committet). Die Vorlage bleibt ausdrücklich drin.
+.env*
+!.env.example
+*.bak
 stauden.db
 stauden.db-wal
 stauden.db-shm

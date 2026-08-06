@@ -10,6 +10,10 @@ const { OpenAI } = require('openai');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+// Kuratierte Giftigkeits-Einstufung auf Gattungsebene. Bewusst eine Liste im Code und kein
+// DB-Feld: Die Warnung muss über den ganzen Bestand einheitlich sein und darf nicht davon
+// abhängen, ob eine einzelne Zeile schon durch einen Datenlauf gegangen ist.
+const { giftigkeit } = require('./scripts/pflanzen-giftigkeit');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -2974,18 +2978,24 @@ app.get('/pflanze/:slug', (req, res) => {
       // aus der kuratierten Gattungsliste (scripts/pflanzen-giftigkeit.js), nicht aus der
       // KI-Generierung — für eine Warnung dieser Art haftet der Betreiber, sie muss über den
       // ganzen Bestand gleich lauten und nachschlagbar sein.
-      const g = inhaltLang && inhaltLang.giftig;
+      // Direkt aus der Gattungsliste, NICHT aus inhalt_lang: Zeilen, deren inhalt_lang noch
+      // Freitext ist, hatten sonst keinen Hinweis — live betraf das Allium hollandicum und
+      // Trollius x cultorum, während dieselbe Art als Sorte warnte. Eine Giftwarnung muss über
+      // den ganzen Bestand gleich lauten, unabhängig vom Zustand eines anderen Feldes.
+      const gift = giftigkeit(pflanze.name_botanisch);
+      const g = gift && gift.text;
       if (!g) return '';
-      const stark = inhaltLang.giftstufe === 'stark' || inhaltLang.giftstufe === 'katzen';
+      const stufe = gift.stufe;
+      const stark = stufe === 'stark' || stufe === 'katzen';
       return `
     <section style="background:${stark ? '#fff1f0' : '#fffbeb'};border:1px solid ${stark ? '#fca5a5' : '#fde68a'};border-radius:14px;padding:18px 22px;margin-bottom:24px;display:flex;gap:14px;align-items:flex-start">
       <span style="font-size:1.5rem;flex-shrink:0" aria-hidden="true">${stark ? '☠️' : '⚠️'}</span>
       <div>
         <div style="font-weight:700;color:${stark ? '#991b1b' : '#92400e'};margin-bottom:4px">${
-          inhaltLang.giftstufe === 'katzen' ? 'Für Katzen lebensgefährlich'
-          : inhaltLang.giftstufe === 'stark' ? 'Stark giftige Pflanze'
-          : inhaltLang.giftstufe === 'reizend' ? 'Reizt Haut und Schleimhäute'
-          : inhaltLang.giftstufe === 'haustiere' ? 'Für Haustiere giftig'
+          stufe === 'katzen' ? 'Für Katzen lebensgefährlich'
+          : stufe === 'stark' ? 'Stark giftige Pflanze'
+          : stufe === 'reizend' ? 'Reizt Haut und Schleimhäute'
+          : stufe === 'haustiere' ? 'Für Haustiere giftig'
           : 'Giftige Pflanze'}</div>
         <p style="font-size:.9rem;color:#333;line-height:1.65;margin:0">${escHtml(g)}</p>
       </div>

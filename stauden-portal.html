@@ -4031,6 +4031,11 @@
     const kostenEl = document.querySelector('#ergebnis-meta [data-meta="kosten"]');
     if (staudenEl) staudenEl.textContent = totalStueck;
     if (kostenEl) kostenEl.textContent = totalKosten.toFixed(0) + ' €';
+    // Das Feld muss mitwandern: PDF-Kopfzeile, geteilter Plan, Anfrage-Mail an die Gärtnerei und
+    // die Kundenbestätigung lesen gesamtkosten_geschaetzt, während die Stückliste live aus
+    // stueckzahl summiert. Ohne diese Zeile nennen beide im selben Dokument verschiedene Preise —
+    // nach einem Klick auf "Dicht" bis zu 50 % auseinander.
+    currentPlan.gesamtkosten_geschaetzt = totalKosten;
     renderStueckliste(currentPlan);
   }
 
