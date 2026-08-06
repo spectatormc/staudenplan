@@ -2688,8 +2688,17 @@ app.get('/pflanzen', (req, res) => {
   </body></html>`);
 });
 
+// Slugs zusammengeführter Dubletten. Die Zeilen sind aus der DB entfernt, ihre URLs waren aber
+// indexiert — deshalb 301 auf die verbleibende Seite statt 404. Bei künftigen Zusammenführungen
+// hier ergänzen.
+const SLUG_ALIASE = {
+  'cimicifuga-ramosa': 'actaea-simplex',   // Cimicifuga ramosa ist ein Synonym von Actaea simplex
+  'camasia-quamash':   'camassia-quamash', // Tippfehler im botanischen Namen, eigene Zeile
+};
+
 app.get('/pflanze/:slug', (req, res) => {
   const slug = req.params.slug;
+  if (SLUG_ALIASE[slug]) return res.redirect(301, '/pflanze/' + SLUG_ALIASE[slug]);
   const alle = db.prepare('SELECT * FROM pflanzen').all();
   const pflanze = alle.find(p => pflanzeToSlug(p.name_botanisch) === slug);
 
