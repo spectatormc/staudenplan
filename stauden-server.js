@@ -1802,11 +1802,8 @@ app.get('/impressum', (req, res) => {
     <h2>Vertreten durch</h2>
     <p>Marco Holmer, Bastian Rohrhuber</p>
     <h2>Handelsregister</h2>
-    <!-- TODO Betreiber: echte HRB-Nummer eintragen. Eine GmbH entsteht erst mit der Eintragung,
-         eine "nachzutragende" Registernummer kann es also nicht geben — sie steht im
-         Handelsregisterauszug bzw. auf dem Gesellschaftsvertrag. Pflichtangabe nach § 5 DDG. -->
     <p>Registergericht: Amtsgericht München<br>
-    Registernummer: HRB &lt;bitte eintragen&gt;</p>
+    Registernummer: HRB 239683</p>
     <!-- Umsatzsteuer-ID nur angeben, wenn tatsächlich eine erteilt wurde. "wird nachgetragen"
          ist keine zulässige Angabe; ohne USt-IdNr. entfällt die Zeile ersatzlos. -->
     <h2>Verantwortlich für den Inhalt nach § 18 Abs. 2 MStV</h2>
@@ -2977,8 +2974,11 @@ app.get('/pflanze/:slug', (req, res) => {
         ['❄️ Überwinterung', d.ueberwinterung],
       ].filter(([, v]) => v);
       return `
-    ${d.freitext ? `
-    <!-- Pflege & Verwendung (Freitext-Bestand: noch nicht ins Feldschema überführt) -->
+    ${d.freitext && !pflegeFelder.length ? `
+    <!-- Pflege & Verwendung: nur zeigen, wenn KEIN Feldraster vorliegt. Nach der Überführung
+         ins Feldschema bleibt der Originaltext als freitext in der DB stehen (verlustfrei,
+         umkehrbar), wird aber nicht mehr zusätzlich ausgegeben — sonst stünde derselbe Inhalt
+         zweimal auf der Seite. -->
     <section style="background:#fff;border-radius:14px;padding:24px;box-shadow:0 2px 12px rgba(0,0,0,.07);margin-bottom:24px">
       <h2 style="font-size:1.15rem;color:#1b4332;margin-bottom:16px;font-weight:700">🌿 Pflege &amp; Verwendung</h2>
       ${String(d.freitext).split(/\n{2,}/).map(abs => abs.trim()).filter(Boolean)

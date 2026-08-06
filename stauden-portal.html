@@ -4001,10 +4001,17 @@
   }
 
   // ── renderErgebnis ────────────────────────────────────────────────────────
+  // Basis-Stückzahlen des unveränderten Plans plus der zuletzt gewählte Dichte-Faktor.
+  // Beides muss ein erneutes renderErgebnis überleben: bis 08/2026 setzte jeder Re-Render
+  // _baseStueck auf die BEREITS multiplizierten Zahlen und stellte die Buttons auf "Normal"
+  // zurück. Nach "Dicht" + "Alternative vorschlagen" rechnete der nächste Klick auf "Dicht"
+  // deshalb ×2,25 statt ×1,5 — Stückzahl und Gesamtkosten drifteten unbemerkt.
   let _baseStueck = null;
+  let _dichteFaktor = 1;
 
   function setDichte(factor, btn) {
     if (!_baseStueck || !currentPlan) return;
+    _dichteFaktor = factor;
     document.querySelectorAll('.dichte-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     currentPlan.pflanzen.forEach((p, i) => {
@@ -4075,9 +4082,15 @@
     el.innerHTML = header + rows;
   }
 
-  function renderErgebnis(plan) {
-    _baseStueck = plan.pflanzen.map(p => p.stueckzahl);
-    document.querySelectorAll('.dichte-btn').forEach((b,i) => b.classList.toggle('active', i===1));
+  // planIstNeu=false beim Neuzeichnen desselben Plans (z. B. nach "Alternative vorschlagen"):
+  // dann bleiben Basiszahlen und gewählte Dichte erhalten.
+  function renderErgebnis(plan, planIstNeu = true) {
+    if (planIstNeu || !_baseStueck || _baseStueck.length !== plan.pflanzen.length) {
+      _baseStueck = plan.pflanzen.map(p => p.stueckzahl);
+      _dichteFaktor = 1;
+    }
+    const aktiverIndex = _dichteFaktor < 1 ? 0 : _dichteFaktor > 1 ? 2 : 1;
+    document.querySelectorAll('.dichte-btn').forEach((b,i) => b.classList.toggle('active', i===aktiverIndex));
 
     document.getElementById('ergebnis-subtitle').textContent =
       `${plan.pflanzen.length} Pflanzenarten · ${formData.gartenflaeche} m² · ${formData.licht} · ${formData.stil}`;
@@ -4204,8 +4217,14 @@
       data.pflanze.standort = p.standort;
       if (data.pflanze.rolle === 'Leitstaude' && (data.pflanze.stueckzahl || 1) < 3) data.pflanze.stueckzahl = 3;
       currentPlan.pflanzen[idx] = data.pflanze;
+      // Die Ersatzpflanze übernimmt die aktuelle, also bereits skalierte Stückzahl — für die
+      // Basis muss der Dichte-Faktor wieder herausgerechnet werden, sonst wandert der
+      // Leitstauden-Aufschlag auf 3 in die Basis und verschiebt jede weitere Dichte-Änderung.
+      if (_baseStueck && _baseStueck.length === currentPlan.pflanzen.length) {
+        _baseStueck[idx] = Math.max(1, Math.round((data.pflanze.stueckzahl || 1) / (_dichteFaktor || 1)));
+      }
       currentPlan.gesamtkosten_geschaetzt = currentPlan.pflanzen.reduce((s, pp) => s + (pp.preis_stueck_eur || 0) * (pp.stueckzahl || 1), 0);
-      renderErgebnis(currentPlan);
+      renderErgebnis(currentPlan, false);
     } catch (e) {
       btn.textContent = origText;
       btn.disabled = false;
