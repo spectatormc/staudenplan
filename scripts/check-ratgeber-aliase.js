@@ -65,17 +65,31 @@ for (const f of faelle) {
   if (!fehler) console.log('  alle Ziele vorhanden, keine Ketten, keine verdeckten Artikel');
 }
 
-// Hartkodierte Ratgeber-Links im Servercode dürfen nicht auf Weiterleitungen zeigen:
-// interne Links sollen direkt auf das Ziel gehen, sonst verschenkt jede Seite einen Hop.
+// RATGEBER_ZU_SEITE führt aus dem Ratgeber heraus auf eine Landingpage. Quellen davon
+// dürfen — wie bei RATGEBER_ALIASE — nicht mehr als Artikel existieren.
 const wissenSlugs = faelle[0].vorhanden;
 const ratgeberAliase = aliasBlock('RATGEBER_ALIASE');
+const zuSeite = aliasBlock('RATGEBER_ZU_SEITE');
+console.log(`\n=== RATGEBER_ZU_SEITE — ${Object.keys(zuSeite).length} Weiterleitungen auf Landingpages ===`);
+for (const [von, nach] of Object.entries(zuSeite)) {
+  if (wissenSlugs.has(von)) { console.log(`  QUELLE LEBT:    /ratgeber/${von} existiert noch, die Weiterleitung verdeckt sie`); fehler++; }
+  if (ratgeberAliase[von]) { console.log(`  DOPPELT:        /ratgeber/${von} steht auch in RATGEBER_ALIASE`); fehler++; }
+  if (!nach.startsWith('/') || nach.startsWith('/ratgeber/')) { console.log(`  ZIEL UNGÜLTIG:  ${von} → ${nach} (erwartet: Pfad oberster Ebene)`); fehler++; }
+}
+if (!Object.keys(zuSeite).length) console.log('  (keine)');
+
+// Hartkodierte Ratgeber-Links im Servercode dürfen nicht auf Weiterleitungen zeigen:
+// interne Links sollen direkt auf das Ziel gehen, sonst verschenkt jede Seite einen Hop.
 const hartkodiert = [...new Set((src.match(/\/ratgeber\/[a-z0-9-]{6,}/g) || []))].map(s => s.replace('/ratgeber/', ''));
 console.log(`\n=== Hartkodierte Ratgeber-Links im Servercode — ${hartkodiert.length} ===`);
+let hartFehler = 0;
 for (const s of hartkodiert) {
-  if (ratgeberAliase[s]) { console.log(`  ZEIGT AUF WEITERLEITUNG: /ratgeber/${s}  →  ${ratgeberAliase[s]}`); fehler++; }
-  else if (!wissenSlugs.has(s)) { console.log(`  TOTER LINK:              /ratgeber/${s}`); fehler++; }
+  if (ratgeberAliase[s]) { console.log(`  ZEIGT AUF WEITERLEITUNG: /ratgeber/${s}  →  /ratgeber/${ratgeberAliase[s]}`); hartFehler++; }
+  else if (zuSeite[s]) { console.log(`  ZEIGT AUF WEITERLEITUNG: /ratgeber/${s}  →  ${zuSeite[s]}`); hartFehler++; }
+  else if (!wissenSlugs.has(s)) { console.log(`  TOTER LINK:              /ratgeber/${s}`); hartFehler++; }
 }
-if (!hartkodiert.some(s => ratgeberAliase[s] || !wissenSlugs.has(s))) console.log('  alle zeigen direkt auf existierende Artikel');
+fehler += hartFehler;
+if (!hartFehler) console.log('  alle zeigen direkt auf existierende Artikel');
 
 console.log(fehler ? `\n${fehler} PROBLEME` : '\nALLES IN ORDNUNG');
 process.exit(fehler ? 1 : 0);

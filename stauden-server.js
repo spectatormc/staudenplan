@@ -793,7 +793,7 @@ app.get('/', (req, res) => {
         <ul>
           <li><a href="/ratgeber/staudenbeet-anlegen-schritt-fuer-schritt-anleitung">Staudenbeet anlegen</a></li>
           <li><a href="/ratgeber/stauden-fuer-den-schatten-die-besten-arten-fuer-dunkle-beete">Stauden für Schatten</a></li>
-          <li><a href="/ratgeber/pflegeleichte-stauden-fuer-wenig-arbeit-im-garten">Pflegeleichte Stauden</a></li>
+          <li><a href="/pflegeleichte-stauden">Pflegeleichte Stauden</a></li>
           <li><a href="/ratgeber/stauden-kombinieren-so-entstehen-schoene-beete">Stauden kombinieren</a></li>
           <li><a href="/ratgeber/stauden-fuer-bienen-und-insekten-insektenfreundlicher-garten">Bienenfreundliche Stauden</a></li>
           <li><a href="/ratgeber">Alle Ratgeber →</a></li>
@@ -2263,7 +2263,7 @@ Zum Planen gibt es einen kostenlosen KI-Gartenplaner, der auch gleich die Stück
         { kategorie:'Teich / Feuchtbeet', emoji:'💧', farbe:'#1d6995', fragen:['Teichrand bepflanzen','Pflanzen für feuchten Boden'],
           vorlage:`Am Teichrand funktioniert eine Zonierung am besten: direkt am Wasser Iris pseudacorus und Pontederia cordata. Im feuchten Übergangsbereich dann Lythrum salicaria (Blutweiderich) und Filipendula ulmaria (Mädesüß) – der duftet im Sommer herrlich.
 
-Ich habe das mit einem kostenlosen KI-Tool geplant: https://www.staudenplan.de/ratgeber/teichrand-und-feuchtbeet-gestaltung-am-wasser`},
+Ich habe das mit einem kostenlosen KI-Tool geplant: https://www.staudenplan.de/ratgeber/teichrand-sumpfbeet-bepflanzen-stauden-fuer-feuchte-standorte`},
         { kategorie:'Bienen / Insekten', emoji:'🐝', farbe:'#d4a017', fragen:['Bienenfreundliche Pflanzen','Insektenwildgarten anlegen'],
           vorlage:`Für Bienen und Insekten sind heimische Stauden am besten: Agastache, Echinacea (Sonnenhut), Salvia, Origanum und Verbena bonariensis. Die blühen gestaffelt von Mai bis Oktober und werden regelrecht belagert.
 
@@ -2881,12 +2881,17 @@ const RATGEBER_ALIASE = Object.assign(Object.create(null), {
   'farbgestaltung-im-staudenbeet-theorie-und-praxis':                                 'staudenbeet-farbgestaltung-harmonische-farbkombinationen-planen',
   'fehler-vermeiden-haeufige-planungsfehler-in-staudenbeeten':                        'haeufige-planungs-und-pflanzfehler-im-staudenbeet',
   'feuchte-standorte-teichrand-und-sumpfbeete':                                       'teichrand-sumpfbeet-bepflanzen-stauden-fuer-feuchte-standorte',
+  'fruehjahrskombination-bluetenfolge-maerz-bis-mai':                                 'fruehjahrskombination-maerz-bis-mai-christrose-bergenie-und-akelei',
+  'fuellstauden-und-bodendecker-freiflaechen-nachhaltig-schliessen':                  'bodendecker-stauden-flaechendeckende-pflanzen-fuer-alle-standorte',
   'ganzjaehrig-bluehendes-staudenbeet-saisonale-abfolge-planen':                      'bluetenfolge-planen-fruehjahr-bis-herbst-ohne-pause',
   // Wie oben: altes Ziel ist weggefallen, daher direkt auf den Nachfolger.
   'ganzjahres-attraktivitaet-und-saisonale-abfolge':                                  'bluetenfolge-planen-fruehjahr-bis-herbst-ohne-pause',
+  'graeser-im-staudenbeet-struktur-bewegung-und-winteraspekt':                        'ziergraeser-im-staudenbeet-die-besten-arten-kombinationen',
   'halbschattige-staudenbeete-am-gehoelzrand':                                        'halbschatten-stauden-schoene-beete-am-gehoelzrand',
   'heimische-vs-gartenwuerdige-exoten':                                               'heimische-stauden-vs-exoten-was-ist-besser-fuer-deinen-garten',
   'hoehenstaffelung-und-tiefenwirkung':                                               'hoehenstaffelung-im-staudenbeet-das-wichtigste-gestaltungsprinzip',
+  'jahrespflege-und-schnittregeln-fuer-staudenbeete':                                 'stauden-schneiden-wann-und-wie-richtig-schneiden',
+  'klassische-herbst-kombination-piet-oudolf-praeriecharakter':                       'naturgarten-praeriecharakter-insektenhochburg-juli-oktober',
   'kontrastprinzip-und-texturkombinationen':                                          'kombinationsprinzipien-harmonie-und-kontrast-gezielt-einsetzen',
   'lebendige-boeden-und-bodenbiologie-im-staudenbeet':                                'bodenbiologie-im-staudenbeet-gesunden-boden-aufbauen',
   'lebensbereiche-nach-hansen-stahl-stauden-am-richtigen-standort':                   'lebensbereiche-der-stauden-nach-hansen-stahl',
@@ -2894,22 +2899,37 @@ const RATGEBER_ALIASE = Object.assign(Object.create(null), {
   'pflanzdichte-und-stueckzahlberechnung-im-staudenbeet':                             'pflanzdichte-berechnen-wie-viele-stauden-pro-m',
   // Wie oben: altes Ziel ist weggefallen, daher direkt auf den Nachfolger.
   'planungsprozess-fuer-ein-staudenbeet':                                             'staudenbeet-anlegen-schritt-fuer-schritt-anleitung',
-  'schattenbeete-unter-baeumen-und-straeuchern':                                      'schattenstauden-garten-das-staudenbeet-unter-baeumen-gestalten',
+  // Beide zeigten auf "schattenstauden-garten-…". Der Artikel heißt seit der Umbenennung
+  // "Schattengarten anlegen" — der alte Slug besetzte das Keyword der Landingpage
+  // /stauden-fuer-schatten, ohne deren Suchziel zu bedienen.
+  'schattenbeete-unter-baeumen-und-straeuchern':                                      'schattengarten-anlegen-das-staudenbeet-unter-baeumen-gestalten',
+  'schattenstauden-garten-das-staudenbeet-unter-baeumen-gestalten':                   'schattengarten-anlegen-das-staudenbeet-unter-baeumen-gestalten',
   'sonnige-trockene-staudenbeete-und-kiesgaerten':                                    'kiesgarten-trockenbeet-stauden-fuer-sonnige-trockene-standorte',
   'stauden-die-den-ganzen-sommer-bluehen-dauerbueher-fuer-das-beet':                  'stauden-die-den-ganzen-sommer-bluehen',
   'stauden-fuer-den-teichrand-und-feuchtbeet':                                        'teichrand-sumpfbeet-bepflanzen-stauden-fuer-feuchte-standorte',
+  'stauden-pflanzen-die-optimale-pflanzzeit-im-fruehjahr-und-herbst':                 'stauden-pflanzen-wann-ist-der-beste-zeitpunkt',
   'stauden-fuer-den-vorgarten-ideen-und-bepflanzungsplan':                            'stauden-fuer-den-vorgarten-pflegeleichte-ideen-fuer-die-strassenfront',
   'stauden-kaufen-worauf-beim-kauf-in-gaertnerei-und-online-shop-achten':             'stauden-kaufen-worauf-beim-kauf-achten',
   'stauden-schneiden-der-richtige-rueckschnitt-fuer-jede-art':                        'stauden-schneiden-wann-und-wie-richtig-schneiden',
   'staudenbeet-anlegen-kosten-planung-und-schritt-fuer-schritt-anleitung':            'staudenbeet-anlegen-schritt-fuer-schritt-anleitung',
+  'staudenbeet-ideen-10-inspirierende-gestaltungsbeispiele':                          'staudenbeet-ideen-5-gestaltungsstile-mit-pflanzenbeispielen',
   'staudenbeet-planen-online-schritt-fuer-schritt-mit-dem-ki-gartenplaner':           'gartenplanung-online-mit-ki-zum-fertigen-staudenbeet-plan',
   'staudenbeet-planen-schritt-fuer-schritt-anleitung-mit-pflanzplan':                 'staudenbeet-anlegen-schritt-fuer-schritt-anleitung',
   'stauden-richtig-pflanzen-zeitpunkt-und-technik':                                   'stauden-pflanzen-zeitpunkt-pflanzabstand-technik',
   'steingarten-und-alpinum-stauden-fuer-felsige-anlagen':                             'stauden-fuer-trockenmauern-und-steingaerten',
+  'teichrand-und-feuchtbeet-gestaltung-am-wasser':                                    'teichrand-sumpfbeet-bepflanzen-stauden-fuer-feuchte-standorte',
   'weisser-garten-harmonie-in-weiss-und-silber-nach-sissinghurst':                    'stauden-fuer-weisse-beete-weissgarten-im-eigenen-garten-anlegen',
   'winterharte-stauden-fuer-deutschland-was-wirklich-den-winter-uebersteht':          'winterharte-stauden-fuer-deutschland-was-ueberlebt-den-winter',
-  'winteraspekte-und-struktur-im-staudenbeet':           'winteraspekte-im-staudenbeet-schoenheit-auch-in-der-kalten-jahreszeit',
-  'ziergraeser-als-staudenbegleiter':                    'ziergraeser-im-staudenbeet-die-besten-arten-kombinationen',
+  'winteraspekte-und-struktur-im-staudenbeet':                                        'winteraspekte-im-staudenbeet-schoenheit-auch-in-der-kalten-jahreszeit',
+  'ziergraeser-als-staudenbegleiter':                                                 'ziergraeser-im-staudenbeet-die-besten-arten-kombinationen',
+});
+
+// Ratgeber-Artikel, deren Suchziel eine der SEO-Landingpages bereits vollständig bedient.
+// Zwei URLs auf dasselbe Keyword nehmen sich gegenseitig das Ranking weg; die Landingpage
+// ist die stärkere Seite (mehr Arten, Einstieg in den Planer), also erbt sie den Artikel.
+// Ziel ist hier ein Pfad auf oberster Ebene, nicht unterhalb von /ratgeber/.
+const RATGEBER_ZU_SEITE = Object.assign(Object.create(null), {
+  'pflegeleichte-stauden-fuer-wenig-arbeit-im-garten': '/pflegeleichte-stauden',
 });
 
 app.get('/pflanze/:slug', (req, res) => {
@@ -3790,6 +3810,7 @@ app.get('/ratgeber', (req, res) => {
 
 app.get('/ratgeber/:slug', (req, res) => {
   const slug = req.params.slug;
+  if (RATGEBER_ZU_SEITE[slug]) return res.redirect(301, RATGEBER_ZU_SEITE[slug]);
   if (RATGEBER_ALIASE[slug]) return res.redirect(301, '/ratgeber/' + RATGEBER_ALIASE[slug]);
   let alle = [];
   try { alle = db.prepare('SELECT rowid, * FROM wissen').all(); } catch {}
