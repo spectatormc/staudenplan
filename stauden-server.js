@@ -932,7 +932,38 @@ function getKlimaregion(plz) {
   return 'Bayern/Alpenvorland (kontinental: heiße Sommer, kalte Winter, Spätfrost bis Mai möglich, oft Kalkboden — frostharte und kalkverträgliche Arten bevorzugen, Trockenheitstoleranz wichtig)';
 }
 
+// Zeitbudget für /api/plan. nginx bricht für staudenplan.de nach 60 s ab (Standardwert von
+// proxy_read_timeout, der vhost setzt keinen eigenen). Bis Anfang August zählten hier ZWEI
+// verschachtelte Ebenen Versuche statt Zeit — das SDK (timeout 30 s, maxRetries 1 = bis 60 s)
+// und die Schleife in dieser Route (bis 2 Durchläufe = bis 120 s). Bei einem Hänger kappte
+// deshalb immer nginx zuerst: in 14 Tagen 24 OpenAI-Timeouts und exakt 24 Gateway-Timeouts,
+// die saubere Fehlerantwort der App wurde kein einziges Mal ausgeliefert.
+//
+// PLAN_VERSUCH_MS bleibt bei 30 s. Der langsamste gemessene ERFOLGREICHE Plan lag bei 17,3 s
+// (60 m², viel Vielfalt), der schnellste bei 10,8 s. Die Grenze zu senken würde heute
+// erfolgreiche Anfragen in Fehler verwandeln und keinen einzigen Gateway-Timeout verhindern —
+// die Ausfälle sind Hänger, die auch nach 60 s nichts geliefert hätten.
+// Über Umgebungsvariablen überschreibbar, damit sich der Fehlerpfad ohne echten Hänger testen
+// lässt (PLAN_VERSUCH_MS=1) und im Ernstfall nachjustiert werden kann, ohne neu zu deployen.
+const PLAN_VERSUCH_MS = Number(process.env.PLAN_VERSUCH_MS) || 30000;
+// Deckel über die ganze Route, mit 10 s Abstand zu nginx. Der Abstand deckt, dass nginx ab
+// TCP-Accept zählt und wir erst im Handler, plus DB-Anreicherung und Serialisierung.
+const PLAN_BUDGET_MS = Number(process.env.PLAN_BUDGET_MS) || 50000;
+
+// Fehlerklassen des OpenAI-SDK. Zwingend über instanceof: die Klassen setzen `name` nicht,
+// err.name ist bei allen schlicht "Error" — eine Prüfung darauf wäre stiller toter Code.
+// Reihenfolge zählt, APIConnectionTimeoutError erbt von APIConnectionError.
+function klassifiziereOpenAIFehler(err) {
+  if (err instanceof OpenAI.APIUserAbortError) return 'abbruch';
+  if (err instanceof OpenAI.APIConnectionTimeoutError) return 'timeout';
+  if (err instanceof OpenAI.APIConnectionError) return 'netz';
+  if (err && err.status === 429) return 'ratelimit';
+  if (err && err.status >= 500) return 'api';
+  return 'unbekannt';
+}
+
 app.post('/api/plan', planLimiter, async (req, res) => {
+  const t0 = Date.now();
   const { gartenflaeche, licht, boden, standort_beschreibung, stil, sichtseite, farbe, saison,
           lieblingspflanzen, budget, nutzung, pflegezeit, vielfalt, dichte, plz, geophyten } = req.body;
 
@@ -1030,30 +1061,65 @@ JSON-Format:
 }`;
 
   try {
-    // Generierung mit max_tokens-Backstop und EINEM automatischen Retry bei ungültigem JSON.
+    // Generierung mit max_tokens-Backstop und EINEM Wiederholungsversuch — der aber nur startet,
+    // wenn er vollständig ins Zeitbudget passt. Ein zweiter Versuch, den nginx ohnehin abschneidet,
+    // hilft niemandem und kostet den Nutzer 30 zusätzliche Sekunden Wartezeit.
     // (max_tokens großzügig: verhindert Runaway, ohne realistische Pläne zu kürzen.)
-    let plan = null;
+    const modell = ['gpt-4o', 'gpt-4o-mini'].includes(req.query.model) ? req.query.model : 'gpt-4o-mini';
+    let plan = null, versuche = 0, grund = null;
+    const versuchMs = [];
     for (let attempt = 1; attempt <= 2 && !plan; attempt++) {
-      const completion = await getOpenAI().chat.completions.create({
-        // Default gpt-4o-mini (Eval 2026-07-25: gleichauf mit 4o, 0 Halluzinationen, ~15× günstiger).
-        // ?model=gpt-4o bleibt als Notausstieg/Override (Allowlist).
-        model: ['gpt-4o', 'gpt-4o-mini'].includes(req.query.model) ? req.query.model : 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ],
-        temperature: 0.6,
-        max_tokens: 8000,
-        response_format: { type: 'json_object' }
-      });
+      const rest = PLAN_BUDGET_MS - (Date.now() - t0);
+      if (rest < PLAN_VERSUCH_MS) { grund = grund || 'budget'; break; }
+      versuche++;
+      const tv = Date.now();
       try {
-        plan = JSON.parse(completion.choices[0].message.content);
-      } catch (parseErr) {
-        console.warn(`Plan-JSON ungültig (Versuch ${attempt}/2): ${parseErr.message}`);
+        const completion = await getOpenAI().chat.completions.create({
+          // Default gpt-4o-mini (Eval 2026-07-25: gleichauf mit 4o, 0 Halluzinationen, ~15× günstiger).
+          // ?model=gpt-4o bleibt als Notausstieg/Override (Allowlist).
+          model: modell,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ],
+          temperature: 0.6,
+          max_tokens: 8000,
+          response_format: { type: 'json_object' }
+        }, {
+          // Pro Aufruf, nicht am geteilten Client: getOpenAI() bedient auch die Admin-Bild- und
+          // Batch-Pfade, die ohne wartenden HTTP-Client laufen und den SDK-Retry behalten sollen.
+          timeout: PLAN_VERSUCH_MS,
+          maxRetries: 0
+        });
+        try {
+          plan = JSON.parse(completion.choices[0].message.content);
+        } catch (parseErr) {
+          grund = 'json';
+          console.warn(`Plan-JSON ungültig (Versuch ${attempt}/2): ${parseErr.message}`);
+        }
+      } catch (apiErr) {
+        grund = klassifiziereOpenAIFehler(apiErr);
+        console.warn(`OpenAI-Aufruf fehlgeschlagen (Versuch ${attempt}/2, ${Date.now() - t0} ms, ${grund}): ${apiErr.message}`);
+        // Bei einem Hänger ist ein zweiter Versuch im selben Budget aussichtslos; Kontingent
+        // und Wartezeit sparen. Kurze Fehler (Netz, 5xx) bekommen dagegen ihre zweite Chance.
+        // Das finally unten läuft auch bei break, die Dauer wird also mitgeschrieben.
+        if (grund === 'timeout' || grund === 'abbruch' || grund === 'ratelimit') break;
+      } finally {
+        versuchMs.push(Date.now() - tv);
       }
     }
     if (!plan) {
-      return res.status(500).json({ error: 'Fehler bei der KI-Planung. Bitte versuche es erneut.' });
+      // 504 statt 500: Das Frontend bevorzugt data.error, sobald JSON vorliegt — der Text muss
+      // also hier stehen. Der Statuscode bleibt trotzdem in der 502/504-Familie, damit der
+      // vorhandene Zweig im Frontend als Netz greift, falls die Antwort doch einmal ohne JSON
+      // ankommt. Bei Timeouts sagt die Meldung, was wirklich los war.
+      const istZeit = grund === 'timeout' || grund === 'budget';
+      console.error(`plan fehlgeschlagen ms=${Date.now() - t0} versuche=${versuche} versuch_ms=${versuchMs.join(',')} grund=${grund || 'unbekannt'} modell=${modell} flaeche=${gartenflaeche}`);
+      return res.status(istZeit ? 504 : 502).json({
+        error: istZeit
+          ? 'Die Planerstellung hat zu lange gedauert. Bitte versuch es noch einmal — bei kleineren Flächen geht es meist schneller.'
+          : 'Fehler bei der KI-Planung. Bitte versuche es erneut.'
+      });
     }
 
     // Bilder, Pflanzabstand UND Preis aus DB anreichern.
@@ -1124,9 +1190,16 @@ JSON-Format:
       plan.gesamtkosten_geschaetzt = gesamt();
     }
 
+    // Eine Abschlusszeile je Lauf. Bis August stand im Log nur "OpenAI Fehler: Request timed out"
+    // ohne Dauer, Fläche oder Versuchszahl — man konnte hinterher nicht sagen, welche Anfrage wie
+    // lange lief. Mit dieser Zeile lässt sich prüfen, ob PLAN_VERSUCH_MS richtig gewählt ist.
+    console.log(`plan ok ms=${Date.now() - t0} versuche=${versuche} versuch_ms=${versuchMs.join(',')} modell=${modell} flaeche=${gartenflaeche} dichte=${dichte || 'normal'} pflanzen=${Array.isArray(plan.pflanzen) ? plan.pflanzen.length : 0}`);
     res.json({ success: true, plan, rag: { kandidaten: kandidaten.length, wissen: wissen.length } });
   } catch (err) {
-    console.error('OpenAI Fehler:', err.message);
+    // Fängt seit der Budget-Umstellung KEINE OpenAI-Fehler mehr (die werden in der Schleife
+    // behandelt), sondern nur noch Fehler aus DB-Anreicherung und Budget-Kappung. Das Präfix
+    // muss das sagen, sonst laufen sie in die Timeout-Zählung und verfälschen die Messung.
+    console.error(`Plan-Aufbereitung Fehler nach ${Date.now() - t0} ms:`, err.message);
     res.status(500).json({ error: 'Fehler bei der KI-Planung. Bitte versuche es erneut.' });
   }
 });
