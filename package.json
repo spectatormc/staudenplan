@@ -15,6 +15,7 @@
     "ci:smoke": "npm run check:smoke"
   },
   "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "better-sqlite3": "^12.10.0",
     "dotenv": "^16.4.7",
     "express": "^5.2.1",
