@@ -4314,7 +4314,12 @@
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plan: currentPlan, flaeche: formData.gartenflaeche, grafik: {
           flaeche: formData.gartenflaeche, beetLaenge: formData.beetLaenge, beetBreite: formData.beetBreite,
-          sichtseite: formData.sichtseite, dichte: formData.dichte } })
+          sichtseite: formData.sichtseite, dichte: formData.dichte,
+          // Freihandform mitschicken, sonst zeichnet die geteilte Seite ein Rechteck.
+          // Rohe Canvas-Koordinaten: der Server normalisiert sie genauso wie scaledPolygonsForSVG.
+          form: formData.flaeche_form,
+          polygons: (formData.flaeche_form === 'zeichnen' ? polygons : [])
+            .map(p => ({ points: p.points.map(pt => ({ x: pt.x, y: pt.y })), area: p.area })) } })
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'Fehler beim Teilen.');

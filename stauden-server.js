@@ -1409,8 +1409,122 @@ function sanitizeGrafikOpts(g) {
     beetLaenge: dim(g.beetLaenge, 500),
     beetBreite: dim(g.beetBreite, 500),
     sichtseite: typeof g.sichtseite === 'string' ? g.sichtseite.slice(0, 60) : undefined,
-    dichte: ['locker', 'normal', 'dicht'].includes(g.dichte) ? g.dichte : undefined
+    dichte: ['locker', 'normal', 'dicht'].includes(g.dichte) ? g.dichte : undefined,
+    form: g.form === 'zeichnen' ? 'zeichnen' : undefined,
+    polygons: sanitizePolygons(g.polygons)
   };
+}
+
+// Gezeichnete Freihandflächen aus (untrusted) Canvas-Koordinaten. Gedeckelt auf 6 Polygone
+// à 80 Punkte — von Hand geklickte Flächen haben real 10–40 Punkte und ein bis drei Teilflächen,
+// die Grenze ist also großzügig und verhindert nur eingeschleuste Riesenlisten.
+// Renderzeit gemessen: typische Pläne 45–200 ms. Teuer wird nicht die Kantenzahl, sondern eine
+// dicht bepflanzte große Fläche (144 m² bei Dichte "dicht" = 600 Füllstauden → ~5 s), weil dann
+// die Platzierungs-Wiederholungen greifen. Das Ergebnis wird pro Plan gecacht (sharedPlanHtmlCache)
+// und das Anlegen ist über planTeilenLimiter begrenzt, die Last bleibt damit gedeckelt.
+// Koordinaten müssen endlich und im Canvas-Bereich liegen, damit die Normalisierung
+// nie durch NaN/Infinity läuft.
+function sanitizePolygons(raw) {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  const koord = v => { const n = Number(v); return Number.isFinite(n) && Math.abs(n) <= 20000 ? n : null; };
+  const polys = [];
+  for (const p of raw.slice(0, 6)) {
+    if (!p || typeof p !== 'object' || !Array.isArray(p.points)) continue;
+    const points = [];
+    for (const pt of p.points.slice(0, 80)) {
+      if (!pt || typeof pt !== 'object') continue;
+      const x = koord(pt.x), y = koord(pt.y);
+      if (x === null || y === null) continue;
+      points.push({ x, y });
+    }
+    if (points.length < 3) continue;   // erst ab 3 Punkten ist es eine Fläche
+    const area = Number(p.area);
+    polys.push({ points, area: Number.isFinite(area) && area > 0 ? area : undefined });
+  }
+  return polys.length ? polys : undefined;
+}
+
+// Canvas-Punkte → SVG-Koordinaten. Spiegelt scaledPolygonsForSVG aus stauden-portal.html:
+// gemeinsame Bounding-Box über alle Polygone, auf die Beetfläche skaliert, 6 % Rand.
+function scaledPolygonsSSR(polys, bedW, bedH, offsetX, offsetY) {
+  if (!polys || !polys.length) return null;
+  const alle = polys.flatMap(p => p.points);
+  const minX = Math.min(...alle.map(p => p.x)), maxX = Math.max(...alle.map(p => p.x));
+  const minY = Math.min(...alle.map(p => p.y)), maxY = Math.max(...alle.map(p => p.y));
+  const rangeX = (maxX - minX) || 1, rangeY = (maxY - minY) || 1;
+  const pad = 0.06;
+  const sx = bedW * (1 - 2 * pad) / rangeX, sy = bedH * (1 - 2 * pad) / rangeY;
+  return polys.map(poly => ({
+    svgPoints: poly.points.map(pt => [
+      offsetX + (pt.x - minX) * sx + bedW * pad,
+      offsetY + (pt.y - minY) * sy + bedH * pad
+    ]),
+    area: poly.area
+  }));
+}
+
+// Punkt-in-Polygon & Randführung — 1:1 aus stauden-portal.html, damit ein geteilter Plan
+// dieselbe Pflanzenverteilung zeigt wie die App.
+function pointInPolygonSSR(x, y, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) inside = !inside;
+  }
+  return inside;
+}
+
+function distToSegmentSSR(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy;
+  if (len2 === 0) return Math.hypot(px - ax, py - ay);
+  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+function pointInAnyPolygonSSR(x, y, polys) {
+  return polys.some(p => pointInPolygonSSR(x, y, p.svgPoints));
+}
+
+function pointInAnyPolygonWithMarginSSR(x, y, polys, margin) {
+  return polys.some(p => {
+    if (!pointInPolygonSSR(x, y, p.svgPoints)) return false;
+    const pts = p.svgPoints;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      if (distToSegmentSSR(x, y, pts[i][0], pts[i][1], pts[j][0], pts[j][1]) < margin) return false;
+    }
+    return true;
+  });
+}
+
+function snapInsidePolygonSSR(plant, polys) {
+  if (pointInAnyPolygonSSR(plant.x, plant.y, polys)) return;
+  let bestX = plant.x, bestY = plant.y, bestDist = Infinity;
+  polys.forEach(poly => {
+    const pts = poly.svgPoints;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const [ax, ay] = pts[j], [bx, by] = pts[i];
+      const edx = bx - ax, edy = by - ay, len2 = edx * edx + edy * edy;
+      if (len2 < 0.001) continue;
+      const t = Math.max(0, Math.min(1, ((plant.x - ax) * edx + (plant.y - ay) * edy) / len2));
+      const nx = ax + t * edx, ny = ay + t * edy;
+      const d = Math.hypot(plant.x - nx, plant.y - ny);
+      if (d < bestDist) { bestDist = d; bestX = nx; bestY = ny; }
+    }
+  });
+  plant.x = bestX; plant.y = bestY;
+  let cx = 0, cy = 0, n = 0;
+  polys.forEach(p => p.svgPoints.forEach(([x, y]) => { cx += x; cy += y; n++; }));
+  if (!n) return;
+  cx /= n; cy /= n;
+  for (let s = 0; s < 8; s++) {
+    plant.x += (cx - plant.x) * 0.12;
+    plant.y += (cy - plant.y) * 0.12;
+    if (pointInAnyPolygonSSR(plant.x, plant.y, polys)) return;
+  }
+}
+
+function polyPointsAttrSSR(pts) {
+  return pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
 }
 
 const planTeilenLimiter = rl({ windowMs: 15 * 60 * 1000, max: 20, message: { error: 'Zu viele Anfragen.' } });
@@ -4003,11 +4117,14 @@ function plantRolleSSR(p) {
 }
 
 // Server-Port des Client-Placement-Algorithmus (stauden-portal.html calcPlacements),
-// beschränkt auf RECHTECK-Beete (keine Freihand-Polygone; Saison = alle). Deterministisch
+// Rechteck- und Freihand-Beete (Saison = alle). Freihand über opts.constraintPolys —
+// dieselben Punkt-in-Polygon-Schritte wie im Client. Deterministisch
 // (pseudoRand, kein Math.random). WICHTIG: bei Änderungen am Client-Algorithmus hier
 // nachziehen, damit geteilte Pläne & Beispielseiten wie die App aussehen.
 function calcPlacementsSSR(pflanzen, bedW, bedH, opts) {
   opts = opts || {};
+  const constraintPolys = Array.isArray(opts.constraintPolys) ? opts.constraintPolys : null;
+  const hasConstraint = !!(constraintPolys && constraintPolys.length);
   const gartW_m = Number(opts.gartW) > 0 ? Number(opts.gartW) : 4;
   const dichte = ['locker', 'normal', 'dicht'].includes(opts.dichte) ? opts.dichte : 'normal';
   const gartenflaeche = Number(opts.gartenflaeche) > 0 ? Number(opts.gartenflaeche) : 10;
@@ -4121,7 +4238,31 @@ function calcPlacementsSSR(pflanzen, bedW, bedH, opts) {
         const zone = dr.zone;
         yFrac = Math.min(zone.yMax, Math.max(zone.yMin, dr.yFrac + (pseudoRand(seed + 13) - 0.5) * 2 * sY));
       }
-      const x = xFrac * bedW, y = yFrac * bedH;
+      let x = xFrac * bedW, y = yFrac * bedH, placed = false;
+      const pZone = isRund ? null : dr.zone;
+      if (hasConstraint) {
+        // Pass 1: in der Nähe des Zieldrift-Punkts suchen (zonengebunden)
+        for (let att = 0; att < 60 && !placed; att++) {
+          const s2 = seed + att * 17;
+          const cx = (xFrac + (pseudoRand(s2 + 5) - 0.5) * 0.5) * bedW;
+          const cy = pZone
+            ? (pZone.yMin + pseudoRand(s2 + 9) * (pZone.yMax - pZone.yMin)) * bedH
+            : (yFrac + (pseudoRand(s2 + 9) - 0.5) * 0.2) * bedH;
+          if (pointInAnyPolygonWithMarginSSR(cx, cy, constraintPolys, r * 0.5)) { x = cx; y = cy; placed = true; }
+        }
+        // Pass 2: Ziel-x beibehalten, y komplett aufmachen (findet Platz in schmalen Polygon-Bereichen)
+        if (!placed) for (let att = 0; att < 60 && !placed; att++) {
+          const cx = Math.max(0, Math.min(bedW, (xFrac + (pseudoRand(seed + att * 53 + 300) - 0.5) * 0.22) * bedW));
+          const cy = pseudoRand(seed + att * 31 + 300) * bedH;
+          if (pointInAnyPolygonWithMarginSSR(cx, cy, constraintPolys, r * 0.5)) { x = cx; y = cy; placed = true; }
+        }
+        // Pass 3: letzter Ausweg — irgendwo im Polygon (sehr schmale Polygone)
+        if (!placed) for (let att = 0; att < 20 && !placed; att++) {
+          const cx = pseudoRand(seed + att * 71 + 600) * bedW;
+          const cy = pseudoRand(seed + att * 43 + 600) * bedH;
+          if (pointInAnyPolygonSSR(cx, cy, constraintPolys)) { x = cx; y = cy; placed = true; }
+        }
+      }
       all.push({ x: Math.max(r, Math.min(bedW - r, x)), y: Math.max(r, Math.min(bedH - r, y)), r, pflanze: p, pi });
     }
   });
@@ -4159,7 +4300,7 @@ function calcPlacementsSSR(pflanzen, bedW, bedH, opts) {
       }
     }
     applyZoneForce(0.022);
-    all.forEach(p => { p.x = Math.max(p.r, Math.min(bedW - p.r, p.x)); p.y = Math.max(p.r, Math.min(bedH - p.r, p.y)); });
+    all.forEach(p => { p.x = Math.max(p.r, Math.min(bedW - p.r, p.x)); p.y = Math.max(p.r, Math.min(bedH - p.r, p.y)); if (hasConstraint) snapInsidePolygonSSR(p, constraintPolys); });
     if (!moved) break;
   }
 
@@ -4195,7 +4336,7 @@ function calcPlacementsSSR(pflanzen, bedW, bedH, opts) {
         }
       }
     }
-    all.forEach(p => { p.x = Math.max(p.r, Math.min(bedW - p.r, p.x)); p.y = Math.max(p.r, Math.min(bedH - p.r, p.y)); });
+    all.forEach(p => { p.x = Math.max(p.r, Math.min(bedW - p.r, p.x)); p.y = Math.max(p.r, Math.min(bedH - p.r, p.y)); if (hasConstraint) snapInsidePolygonSSR(p, constraintPolys); });
     for (let si = 0; si < 10; si++) {
       for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) {
         const dx = all[j].x - all[i].x, dy = all[j].y - all[i].y;
@@ -4207,7 +4348,7 @@ function calcPlacementsSSR(pflanzen, bedW, bedH, opts) {
           all[j].x += nx * push * 0.5; all[j].y += ny * push * 0.5;
         }
       }
-      all.forEach(p => { p.x = Math.max(p.r, Math.min(bedW - p.r, p.x)); p.y = Math.max(p.r, Math.min(bedH - p.r, p.y)); });
+      all.forEach(p => { p.x = Math.max(p.r, Math.min(bedW - p.r, p.x)); p.y = Math.max(p.r, Math.min(bedH - p.r, p.y)); if (hasConstraint) snapInsidePolygonSSR(p, constraintPolys); });
     }
   }
 
@@ -4221,7 +4362,9 @@ function calcPlacementsSSR(pflanzen, bedW, bedH, opts) {
     for (let xIter = 0; xIter < 40; xIter++) {
       grps.sort((a, b) => a.cx - b.cx);
       if (grps.length >= 2) {
-        const edgePull = 0.06;
+        // Randgruppen zur Beetkante ziehen: stark für Rechteck, sanft für Freihand
+        // (Freihand: snapInsidePolygonSSR hält Pflanzen am Polygonrand statt in der Mitte)
+        const edgePull = hasConstraint ? 0.025 : 0.06;
         const r0 = grps[0].pls.reduce((m, p) => Math.max(m, p.r), 0);
         const rL = grps[grps.length - 1].pls.reduce((m, p) => Math.max(m, p.r), 0);
         grps[0].cx += (r0 * 2.5 - grps[0].cx) * edgePull;
@@ -4236,6 +4379,7 @@ function calcPlacementsSSR(pflanzen, bedW, bedH, opts) {
         const dx = g.cx - currCx;
         g.pls.forEach(pl => { pl.x = Math.max(pl.r, Math.min(bedW - pl.r, pl.x + dx)); });
       });
+      if (hasConstraint) all.forEach(p => snapInsidePolygonSSR(p, constraintPolys));
       recalc();
       for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) {
         const dx = all[j].x - all[i].x, dy = all[j].y - all[i].y;
@@ -4246,7 +4390,7 @@ function calcPlacementsSSR(pflanzen, bedW, bedH, opts) {
           all[j].x += (dx / d) * push * 0.5; all[j].y += (dy / d) * push * 0.5;
         }
       }
-      all.forEach(p => { p.x = Math.max(p.r, Math.min(bedW - p.r, p.x)); p.y = Math.max(p.r, Math.min(bedH - p.r, p.y)); });
+      all.forEach(p => { p.x = Math.max(p.r, Math.min(bedW - p.r, p.x)); p.y = Math.max(p.r, Math.min(bedH - p.r, p.y)); if (hasConstraint) snapInsidePolygonSSR(p, constraintPolys); });
       recalc();
     }
   }
@@ -4268,6 +4412,7 @@ function calcPlacementsSSR(pflanzen, bedW, bedH, opts) {
         const jx = (col + 0.15 + pseudoRand(seed) * 0.7) * cellSize;
         const jy = (row + 0.15 + pseudoRand(seed + 500) * 0.7) * cellSize;
         if (jx < bedW * 0.97 && jy < bedH * 0.97 && jx > bedW * 0.03 && jy > bedH * 0.03) {
+          if (hasConstraint && !pointInAnyPolygonWithMarginSSR(jx, jy, constraintPolys, cellSize * 0.3)) continue;
           if (!all.some(pl => Math.hypot(jx - pl.x, jy - pl.y) < pl.r + clearance)) {
             candidates.push({ x: jx, y: jy });
           }
@@ -4337,8 +4482,15 @@ function renderGrafischSSR(pflanzen, flaeche, opts) {
   for (let y = meterPxY; y < bedH; y += meterPxY)
     gridLines.push(`<line x1="${PAD}" y1="${(PAD+y).toFixed(1)}" x2="${PAD+bedW}" y2="${(PAD+y).toFixed(1)}" stroke="rgba(255,255,255,.12)" stroke-width="1" stroke-dasharray="4,4"/>`);
 
+  // Gezeichnete Freihandfläche: Beetform und Platzierungsgrenze. Die Platzierung rechnet
+  // ohne PAD-Offset (Koordinaten sind relativ zum Beet), gezeichnet wird mit.
+  const drawnPolys = opts.form === 'zeichnen' ? scaledPolygonsSSR(opts.polygons, bedW, bedH, PAD, PAD) : null;
+  const placementPolys = opts.form === 'zeichnen' ? scaledPolygonsSSR(opts.polygons, bedW, bedH, 0, 0) : null;
+  const istFreihand = !!(drawnPolys && drawnPolys.length);
+
   const placements = calcPlacementsSSR(pflanzen, bedW, bedH, {
-    gartW, gartenflaeche: (flaeche || 15), dichte: opts.dichte, sichtseite: opts.sichtseite
+    gartW, gartenflaeche: (flaeche || 15), dichte: opts.dichte, sichtseite: opts.sichtseite,
+    constraintPolys: placementPolys
   });
   const sorted = [...placements].sort((a, b) => a.y - b.y);
   const numOf = (pflanze) => pflanzen.findIndex(pp => pp.name_botanisch === pflanze.name_botanisch) + 1;
@@ -4382,7 +4534,25 @@ function renderGrafischSSR(pflanzen, flaeche, opts) {
     : sichtseite.includes('Rundbeet') ? 'Rundbeet'
     : sichtseite.includes('Eckbeet') ? 'Eckbeet' : 'Blick von vorne';
 
-  const svg = `<svg width="${W}" height="${H+24}" xmlns="http://www.w3.org/2000/svg" style="max-width:100%;border-radius:12px;display:block">
+  // Beetform: gezeichnetes Polygon, sonst Rechteck. Bei Freihand entfallen die
+  // Kantenmaße (es gibt keine Länge/Breite) und stattdessen steht die Fläche darunter.
+  const bedShape = istFreihand
+    ? drawnPolys.map(p => `<polygon points="${polyPointsAttrSSR(p.svgPoints)}" fill="url(#soilGrad)"/>`).join('')
+    : `<rect x="${PAD}" y="${PAD}" width="${bedW}" height="${bedH}" rx="8" fill="url(#soilGrad)"/>`;
+  const bedClipContent = istFreihand
+    ? drawnPolys.map(p => `<polygon points="${polyPointsAttrSSR(p.svgPoints)}"/>`).join('')
+    : `<rect x="${PAD}" y="${PAD}" width="${bedW}" height="${bedH}" rx="8"/>`;
+  const bedOutline = istFreihand
+    ? drawnPolys.map(p => `<polygon points="${polyPointsAttrSSR(p.svgPoints)}" fill="none" stroke="#a0714f" stroke-width="2.5" stroke-linejoin="round"/>`).join('')
+    : `<rect x="${PAD}" y="${PAD}" width="${bedW}" height="${bedH}" rx="8" fill="none" stroke="#a0714f" stroke-width="2.5"/>`;
+  const massLabels = istFreihand ? '' :
+    `<text x="${W/2}" y="${PAD-4}" text-anchor="middle" font-size="10" fill="#888" font-family="system-ui">↑ ${topLabel} (${gartW.toFixed(1)} m)</text>
+    <text x="8" y="${PAD+bedH/2}" text-anchor="middle" font-size="10" fill="#888" font-family="system-ui" transform="rotate(-90,8,${PAD+bedH/2})">${gartH.toFixed(1)} m</text>`;
+  const bedLabel = istFreihand
+    ? `<text x="${W/2}" y="${scaleY+26}" text-anchor="middle" font-size="10" fill="#aaa" font-family="system-ui">Freihandfläche · ${Number(flaeche || 0).toFixed(1)} m²</text>`
+    : '';
+
+  const svg = `<svg width="${W}" height="${H+24+(istFreihand?14:0)}" xmlns="http://www.w3.org/2000/svg" style="max-width:100%;border-radius:12px;display:block">
     <defs>
       ${gradDefs}
       <filter id="fuellBlur" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur in="SourceGraphic" stdDeviation="2.5"/></filter>
@@ -4390,18 +4560,18 @@ function renderGrafischSSR(pflanzen, flaeche, opts) {
         <stop offset="0%" stop-color="#7a5230"/>
         <stop offset="100%" stop-color="#4e3019"/>
       </linearGradient>
-      <clipPath id="bedClip"><rect x="${PAD}" y="${PAD}" width="${bedW}" height="${bedH}" rx="8"/></clipPath>
+      <clipPath id="bedClip">${bedClipContent}</clipPath>
     </defs>
-    <rect x="${PAD}" y="${PAD}" width="${bedW}" height="${bedH}" rx="8" fill="url(#soilGrad)"/>
+    ${bedShape}
     <g clip-path="url(#bedClip)">${soilDots}${gridLines.join('')}</g>
-    <rect x="${PAD}" y="${PAD}" width="${bedW}" height="${bedH}" rx="8" fill="none" stroke="#a0714f" stroke-width="2.5"/>
+    ${bedOutline}
     <g clip-path="url(#bedClip)">${driftPatches}</g>
     <g clip-path="url(#bedClip)">${circles}</g>
-    <text x="${W/2}" y="${PAD-4}" text-anchor="middle" font-size="10" fill="#888" font-family="system-ui">↑ ${topLabel} (${gartW.toFixed(1)} m)</text>
-    <text x="8" y="${PAD+bedH/2}" text-anchor="middle" font-size="10" fill="#888" font-family="system-ui" transform="rotate(-90,8,${PAD+bedH/2})">${gartH.toFixed(1)} m</text>
+    ${massLabels}
     <rect x="${PAD+10}" y="${scaleY}" width="${Math.round(meterPxX)}" height="5" rx="2" fill="#666"/>
     <text x="${PAD+10}" y="${scaleY+14}" font-size="10" fill="#888" font-family="system-ui">1 m</text>
     <text x="${W/2}" y="${scaleY+14}" text-anchor="middle" font-size="10" fill="#aaa" font-family="system-ui">&#128065; ${escHtml(blickText)} · ↓ Vordergrund</text>
+    ${bedLabel}
   </svg>`;
 
   const legend = pflanzen.map((p, i) => {
