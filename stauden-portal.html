@@ -1731,7 +1731,7 @@
       <div class="section-title">💡 Tipps</div>
       <ul class="tipps-list" id="tipps-list"></ul>
       <p class="anfrage-zeile">Lieber alles auf einmal? <a href="#" onclick="openModal();return false">Komplettpaket bei der Gartenschmiede GmbH anfragen →</a></p>
-      <button class="btn-neustart" onclick="planTeilen(this)">🔗 Plan teilen</button>
+      <button class="btn-neustart" onclick="showEmailGate()">✉️ Plan sichern &amp; teilen</button>
       <button class="btn-neustart" onclick="neustart()">↩ Neuen Plan erstellen</button>
     </div>
   </div>
@@ -1779,7 +1779,7 @@
           <div class="sl-kauf-liste" id="sl-kauf-liste"></div>
           <p class="anfrage-zeile">Lieber alles auf einmal? <a href="#" onclick="openModal();return false">Komplettpaket bei der Gartenschmiede GmbH anfragen →</a></p>
         </div>
-        <button class="btn-neustart" onclick="planTeilen(this)">🔗 Plan teilen</button>
+        <button class="btn-neustart" onclick="showEmailGate()">✉️ Plan sichern &amp; teilen</button>
         <button class="btn-neustart" onclick="neustart()">↩ Neuen Plan erstellen</button>
       </div>
     </div>
@@ -1808,7 +1808,7 @@
             <!-- Weiches Angebot: Das PDF bleibt frei zugänglich, die E-Mail ist eine
                  zusätzliche Bequemlichkeit. Ein hartes Tor (ohne Adresse kein PDF) holt
                  mehr Adressen, verdirbt aber den Moment, in dem der Plan gerade fertig ist. -->
-            <button class="btn-print" style="font-size:.78rem;padding:6px 14px" onclick="showEmailGate()">✉️ Plan per E-Mail sichern</button>
+            <button class="btn-print" style="font-size:.78rem;padding:6px 14px" onclick="showEmailGate()">✉️ Plan sichern</button>
           </span>
         </div>
         <div class="viz-card-body">
@@ -1848,7 +1848,7 @@
       </div>
 
       <p class="anfrage-zeile">Lieber alles auf einmal? <a href="#" onclick="openModal();return false">Komplettpaket bei der Gartenschmiede GmbH anfragen →</a></p>
-      <button class="btn-neustart" onclick="planTeilen(this)">🔗 Plan teilen</button>
+      <button class="btn-neustart" onclick="showEmailGate()">✉️ Plan sichern &amp; teilen</button>
       <button class="btn-neustart" onclick="neustart()">↩ Neuen Plan erstellen</button>
 
     </div>
@@ -3866,16 +3866,25 @@
   }
 
   // ── E-Mail-Gate ──────────────────────────────────────────────────────────────
+  // Die Erfolgsansicht überschreibt den Inhalt des Fensters. Damit ein zweiter Aufruf nicht
+  // auf einer leeren Hülle landet, wird die Ausgangsfassung einmal gesichert und beim Öffnen
+  // wiederhergestellt.
+  let _gateHtml = null;
   function showEmailGate() {
     if (!currentPlan) return;
+    const box = document.querySelector('#email-gate-overlay > div');
+    if (_gateHtml === null) _gateHtml = box.innerHTML;
+    else box.innerHTML = _gateHtml;
     document.getElementById('email-gate-overlay').style.display = 'flex';
-    document.getElementById('gate-email').focus();
+    const feld = document.getElementById('gate-email');
+    if (feld) feld.focus();
   }
 
   function closeEmailGate() {
     document.getElementById('email-gate-overlay').style.display = 'none';
-    document.getElementById('gate-error').textContent = '';
-    document.getElementById('gate-email').value = '';
+    // Nach der Erfolgsansicht gibt es diese Felder nicht mehr — nicht blind zugreifen.
+    const err = document.getElementById('gate-error'); if (err) err.textContent = '';
+    const feld = document.getElementById('gate-email'); if (feld) feld.value = '';
   }
 
   async function submitEmailGate() {
@@ -3903,17 +3912,38 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Fehler beim Versand.');
-      closeEmailGate();
       if (window.plausible) plausible('Plan per Mail');
-      alert(data.versandt
-        ? (data.bestaetigung_noetig
-            ? 'Der Link ist unterwegs. In der Mail steht auch ein Bestätigungslink für die Gartentipps — ohne den bekommst du keine.'
-            : 'Der Link zu deinem Plan ist unterwegs.')
-        : 'Wir konnten die Mail gerade nicht zustellen. Dein Plan ist aber gespeichert: ' + location.origin + planUrl);
+      // Den Link sofort zeigen, statt auf das Postfach zu verweisen: Die Adresse ist gegeben,
+      // und wer teilen will, will jetzt kopieren. Deckt außerdem den Fall ab, dass die Mail
+      // hängen bleibt — der Plan darf dann nicht verloren sein.
+      zeigeGateErfolg(location.origin + planUrl, data.versandt);
     } catch (e) {
       errEl.textContent = e.message || 'Fehler — bitte erneut versuchen.';
+      btn.disabled = false; btn.textContent = 'Link zuschicken →';
     }
-    btn.disabled = false; btn.textContent = 'Link zuschicken →';
+  }
+
+  function zeigeGateErfolg(url, versandt) {
+    const box = document.querySelector('#email-gate-overlay > div');
+    if (!box) return;
+    box.innerHTML = `
+      <div style="font-size:3rem;margin-bottom:12px">${versandt ? '📬' : '🔗'}</div>
+      <h2 style="font-size:1.35rem;color:#1b4332;margin-bottom:10px;font-weight:800">${versandt ? 'Die Mail ist unterwegs' : 'Dein Plan ist gesichert'}</h2>
+      <p style="color:#666;font-size:.9rem;line-height:1.6;margin-bottom:16px">${versandt
+        ? 'Hier ist dein Link — du kannst ihn direkt kopieren und weitergeben.'
+        : 'Die Mail konnten wir gerade nicht zustellen. Dein Plan ist aber gespeichert — bitte sichere dir den Link:'}</p>
+      <input id="gate-link" readonly value="${url}" onclick="this.select()"
+        style="width:100%;padding:11px 14px;border:2px solid #d8f3dc;border-radius:10px;font-size:.85rem;text-align:center;background:#f7fdf9;color:#1b4332;margin-bottom:10px;box-sizing:border-box">
+      <button onclick="gateLinkKopieren(this)"
+        style="width:100%;background:linear-gradient(135deg,#2d6a4f,#1b4332);color:#fff;border:none;border-radius:12px;padding:13px;font-size:.95rem;font-weight:700;cursor:pointer;margin-bottom:10px">Link kopieren</button>
+      <button onclick="closeEmailGate()" style="background:none;border:none;color:#aaa;font-size:.85rem;cursor:pointer">Schließen</button>`;
+  }
+
+  async function gateLinkKopieren(btn) {
+    const el = document.getElementById('gate-link');
+    try { await navigator.clipboard.writeText(el.value); btn.textContent = 'Kopiert ✓'; }
+    catch { el.select(); btn.textContent = 'Markiert — mit Strg+C kopieren'; }
+    setTimeout(() => { btn.textContent = 'Link kopieren'; }, 2500);
   }
 
   // ── PDF-Generator ─────────────────────────────────────────────────────────
@@ -4436,21 +4466,14 @@
     return _planPfad;
   }
 
-  async function planTeilen(btn) {
-    if (!currentPlan || !currentPlan.pflanzen || !currentPlan.pflanzen.length) return;
-    const orig = btn ? btn.textContent : '';
-    if (btn) { btn.disabled = true; btn.textContent = 'Link wird erstellt …'; }
-    try {
-      const url = location.origin + await planPfadHolen();
-      if (window.plausible) plausible('Plan geteilt');
-      try { await navigator.clipboard.writeText(url); } catch {}
-      prompt('Dein Teilen-Link wurde in die Zwischenablage kopiert:', url);
-    } catch (e) {
-      alert('Teilen fehlgeschlagen: ' + e.message);
-    } finally {
-      if (btn) { btn.disabled = false; btn.textContent = orig; }
-    }
-  }
+  // planTeilen() ist am 08.08.2026 entfallen. Der Link zum Plan gibt es jetzt nur noch über
+  // „Plan sichern & teilen" — also gegen eine E-Mail-Adresse. Grund: Beide Wege lieferten
+  // exakt dasselbe Artefakt (/plan/<id>), und solange der eine einen Klick kostete und der
+  // andere eine Adresse, wählte niemand die Adresse. Geteilt wird weiterhin, nur eine Stufe
+  // später — aus der Mail heraus. Von den 18 bisher geteilten Plänen waren ausweislich der
+  // Zeitstempel etwa zehn Eigentests (Dubletten im Sekundenabstand), der Backlink-Nutzen war
+  // also nie belegt. Die Funktion planPfadHolen() hat die Arbeit übernommen,
+  // /plan/<id> bleibt öffentlich, alle bestehenden Links funktionieren weiter.
 
   function goHome() {
     neustart();
@@ -4502,8 +4525,8 @@
 <div id="email-gate-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;align-items:center;justify-content:center;padding:20px">
   <div style="background:#fff;border-radius:20px;padding:36px 32px;max-width:420px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.3)">
     <div style="font-size:3rem;margin-bottom:12px">✉️</div>
-    <h2 style="font-size:1.4rem;color:#1b4332;margin-bottom:10px;font-weight:800">Plan per E-Mail sichern</h2>
-    <p style="color:#666;font-size:.9rem;line-height:1.6;margin-bottom:20px">Wir schicken dir einen Link zu deinem Plan — so findest du ihn später wieder und kannst ihn weitergeben.</p>
+    <h2 style="font-size:1.4rem;color:#1b4332;margin-bottom:10px;font-weight:800">Plan sichern &amp; teilen</h2>
+    <p style="color:#666;font-size:.9rem;line-height:1.6;margin-bottom:20px">Wir schicken dir den Link zu deinem Plan. Damit findest du ihn jederzeit wieder — und kannst ihn weitergeben, an wen du möchtest.<br><span style="color:#999;font-size:.84rem">Dein Plan bleibt auch ohne das hier sichtbar; du kannst ihn direkt drucken oder als PDF laden.</span></p>
     <input type="email" id="gate-email" placeholder="deine@email.de"
       style="width:100%;padding:13px 16px;border:2px solid #e0d9cf;border-radius:10px;font-size:1rem;outline:none;margin-bottom:8px;box-sizing:border-box"
       onfocus="this.style.borderColor='#2d6a4f'" onblur="this.style.borderColor='#e0d9cf'"

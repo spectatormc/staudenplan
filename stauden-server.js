@@ -1613,7 +1613,11 @@ app.post('/api/email-gate', rl({ windowMs: 60 * 60 * 1000, max: 10, message: { e
       to: email,
       subject: pfad ? 'Dein Bepflanzungsplan' : 'Dein Plan bei Staudenplan.de',
       text: (pfad
-        ? `Hier ist dein Bepflanzungsplan:\n${basis}${pfad}\n\nDen Link kannst du jederzeit wieder aufrufen und auch weitergeben.`
+        ? `Hier ist dein Bepflanzungsplan:\n${basis}${pfad}\n\n`
+          + `Der Link bleibt bestehen — ruf ihn auf, wann du willst.\n`
+          + `Du kannst ihn auch weitergeben: Leite diese Mail einfach weiter oder kopiere die\n`
+          + `Adresse. Wer sie öffnet, sieht deinen kompletten Plan mit Beetgrafik, Pflanzenliste\n`
+          + `und Pflegehinweisen — ohne sich irgendwo anmelden zu müssen.`
         : 'Danke für dein Interesse an Staudenplan.de.')
         + bestaetigung
         + `\n\n—\nStaudenplan.de\nDu bekommst diese Mail, weil du sie auf staudenplan.de angefordert hast.`,
