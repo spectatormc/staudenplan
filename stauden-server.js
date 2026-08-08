@@ -1729,8 +1729,31 @@ function sanitizeGrafikOpts(g) {
     sichtseite: typeof g.sichtseite === 'string' ? g.sichtseite.slice(0, 60) : undefined,
     dichte: ['locker', 'normal', 'dicht'].includes(g.dichte) ? g.dichte : undefined,
     form: g.form === 'zeichnen' ? 'zeichnen' : undefined,
-    polygons: sanitizePolygons(g.polygons)
+    polygons: sanitizePolygons(g.polygons),
+    platzierungen: sanitizePlatzierungen(g.platzierungen)
   };
+}
+
+// Die im Browser berechnete Pflanzenverteilung, als Anteile der Beetfläche (0…1). Sie wird
+// übernommen statt neu gerechnet, damit der geteilte Plan genauso aussieht wie der eigene.
+// Untrusted: Werte müssen endlich und im Bild liegen, sonst zeichnet der Renderer Kreise
+// irgendwo im Nirgendwo oder mit NaN-Koordinaten. Gedeckelt auf 1500 Punkte — ein dicht
+// bepflanzter 120-m²-Plan kommt auf rund 1000.
+function sanitizePlatzierungen(raw) {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  const punkte = [];
+  for (const p of raw.slice(0, 1500)) {
+    if (!p || typeof p !== 'object') continue;
+    const x = Number(p.x), y = Number(p.y), r = Number(p.r), i = Number(p.i);
+    // Etwas Spielraum über 0…1 hinaus: Kreise dürfen am Rand leicht überstehen, so wie sie
+    // auch im Browser gezeichnet werden. Der Beschnitt am Beet erledigt den Rest.
+    if (![x, y, r, i].every(Number.isFinite)) continue;
+    if (x < -0.5 || x > 1.5 || y < -0.5 || y > 1.5) continue;
+    if (!(r > 0) || r > 0.5) continue;
+    if (!Number.isInteger(i) || i < 0 || i > 500) continue;
+    punkte.push({ x, y, r, i });
+  }
+  return punkte.length ? punkte : undefined;
 }
 
 // Gezeichnete Freihandflächen aus (untrusted) Canvas-Koordinaten. Gedeckelt auf 6 Polygone
@@ -1904,6 +1927,16 @@ app.get('/plan/:id', (req, res) => {
 function renderSharedPlan(plan, id) {
   const pflanzen = Array.isArray(plan.pflanzen) ? plan.pflanzen : [];
   const g = sanitizeGrafikOpts(plan._grafik);
+  // Pläne, die vor August 2026 geteilt wurden, tragen die im Browser berechnete Verteilung
+  // unbemerkt als plan._normPlacements mit — dort steckte zu jedem Punkt eine vollständige
+  // Kopie der Pflanze, beim größten gespeicherten Plan 96 % der Daten. Der Server hat sie nie
+  // gelesen und stattdessen neu gerechnet. Jetzt wird sie verwendet, damit auch die bereits
+  // verschickten Links die Anordnung des Erstellers zeigen.
+  if (!g.platzierungen && Array.isArray(plan._normPlacements)) {
+    g.platzierungen = sanitizePlatzierungen(plan._normPlacements.map(p => ({
+      x: p.xFrac, y: p.yFrac, r: p.rFrac, i: p.pi
+    })));
+  }
   const flaeche = Number(g.flaeche) > 0 ? Number(g.flaeche)
     : (Number(plan._flaeche) > 0 ? Number(plan._flaeche) : null);
   const konzept = plan.konzept ? escHtml(plan.konzept) : 'Staudenbeet-Plan';
@@ -4856,7 +4889,18 @@ function renderGrafischSSR(pflanzen, flaeche, opts) {
   const placementPolys = opts.form === 'zeichnen' ? scaledPolygonsSSR(opts.polygons, bedW, bedH, 0, 0) : null;
   const istFreihand = !!(drawnPolys && drawnPolys.length);
 
-  const placements = calcPlacementsSSR(pflanzen, bedW, bedH, {
+  // Wenn der Browser seine Platzierung mitgeschickt hat, wird sie übernommen — der geteilte
+  // Plan zeigt dann exakt dieselbe Anordnung wie der Plan beim Ersteller. Nachrechnen führt
+  // sonst zu sichtbaren Abweichungen, weil die Zeichenfläche hier fest 720 px breit ist,
+  // im Browser aber bis zu 800 px, und daran Radien und Kollisionsauflösung hängen.
+  // Nur für Pläne, die vor dieser Änderung geteilt wurden, wird weiterhin gerechnet.
+  const uebernommen = Array.isArray(opts.platzierungen) && opts.platzierungen.length
+    ? opts.platzierungen
+        .filter(p => p.i < pflanzen.length)
+        .map(p => ({ x: p.x * bedW, y: p.y * bedH, r: p.r * bedW, pflanze: pflanzen[p.i], pi: p.i }))
+    : null;
+
+  const placements = (uebernommen && uebernommen.length) ? uebernommen : calcPlacementsSSR(pflanzen, bedW, bedH, {
     gartW, gartenflaeche: (flaeche || 15), dichte: opts.dichte, sichtseite: opts.sichtseite,
     constraintPolys: placementPolys
   });

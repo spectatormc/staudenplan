@@ -4366,9 +4366,24 @@
     const orig = btn ? btn.textContent : '';
     if (btn) { btn.disabled = true; btn.textContent = 'Link wird erstellt …'; }
     try {
+      // Die im Browser berechnete Platzierung mitschicken, damit der geteilte Plan exakt so
+      // aussieht wie der eigene. Ohne sie rechnet der Server neu — und weil seine Zeichenfläche
+      // fest 720 px breit ist, der Browser aber bis zu 800 px nutzt, fallen Pflanzenradius und
+      // Kollisionsauflösung anders aus und die Anordnung weicht sichtbar ab.
+      // Nur die Zahlen, nicht die Pflanzenobjekte: _normPlacements trägt zu jedem Punkt eine
+      // vollständige Kopie der Pflanze, das wären bei dichten Plänen mehrere hundert Kilobyte.
+      const platzierungen = (currentPlan._normPlacements || []).map(p => ({
+        x: Math.round(p.xFrac * 10000) / 10000,
+        y: Math.round(p.yFrac * 10000) / 10000,
+        r: Math.round(p.rFrac * 10000) / 10000,
+        i: p.pi
+      }));
+      // _normPlacements selbst nicht mitspeichern — der Server bekommt die kompakte Fassung.
+      const { _normPlacements, ...planZumTeilen } = currentPlan;
       const res = await fetch('/api/plan-teilen', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan: currentPlan, flaeche: formData.gartenflaeche, grafik: {
+        body: JSON.stringify({ plan: planZumTeilen, flaeche: formData.gartenflaeche, grafik: {
+          platzierungen,
           flaeche: formData.gartenflaeche, beetLaenge: formData.beetLaenge, beetBreite: formData.beetBreite,
           sichtseite: formData.sichtseite, dichte: formData.dichte,
           // Freihandform mitschicken, sonst zeichnet die geteilte Seite ein Rechteck.
