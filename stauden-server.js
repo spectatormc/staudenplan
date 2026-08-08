@@ -311,13 +311,22 @@ const transporter = nodemailer.createTransport({
 
 // ─── Rate Limiting ────────────────────────────────────────────────────────────
 
+// Suchmaschinen-Crawler: dürfen die Inhaltsseiten ohne das globale 200/min-Limit
+// abrufen. Grund: Googlebot crawlt in Schüben und lief in das Limit — GSC verbucht
+// 429 wie einen Serverfehler und drosselt daraufhin das Crawling der ganzen Domain.
+// Die Ausnahme gilt bewusst nur für lesende Zugriffe; alle POST-/API-Routen behalten
+// ihre eigenen (engeren) Limiter, ein gefälschter User-Agent gewinnt darüber nichts.
+const CRAWLER_UA = /googlebot|bingbot|google-inspectiontool|duckduckbot|applebot|yandexbot|slurp/i;
+const istCrawler = req => req.method === 'GET' && CRAWLER_UA.test(req.get('user-agent') || '');
+
 // Global: max 200 Requests pro IP pro Minute (schützt vor Bot-Floods)
 app.use(rl({
   windowMs: 60 * 1000,
   max: 200,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: req => req.path.startsWith('/images/') || req.path.endsWith('.jpg') || req.path.endsWith('.png'),
+  skip: req => req.path.startsWith('/images/') || req.path.endsWith('.jpg') || req.path.endsWith('.png')
+            || istCrawler(req),
   message: 'Zu viele Anfragen. Bitte versuche es in einer Minute erneut.',
 }));
 
@@ -2717,6 +2726,47 @@ app.get('/pflanzen', (req, res) => {
 const SLUG_ALIASE = Object.assign(Object.create(null), {
   'cimicifuga-ramosa': 'actaea-simplex',   // Cimicifuga ramosa ist ein Synonym von Actaea simplex
   'camasia-quamash':   'camassia-quamash', // Tippfehler im botanischen Namen, eigene Zeile
+  // Aus den nginx-Logs: URLs, die Googlebot noch aufruft und die seit dem Namensaudit
+  // 404 liefern. Gattungs-only-Slugs (frühere Sammeleinträge) zeigen auf die Art, die
+  // den Eintrag übernommen hat.
+  'anaphalis':                'anaphalis-triplinervis',
+  'aubrieta':                 'aubrieta-deltoidea',
+  'carex-montana':            'carex',
+  'epimedium-spp':            'epimedium-x-versicolor',
+  'hemerocallis':             'hemerocallis-fulva',
+  'hosta-spp':                'hosta-sieboldiana',
+  'hylotelephium-spectabile': 'hylotelephium-herbstfreude',
+  'lamiastrum-galeobdolon':   'lamium-galeobdolon',  // Lamiastrum ist ein Synonym von Lamium
+  'ligularia':                'ligularia-dentata',
+  'nepeta-x-faassenii':       'nepeta-faassenii',
+  'primula':                  'primula-vulgaris',
+  'pulmonaria-spp':           'pulmonaria-officinalis',
+  'sempervivum':              'sempervivum-tectorum',
+  'sonnenhut':                'rudbeckia-fulgida',    // deutscher Name in Botanik-Slug-Pfad
+  'tradescantia':             'tradescantia-andersoniana',
+  'typha':                    'typha-minima',
+});
+
+// Ratgeber-Slugs, die beim Titel-Audit umbenannt wurden. Google hat die alten URLs
+// noch im Index und crawlt sie weiter — 301 statt 404, damit die Signale erhalten
+// bleiben. Bei künftigen Titeländerungen hier ergänzen.
+const RATGEBER_ALIASE = Object.assign(Object.create(null), {
+  'bienenweide-stauden-und-insektenfoerderung':          'stauden-fuer-bienen-und-insekten-insektenfreundlicher-garten',
+  'bodenvorbereitung-und-standortverbesserung':          'bodenvorbereitung-fuer-staudenbeete-standort-richtig-vorbereiten',
+  'cottage-garten-und-englischer-gartenstil':            'cottage-garten-anlegen-romantische-bepflanzung-nach-englischem-vorbild',
+  'farbgestaltung-im-staudenbeet':                       'farbgestaltung-im-staudenbeet-theorie-und-praxis',
+  'feuchte-standorte-teichrand-und-sumpfbeete':          'teichrand-sumpfbeet-bepflanzen-stauden-fuer-feuchte-standorte',
+  'ganzjahres-attraktivitaet-und-saisonale-abfolge':     'ganzjaehrig-bluehendes-staudenbeet-saisonale-abfolge-planen',
+  'halbschattige-staudenbeete-am-gehoelzrand':           'halbschatten-stauden-schoene-beete-am-gehoelzrand',
+  'heimische-vs-gartenwuerdige-exoten':                  'heimische-stauden-vs-exoten-was-ist-besser-fuer-deinen-garten',
+  'lebendige-boeden-und-bodenbiologie-im-staudenbeet':   'bodenbiologie-im-staudenbeet-gesunden-boden-aufbauen',
+  'pflanzdichte-und-stueckzahlberechnung-im-staudenbeet':'pflanzdichte-berechnen-wie-viele-stauden-pro-m',
+  'planungsprozess-fuer-ein-staudenbeet':                'staudenbeet-planen-schritt-fuer-schritt-anleitung-mit-pflanzplan',
+  'schattenbeete-unter-baeumen-und-straeuchern':         'schattenstauden-garten-das-staudenbeet-unter-baeumen-gestalten',
+  'sonnige-trockene-staudenbeete-und-kiesgaerten':       'kiesgarten-trockenbeet-stauden-fuer-sonnige-trockene-standorte',
+  'stauden-richtig-pflanzen-zeitpunkt-und-technik':      'stauden-pflanzen-zeitpunkt-pflanzabstand-technik',
+  'winteraspekte-und-struktur-im-staudenbeet':           'winteraspekte-im-staudenbeet-schoenheit-auch-in-der-kalten-jahreszeit',
+  'ziergraeser-als-staudenbegleiter':                    'ziergraeser-im-staudenbeet-die-besten-arten-kombinationen',
 });
 
 app.get('/pflanze/:slug', (req, res) => {
@@ -2725,7 +2775,7 @@ app.get('/pflanze/:slug', (req, res) => {
   const alle = db.prepare('SELECT * FROM pflanzen').all();
   const pflanze = alle.find(p => pflanzeToSlug(p.name_botanisch) === slug);
 
-  if (!pflanze) return res.status(404).send('<h2>Pflanze nicht gefunden. <a href="/pflanzen">Zurück zum Lexikon</a></h2>');
+  if (!pflanze) return res.status(404).send(`<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Pflanze nicht gefunden</title></head><body>${NAV_LINKS}<div style="text-align:center;padding:80px 20px"><h1>Pflanze nicht gefunden</h1><p><a href="/pflanzen">Zurück zum Staudenlexikon</a></p></div>${SITE_FOOTER}</body></html>`);
 
   const kauflink = goLink(pflanze.name_botanisch);
   const aehnliche = db.prepare(`
@@ -3597,11 +3647,12 @@ app.get('/ratgeber', (req, res) => {
 
 app.get('/ratgeber/:slug', (req, res) => {
   const slug = req.params.slug;
+  if (RATGEBER_ALIASE[slug]) return res.redirect(301, '/ratgeber/' + RATGEBER_ALIASE[slug]);
   let alle = [];
   try { alle = db.prepare('SELECT rowid, * FROM wissen').all(); } catch {}
 
   const artikel = alle.find(a => slugify(a.titel) === slug);
-  if (!artikel) return res.status(404).send(`<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><title>Nicht gefunden</title></head><body>${NAV_LINKS}<div style="text-align:center;padding:80px 20px"><h1>Artikel nicht gefunden</h1><p><a href="/ratgeber">Zurück zum Ratgeber</a></p></div>${SITE_FOOTER}</body></html>`);
+  if (!artikel) return res.status(404).send(`<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Nicht gefunden</title></head><body>${NAV_LINKS}<div style="text-align:center;padding:80px 20px"><h1>Artikel nicht gefunden</h1><p><a href="/ratgeber">Zurück zum Ratgeber</a></p></div>${SITE_FOOTER}</body></html>`);
 
   const verwandte = alle.filter(a => a.kategorie === artikel.kategorie && a.rowid !== artikel.rowid).slice(0, 3);
 
@@ -4830,8 +4881,14 @@ const server = app.listen(PORT, async () => {
   console.log(`Stauden-Portal läuft auf http://localhost:${PORT}`);
   console.log(`Datenbank: ${pflanzenN} Pflanzen, ${wissenN} Wissens-Einträge`);
 
-  // IndexNow: alle URLs bei Bing einreichen
-  const BASE = process.env.SITE_URL || 'https://www.staudenplan.de';
+  // IndexNow: alle URLs bei Bing einreichen. Nur wenn SITE_URL gesetzt ist (also in
+  // Produktion) — sonst meldet ein lokaler Testlauf den Inhalt der Entwickler-Datenbank
+  // unter der Produktions-Domain an und schickt Bing URLs, die live gar nicht existieren.
+  const BASE = process.env.SITE_URL;
+  if (!BASE) {
+    console.log('IndexNow: übersprungen (SITE_URL nicht gesetzt — kein Produktionsbetrieb)');
+    return;
+  }
   try {
     const pflanzen = db.prepare('SELECT name_botanisch FROM pflanzen').all();
     let wissens = [];
