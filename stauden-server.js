@@ -2861,24 +2861,53 @@ const SLUG_ALIASE = Object.assign(Object.create(null), {
   'typha':                    'typha-minima',
 });
 
-// Ratgeber-Slugs, die beim Titel-Audit umbenannt wurden. Google hat die alten URLs
-// noch im Index und crawlt sie weiter — 301 statt 404, damit die Signale erhalten
-// bleiben. Bei künftigen Titeländerungen hier ergänzen.
+// Ratgeber-Slugs, die beim Titel-Audit umbenannt oder beim Zusammenführen doppelter
+// Artikel aufgelöst wurden. Google hat die alten URLs noch im Index und crawlt sie
+// weiter — 301 statt 404, damit die Signale erhalten bleiben.
+// Bei künftigen Titeländerungen und Zusammenführungen hier ergänzen; danach
+// `node scripts/check-ratgeber-aliase.js` laufen lassen, das findet tote Ziele,
+// Weiterleitungsketten und interne Links, die auf eine Weiterleitung zeigen.
 const RATGEBER_ALIASE = Object.assign(Object.create(null), {
-  'bienenweide-stauden-und-insektenfoerderung':          'stauden-fuer-bienen-und-insekten-insektenfreundlicher-garten',
-  'bodenvorbereitung-und-standortverbesserung':          'bodenvorbereitung-fuer-staudenbeete-standort-richtig-vorbereiten',
-  'cottage-garten-und-englischer-gartenstil':            'cottage-garten-anlegen-romantische-bepflanzung-nach-englischem-vorbild',
-  'farbgestaltung-im-staudenbeet':                       'farbgestaltung-im-staudenbeet-theorie-und-praxis',
-  'feuchte-standorte-teichrand-und-sumpfbeete':          'teichrand-sumpfbeet-bepflanzen-stauden-fuer-feuchte-standorte',
-  'ganzjahres-attraktivitaet-und-saisonale-abfolge':     'ganzjaehrig-bluehendes-staudenbeet-saisonale-abfolge-planen',
-  'halbschattige-staudenbeete-am-gehoelzrand':           'halbschatten-stauden-schoene-beete-am-gehoelzrand',
-  'heimische-vs-gartenwuerdige-exoten':                  'heimische-stauden-vs-exoten-was-ist-besser-fuer-deinen-garten',
-  'lebendige-boeden-und-bodenbiologie-im-staudenbeet':   'bodenbiologie-im-staudenbeet-gesunden-boden-aufbauen',
-  'pflanzdichte-und-stueckzahlberechnung-im-staudenbeet':'pflanzdichte-berechnen-wie-viele-stauden-pro-m',
-  'planungsprozess-fuer-ein-staudenbeet':                'staudenbeet-planen-schritt-fuer-schritt-anleitung-mit-pflanzplan',
-  'schattenbeete-unter-baeumen-und-straeuchern':         'schattenstauden-garten-das-staudenbeet-unter-baeumen-gestalten',
-  'sonnige-trockene-staudenbeete-und-kiesgaerten':       'kiesgarten-trockenbeet-stauden-fuer-sonnige-trockene-standorte',
-  'stauden-richtig-pflanzen-zeitpunkt-und-technik':      'stauden-pflanzen-zeitpunkt-pflanzabstand-technik',
+  'bewaehrte-dreier-kombinationen-die-wichtigsten-trios-der-staudenplanung':          'klassische-dreierkombinationen-fuer-staudenbeete',
+  'bienenfreundliche-stauden-top-15-trachtpflanzen-fuer-deinen-garten':               'stauden-fuer-bienen-und-insekten-insektenfreundlicher-garten',
+  'bienenweide-stauden-und-insektenfoerderung':                                       'stauden-fuer-bienen-und-insekten-insektenfreundlicher-garten',
+  'bepflanzungsplan-online-erstellen-der-kostenlose-ki-planer-fuer-dein-staudenbeet': 'gartenplanung-online-mit-ki-zum-fertigen-staudenbeet-plan',
+  'bodendecker-stauden-flaechendeckende-pflanzen-fuer-weniger-unkraut':               'bodendecker-stauden-flaechendeckende-pflanzen-fuer-alle-standorte',
+  'bodenvorbereitung-und-standortverbesserung':                                       'bodenvorbereitung-fuer-staudenbeete-standort-richtig-vorbereiten',
+  'cottage-garten-und-englischer-gartenstil':                                         'cottage-garten-anlegen-romantische-bepflanzung-nach-englischem-vorbild',
+  // Zeigte auf "…-theorie-und-praxis", das beim Zusammenführen wegfiel → direkt auf den Nachfolger,
+  // sonst entstünde eine 301-Kette.
+  'farbgestaltung-im-staudenbeet':                                                    'staudenbeet-farbgestaltung-harmonische-farbkombinationen-planen',
+  'farbgestaltung-im-staudenbeet-theorie-und-praxis':                                 'staudenbeet-farbgestaltung-harmonische-farbkombinationen-planen',
+  'fehler-vermeiden-haeufige-planungsfehler-in-staudenbeeten':                        'haeufige-planungs-und-pflanzfehler-im-staudenbeet',
+  'feuchte-standorte-teichrand-und-sumpfbeete':                                       'teichrand-sumpfbeet-bepflanzen-stauden-fuer-feuchte-standorte',
+  'ganzjaehrig-bluehendes-staudenbeet-saisonale-abfolge-planen':                      'bluetenfolge-planen-fruehjahr-bis-herbst-ohne-pause',
+  // Wie oben: altes Ziel ist weggefallen, daher direkt auf den Nachfolger.
+  'ganzjahres-attraktivitaet-und-saisonale-abfolge':                                  'bluetenfolge-planen-fruehjahr-bis-herbst-ohne-pause',
+  'halbschattige-staudenbeete-am-gehoelzrand':                                        'halbschatten-stauden-schoene-beete-am-gehoelzrand',
+  'heimische-vs-gartenwuerdige-exoten':                                               'heimische-stauden-vs-exoten-was-ist-besser-fuer-deinen-garten',
+  'hoehenstaffelung-und-tiefenwirkung':                                               'hoehenstaffelung-im-staudenbeet-das-wichtigste-gestaltungsprinzip',
+  'kontrastprinzip-und-texturkombinationen':                                          'kombinationsprinzipien-harmonie-und-kontrast-gezielt-einsetzen',
+  'lebendige-boeden-und-bodenbiologie-im-staudenbeet':                                'bodenbiologie-im-staudenbeet-gesunden-boden-aufbauen',
+  'lebensbereiche-nach-hansen-stahl-stauden-am-richtigen-standort':                   'lebensbereiche-der-stauden-nach-hansen-stahl',
+  'pflanzabstaende-und-stueckzahlen-flaechen-richtig-berechnen':                      'pflanzdichte-berechnen-wie-viele-stauden-pro-m',
+  'pflanzdichte-und-stueckzahlberechnung-im-staudenbeet':                             'pflanzdichte-berechnen-wie-viele-stauden-pro-m',
+  // Wie oben: altes Ziel ist weggefallen, daher direkt auf den Nachfolger.
+  'planungsprozess-fuer-ein-staudenbeet':                                             'staudenbeet-anlegen-schritt-fuer-schritt-anleitung',
+  'schattenbeete-unter-baeumen-und-straeuchern':                                      'schattenstauden-garten-das-staudenbeet-unter-baeumen-gestalten',
+  'sonnige-trockene-staudenbeete-und-kiesgaerten':                                    'kiesgarten-trockenbeet-stauden-fuer-sonnige-trockene-standorte',
+  'stauden-die-den-ganzen-sommer-bluehen-dauerbueher-fuer-das-beet':                  'stauden-die-den-ganzen-sommer-bluehen',
+  'stauden-fuer-den-teichrand-und-feuchtbeet':                                        'teichrand-sumpfbeet-bepflanzen-stauden-fuer-feuchte-standorte',
+  'stauden-fuer-den-vorgarten-ideen-und-bepflanzungsplan':                            'stauden-fuer-den-vorgarten-pflegeleichte-ideen-fuer-die-strassenfront',
+  'stauden-kaufen-worauf-beim-kauf-in-gaertnerei-und-online-shop-achten':             'stauden-kaufen-worauf-beim-kauf-achten',
+  'stauden-schneiden-der-richtige-rueckschnitt-fuer-jede-art':                        'stauden-schneiden-wann-und-wie-richtig-schneiden',
+  'staudenbeet-anlegen-kosten-planung-und-schritt-fuer-schritt-anleitung':            'staudenbeet-anlegen-schritt-fuer-schritt-anleitung',
+  'staudenbeet-planen-online-schritt-fuer-schritt-mit-dem-ki-gartenplaner':           'gartenplanung-online-mit-ki-zum-fertigen-staudenbeet-plan',
+  'staudenbeet-planen-schritt-fuer-schritt-anleitung-mit-pflanzplan':                 'staudenbeet-anlegen-schritt-fuer-schritt-anleitung',
+  'stauden-richtig-pflanzen-zeitpunkt-und-technik':                                   'stauden-pflanzen-zeitpunkt-pflanzabstand-technik',
+  'steingarten-und-alpinum-stauden-fuer-felsige-anlagen':                             'stauden-fuer-trockenmauern-und-steingaerten',
+  'weisser-garten-harmonie-in-weiss-und-silber-nach-sissinghurst':                    'stauden-fuer-weisse-beete-weissgarten-im-eigenen-garten-anlegen',
+  'winterharte-stauden-fuer-deutschland-was-wirklich-den-winter-uebersteht':          'winterharte-stauden-fuer-deutschland-was-ueberlebt-den-winter',
   'winteraspekte-und-struktur-im-staudenbeet':           'winteraspekte-im-staudenbeet-schoenheit-auch-in-der-kalten-jahreszeit',
   'ziergraeser-als-staudenbegleiter':                    'ziergraeser-im-staudenbeet-die-besten-arten-kombinationen',
 });
