@@ -336,8 +336,24 @@ const pflanzenLimiter = rl({
   message: { error: 'Zu viele Anfragen.' }
 });
 
+// Kontingent für KI-Pläne: 10 pro 15 Minuten pro IP — aber nur für Pläne, die der Nutzer
+// auch bekommen hat. Vorher zählte jeder Hänger mit: die drei Ausfälle in drei Minuten am
+// 07.08.2026 kosteten den Betroffenen ein Drittel seines Kontingents, ohne dass er je einen
+// Plan gesehen hätte. Ein Notplan aus der Datenbank verbraucht das KI-Kontingent ebenfalls
+// nicht, weil er keinen KI-Aufruf gekostet hat.
 const planLimiter = rl({
   windowMs: 15 * 60 * 1000, max: 10,
+  standardHeaders: true, legacyHeaders: false,
+  skipFailedRequests: true,
+  requestWasSuccessful: (req, res) => res.statusCode < 400 && !res.locals.notplan,
+  message: { error: 'Du hast in den letzten 15 Minuten schon 10 Pläne erstellt. Gleich geht es weiter.' }
+});
+// Harter Deckel dahinter, der JEDEN Versuch zählt. Ohne ihn wäre die Ausnahme oben ein
+// Schlupfloch: Wer Fehlschläge provoziert, könnte sonst unbegrenzt OpenAI-Aufrufe auslösen.
+// 25 ist das Zweieinhalbfache — genug Luft für die schlechteste gemessene Fehlerquote (45 %
+// am 29.07.), eng genug als Kostenbremse.
+const planHartLimiter = rl({
+  windowMs: 15 * 60 * 1000, max: 25,
   message: { error: 'Zu viele Anfragen, bitte versuche es später erneut.' }
 });
 const anfrageLimiter = rl({
@@ -511,6 +527,215 @@ function getGeophytenKandidaten(licht) {
        ORDER BY RANDOM() LIMIT 10`
     ).all(...GENERA.map(g => `${g}%`), `%${lichtTerm}%`);
   } catch { return []; }
+}
+
+// ─── Notplan: regelbasierter Ersatzplan ohne KI ──────────────────────────────
+// Wenn OpenAI nicht antwortet (in 14 Tagen im August 2026 bei 8,3 % der Anfragen), bekam der
+// Nutzer bisher nur eine Fehlermeldung. Alle Bausteine für einen brauchbaren Plan liegen aber
+// schon vor: 709 Arten mit Höhe, Ausbreitung, Blühzeit, Winteraspekt und Preis, dazu eine
+// rollenausgewogene Kandidatenauswahl. Der Notplan setzt daraus nach denselben Regeln
+// zusammen, die auch im Prompt stehen — Höhenstaffelung, Rollenverteilung, Blütenfolge.
+//
+// Er wird IMMER als solcher gekennzeichnet und nie als KI-Plan ausgegeben. Alle Angaben
+// stammen aus der Datenbank; es wird nichts formuliert, was nicht aus den gewählten Pflanzen
+// hervorgeht.
+
+const NOTPLAN_MONAT = {
+  januar: 1, februar: 2, märz: 3, maerz: 3, april: 4, mai: 5, juni: 6,
+  juli: 7, august: 8, september: 9, oktober: 10, november: 11, dezember: 12
+};
+
+// Rollen wie in getPflanzenkandidaten (LEIT_F/BEGLEIT_F/FUELL_F): erst das gepflegte Feld,
+// sonst nach Endhöhe. 'Strukturpflanze' (1 Zeile) fällt bewusst auf die Höhenlogik zurück.
+function notplanRolle(p) {
+  const r = p.rolle_empfehlung;
+  if (r === 'Leitstaude' || r === 'Begleitstaude' || r === 'Füllstaude') return r;
+  const h = Number(p.hoehe_cm_max) || 50;
+  return h >= 100 ? 'Leitstaude' : h >= 50 ? 'Begleitstaude' : 'Füllstaude';
+}
+
+// "Juni - September" → [6,7,8,9]. Unlesbares gibt eine leere Liste, dann taucht die Pflanze
+// im Kalender schlicht nicht auf, statt dort mit geratenen Monaten zu stehen.
+// Getrennt wird nur an echten Trennern. Eine Zeichenklasse wie [–\-—bis] wäre falsch: sie
+// trennt auch an den Buchstaben b, i und s und zerlegt damit "juni" und "august".
+function notplanMonate(bluehzeit) {
+  const teile = String(bluehzeit || '').toLowerCase().split(/\s*(?:–|—|-|bis)\s*/).map(s => s.trim()).filter(Boolean);
+  const von = NOTPLAN_MONAT[teile[0]], bis = NOTPLAN_MONAT[teile[1]] ?? von;
+  if (!von) return [];
+  const monate = [];
+  for (let m = von, i = 0; i < 12; i++, m = m === 12 ? 1 : m + 1) {
+    monate.push(m);
+    if (m === bis) break;
+  }
+  return monate;
+}
+
+function notplanStandort(p, sichtseite) {
+  const h = Number(p.hoehe_cm_max) || 50;
+  const s = String(sichtseite || '');
+  if (/rundbeet|inselbeet/i.test(s)) return h >= 100 ? 'Mitte' : h >= 50 ? 'Mittelzone' : 'Rand';
+  if (/eckbeet/i.test(s)) return h >= 100 ? 'Ecke/Hintergrund' : h >= 50 ? 'Mitte' : 'Vordergrund';
+  return h >= 100 ? 'Hintergrund' : h >= 50 ? 'Mitte' : 'Vordergrund';
+}
+
+// Zwiebel- und Knollenpflanzen. Sie stehen mit in der Pflanzentabelle und damit auch in der
+// Kandidatenliste, sind aber keine Stauden: Ein Krokus hat 10 cm Standfläche, wodurch die
+// Stückzahlformel ihn zur größten Position im Beet macht — in einem Testlauf 215 Krokusse in
+// einem 60-m²-Beet, das nach dem Abblühen im April leer dasteht. Der KI-Pfad behandelt sie
+// deshalb als eigene Schicht (Rolle "Geophyt"), der Notplan tut das jetzt genauso.
+const GEOPHYTEN_GATTUNGEN = ['Tulipa', 'Narcissus', 'Allium', 'Muscari', 'Crocus', 'Galanthus', 'Scilla', 'Camassia', 'Nectaroscordum', 'Fritillaria'];
+const istGeophyt = p => GEOPHYTEN_GATTUNGEN.some(g => String(p.name_botanisch || '').startsWith(g + ' '));
+
+function buildNotplan({ kandidaten, geophytenKandidaten, geophyten, gartenflaeche, dichte, vielfalt, sichtseite, licht, boden, stil }) {
+  const flaeche = Number(gartenflaeche) > 0 ? Number(gartenflaeche) : 10;
+  const nachRolle = { Leitstaude: [], Begleitstaude: [], Füllstaude: [] };
+  for (const p of (kandidaten || [])) {
+    if (istGeophyt(p)) continue;
+    nachRolle[notplanRolle(p)].push(p);
+  }
+  // Ohne Leit- oder Füllstauden wäre der Plan kein Plan — dann lieber ehrlich scheitern.
+  if (!nachRolle.Leitstaude.length || !nachRolle.Füllstaude.length) return null;
+
+  const ARTEN = { wenig: [1, 3, 2], ausgewogen: [2, 4, 3], viel: [3, 6, 4] };
+  const [nLeit, nBegleit, nFuell] = ARTEN[vielfalt] || ARTEN.ausgewogen;
+  // Blühzeiten spreizen: erst nach Blühbeginn sortieren, dann gleichmäßig durchgreifen.
+  // So deckt die Auswahl die Saison ab, statt fünf Arten aus demselben Monat zu nehmen.
+  const spreizen = (liste, n) => {
+    const sortiert = [...liste].sort((a, b) => (notplanMonate(a.bluehzeit)[0] || 13) - (notplanMonate(b.bluehzeit)[0] || 13));
+    if (sortiert.length <= n) return sortiert;
+    return Array.from({ length: n }, (_, i) => sortiert[Math.round(i * (sortiert.length - 1) / Math.max(1, n - 1))]);
+  };
+
+  const gewaehlt = [
+    ...spreizen(nachRolle.Leitstaude, nLeit),
+    ...spreizen(nachRolle.Begleitstaude, nBegleit),
+    ...spreizen(nachRolle.Füllstaude, nFuell),
+  ].filter((p, i, arr) => arr.findIndex(q => q.name_botanisch === p.name_botanisch) === i);
+  if (gewaehlt.length < 3) return null;
+
+  // Stückzahlen: Flächenanteil je Rolle durch die Standfläche der Art. Anschließend auf die
+  // Zieldichte normieren, damit die Einstellung "locker/normal/dicht" auch wirklich wirkt.
+  const ANTEIL = { Leitstaude: 0.30, Begleitstaude: 0.45, Füllstaude: 0.25 };
+  const proRolle = {};
+  gewaehlt.forEach(p => { const r = notplanRolle(p); proRolle[r] = (proRolle[r] || 0) + 1; });
+
+  const roh = gewaehlt.map(p => {
+    const rolle = notplanRolle(p);
+    const anteilFlaeche = flaeche * ANTEIL[rolle] / proRolle[rolle];
+    const breiteM = Math.max(0.1, (Number(p.breite_cm_max) || 40) / 100);
+    const n = Math.round(anteilFlaeche / (breiteM * breiteM));
+    return { p, rolle, n: Math.max(1, n) };
+  });
+
+  const ppm2 = dichte === 'locker' ? 2.5 : dichte === 'dicht' ? 7 : 4;
+  const ziel = Math.round(flaeche * ppm2);
+  const summe = roh.reduce((s, r) => s + r.n, 0);
+  const faktor = summe > 0 ? ziel / summe : 1;
+
+  const pflanzen = roh.map(({ p, rolle, n }) => {
+    const min = rolle === 'Leitstaude' ? 3 : rolle === 'Füllstaude' ? 5 : 2;
+    return {
+      name_deutsch: p.name_deutsch,
+      name_botanisch: p.name_botanisch,
+      beschreibung: p.beschreibung || '',
+      standort: notplanStandort(p, sichtseite),
+      bluehzeit: p.bluehzeit || '',
+      farbe: p.farbe || '',
+      hoehe_cm: Number(p.hoehe_cm_max) || Number(p.hoehe_cm_min) || 50,
+      pflege_sterne: Number(p.pflege_sterne) || 2,
+      rolle,
+      stueckzahl: Math.max(min, Math.round(n * faktor)),
+      preis_stueck_eur: Number(p.preis_stueck_eur) || 0,
+      kauflink: ''
+    };
+  });
+
+  // Geophyten als eigene Schicht ON TOP, nur wenn angefordert — wie im KI-Pfad. Sie ersetzen
+  // keine Staude und fließen nicht in die Pflanzdichte ein, deshalb erst nach der Normierung.
+  if (geophyten && Array.isArray(geophytenKandidaten) && geophytenKandidaten.length) {
+    const gewaehlteGeo = spreizen(geophytenKandidaten, Math.min(3, geophytenKandidaten.length));
+    const proArt = Math.max(5, Math.round(flaeche * 5 / gewaehlteGeo.length));
+    gewaehlteGeo.forEach(g => {
+      pflanzen.push({
+        name_deutsch: g.name_deutsch,
+        name_botanisch: g.name_botanisch,
+        beschreibung: g.beschreibung || '',
+        standort: 'Zwischen den Stauden',
+        bluehzeit: g.bluehzeit || '',
+        farbe: g.farbe || '',
+        hoehe_cm: Number(g.hoehe_cm_max) || 25,
+        pflege_sterne: 1,
+        rolle: 'Geophyt',
+        stueckzahl: proArt,
+        preis_stueck_eur: Number(g.preis_stueck_eur) || 0,
+        kauflink: ''
+      });
+      gewaehlt.push(g);
+    });
+  }
+
+  // Pflanzkalender aus den tatsächlichen Blühzeiten, Winter aus dem Feld winteraspekt.
+  const SAISON = { Frühling: [3, 4, 5], Sommer: [6, 7, 8], Herbst: [9, 10, 11] };
+  const kalender = { Frühling: [], Sommer: [], Herbst: [], Winter: [] };
+  gewaehlt.forEach(p => {
+    const monate = notplanMonate(p.bluehzeit);
+    for (const [saison, ms] of Object.entries(SAISON)) {
+      if (monate.some(m => ms.includes(m))) kalender[saison].push(`${p.name_deutsch} (${p.bluehzeit})`);
+    }
+    const w = String(p.winteraspekt || '');
+    if (w && w !== 'unauffällig') kalender.Winter.push(`${p.name_deutsch} — ${w}`);
+  });
+
+  // Texte ausschließlich aus dem, was in der Auswahl tatsächlich steht.
+  // Farben stehen in der DB als "Rosa|Weiß|Lila" und in gemischter Schreibung — auftrennen
+  // und normalisieren, sonst steht im Text "Rosa|Weiß|Lila, rosa, Rot|Rosa".
+  const farben = [...new Map(gewaehlt
+    .flatMap(p => String(p.farbe || '').split('|'))
+    .map(f => f.trim())
+    .filter(Boolean)
+    .map(f => [f.toLowerCase(), f.charAt(0).toUpperCase() + f.slice(1).toLowerCase()])
+  ).values()];
+  const alleMonate = gewaehlt.flatMap(p => notplanMonate(p.bluehzeit));
+  const MONATSNAME = ['', 'Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
+  const spanne = alleMonate.length
+    ? `${MONATSNAME[Math.min(...alleMonate)]} bis ${MONATSNAME[Math.max(...alleMonate)]}`
+    : null;
+  const hoechste = Math.max(...pflanzen.map(p => p.hoehe_cm));
+  const gesamtStueck = pflanzen.reduce((s, p) => s + p.stueckzahl, 0);
+
+  // Numerus mitführen: bei genau einer Leitstaude heißt es "bildet", nicht "bilden".
+  const leitNamen = pflanzen.filter(p => p.rolle === 'Leitstaude').map(p => p.name_deutsch);
+  const tipps = [
+    `Setze die Leitstauden zuerst und ordne die übrigen Arten um sie herum an — ${leitNamen.join(', ')} ${leitNamen.length === 1 ? 'bildet' : 'bilden'} das Gerüst des Beetes.`,
+    'Pflanze jede Art in Gruppen statt einzeln; Gruppen wirken ruhiger und schließen die Fläche schneller.',
+  ];
+  if (kalender.Winter.length) {
+    tipps.push(`Lass die Samenstände über den Winter stehen — ${kalender.Winter.length === 1 ? 'eine Art in diesem Plan hat' : `${kalender.Winter.length} Arten in diesem Plan haben`} Winterschmuck und bieten Vögeln Nahrung.`);
+  }
+  const luecken = Object.entries(SAISON).filter(([, ms]) => !alleMonate.some(m => ms.includes(m))).map(([s]) => s);
+  if (luecken.length) {
+    // "Frühling und Sommer" bzw. "Frühling, Sommer und Herbst" — nicht "A und B und C".
+    const aufzaehlung = luecken.length === 1 ? luecken[0]
+      : `${luecken.slice(0, -1).join(', ')} und ${luecken[luecken.length - 1]}`;
+    tipps.push(`In dieser Zusammenstellung blüht im ${aufzaehlung} nichts — hier lassen sich später gezielt Arten ergänzen.`);
+  }
+
+  return {
+    quelle: 'datenbank',
+    // Standort als Aufzählung statt im Satz: "auf lehmig Boden" wäre grammatisch falsch, und
+    // die Bodenwerte der DB lassen sich nicht zuverlässig deklinieren.
+    konzept: `${stil || 'Staudenbeet'} — Standort ${licht || 'unbestimmt'}, Boden ${boden || 'normal'}. `
+      + `${pflanzen.length} Arten in gestaffelter Höhe${spanne ? `, Blüte von ${spanne}` : ''}.`,
+    pflanzen,
+    beetbeschreibung: `Dieser Plan stellt ${pflanzen.length} Arten für ${flaeche} m² zusammen, insgesamt ${gesamtStueck} Pflanzen. `
+      + `Die Höhen reichen bis ${hoechste} cm und sind nach ${/rundbeet|inselbeet/i.test(String(sichtseite)) ? 'innen ansteigend' : 'hinten ansteigend'} gestaffelt. `
+      + (farben.length ? `Vertreten sind die Blütenfarben ${farben.join(', ')}. ` : '')
+      + (spanne ? `Zusammen decken die Arten die Zeit von ${spanne} ab.` : ''),
+    gesamtkosten_geschaetzt: 0,
+    pflanzabstand_hinweis: 'Die Stückzahlen sind aus der Endbreite der jeweiligen Art und der gewählten Pflanzdichte berechnet. Wer sofortige Wirkung möchte, setzt etwas dichter und teilt die Stauden nach einigen Jahren.',
+    pflanzkalender: kalender,
+    tipps
+  };
 }
 
 function buildSystemPrompt(kandidaten, wissen, geophytenKandidaten = []) {
@@ -962,7 +1187,7 @@ function klassifiziereOpenAIFehler(err) {
   return 'unbekannt';
 }
 
-app.post('/api/plan', planLimiter, async (req, res) => {
+app.post('/api/plan', planHartLimiter, planLimiter, async (req, res) => {
   const t0 = Date.now();
   const { gartenflaeche, licht, boden, standort_beschreibung, stil, sichtseite, farbe, saison,
           lieblingspflanzen, budget, nutzung, pflegezeit, vielfalt, dichte, plz, geophyten } = req.body;
@@ -1108,13 +1333,24 @@ JSON-Format:
         versuchMs.push(Date.now() - tv);
       }
     }
+    let notplan = false;
     if (!plan) {
+      // Statt einer Fehlermeldung ein regelbasierter Plan aus der eigenen Datenbank. Er kostet
+      // keinen API-Aufruf, läuft in Millisekunden und wird klar gekennzeichnet — der Nutzer
+      // bekommt etwas Brauchbares statt eines Abbruchs.
+      plan = buildNotplan({ kandidaten, geophytenKandidaten, geophyten, gartenflaeche, dichte, vielfalt, sichtseite, licht, boden, stil });
+      notplan = !!plan;
+      // Flag für den Rate-Limiter: ein Notplan hat kein KI-Kontingent verbraucht.
+      if (notplan) res.locals.notplan = true;
+      console.error(`plan ${notplan ? 'notplan' : 'fehlgeschlagen'} ms=${Date.now() - t0} versuche=${versuche} versuch_ms=${versuchMs.join(',')} grund=${grund || 'unbekannt'} modell=${modell} flaeche=${gartenflaeche}`);
+    }
+    if (!plan) {
+      // Auch der Notplan war nicht möglich (zu wenige Kandidaten für den Standort).
       // 504 statt 500: Das Frontend bevorzugt data.error, sobald JSON vorliegt — der Text muss
       // also hier stehen. Der Statuscode bleibt trotzdem in der 502/504-Familie, damit der
       // vorhandene Zweig im Frontend als Netz greift, falls die Antwort doch einmal ohne JSON
       // ankommt. Bei Timeouts sagt die Meldung, was wirklich los war.
       const istZeit = grund === 'timeout' || grund === 'budget';
-      console.error(`plan fehlgeschlagen ms=${Date.now() - t0} versuche=${versuche} versuch_ms=${versuchMs.join(',')} grund=${grund || 'unbekannt'} modell=${modell} flaeche=${gartenflaeche}`);
       return res.status(istZeit ? 504 : 502).json({
         error: istZeit
           ? 'Die Planerstellung hat zu lange gedauert. Bitte versuch es noch einmal — bei kleineren Flächen geht es meist schneller.'
@@ -1193,8 +1429,17 @@ JSON-Format:
     // Eine Abschlusszeile je Lauf. Bis August stand im Log nur "OpenAI Fehler: Request timed out"
     // ohne Dauer, Fläche oder Versuchszahl — man konnte hinterher nicht sagen, welche Anfrage wie
     // lange lief. Mit dieser Zeile lässt sich prüfen, ob PLAN_VERSUCH_MS richtig gewählt ist.
-    console.log(`plan ok ms=${Date.now() - t0} versuche=${versuche} versuch_ms=${versuchMs.join(',')} modell=${modell} flaeche=${gartenflaeche} dichte=${dichte || 'normal'} pflanzen=${Array.isArray(plan.pflanzen) ? plan.pflanzen.length : 0}`);
-    res.json({ success: true, plan, rag: { kandidaten: kandidaten.length, wissen: wissen.length } });
+    if (!notplan) {
+      console.log(`plan ok ms=${Date.now() - t0} versuche=${versuche} versuch_ms=${versuchMs.join(',')} modell=${modell} flaeche=${gartenflaeche} dichte=${dichte || 'normal'} pflanzen=${Array.isArray(plan.pflanzen) ? plan.pflanzen.length : 0}`);
+    }
+    res.json({
+      success: true, plan,
+      quelle: notplan ? 'datenbank' : 'ki',
+      hinweis: notplan
+        ? 'Die KI war gerade nicht erreichbar. Dieser Plan wurde nach denselben Regeln aus unserer Staudendatenbank zusammengestellt — Höhenstaffelung, Rollenverteilung und Blütenfolge stimmen, nur die persönliche Handschrift fehlt.'
+        : undefined,
+      rag: { kandidaten: kandidaten.length, wissen: wissen.length }
+    });
   } catch (err) {
     // Fängt seit der Budget-Umstellung KEINE OpenAI-Fehler mehr (die werden in der Schleife
     // behandelt), sondern nur noch Fehler aus DB-Anreicherung und Budget-Kappung. Das Präfix

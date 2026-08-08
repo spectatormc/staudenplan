@@ -1677,6 +1677,7 @@
     <div class="loading-step" id="ls-3"><span class="ls-icon">📊</span> Mengen berechnen</div>
     <div class="loading-step" id="ls-4"><span class="ls-icon">📅</span> Pflanzkalender erstellen</div>
   </div>
+  <p id="loading-status" style="margin-top:14px;font-size:.85rem;color:var(--text-light);min-height:1.2em"></p>
 </div>
 
 <!-- ERGEBNIS -->
@@ -1686,6 +1687,12 @@
     <p id="ergebnis-subtitle">Maßgeschneidert für deinen Garten</p>
     <div class="ergebnis-meta" id="ergebnis-meta"></div>
     <div id="saison-warnung" style="display:none;margin:12px 0 4px;padding:10px 14px;background:#fef9c3;border:1px solid #fde047;border-radius:8px;font-size:.85rem;color:#854d0e"></div>
+    <!-- Hinweis, wenn der Plan ohne KI aus der Staudendatenbank kam. Muss sichtbar sein:
+         ein Regelplan darf nie als KI-Plan durchgehen. -->
+    <div id="notplan-hinweis" style="display:none;margin:12px 0 4px;padding:12px 14px;background:#eef6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:.85rem;color:#1e40af;text-align:left">
+      <span id="notplan-text"></span>
+      <button type="button" onclick="planErstellen()" style="margin-left:8px;background:#1e40af;color:#fff;border:0;border-radius:6px;padding:6px 12px;font-size:.8rem;font-weight:600;cursor:pointer">Nochmal mit KI versuchen</button>
+    </div>
   </div>
 
   <!-- Beetkonzept -->
@@ -2682,8 +2689,12 @@
               : `Der Server hat mit Status ${res.status} geantwortet. Bitte versuch es in einem Moment noch einmal.`));
       }
       if (!data || !data.success) throw new Error((data && data.error) || 'Unbekannter Fehler');
-      if (window.plausible) plausible('Plan erstellt');
+      document.getElementById('ls-4').classList.add('done');
+      if (window.plausible) plausible(data.quelle === 'datenbank' ? 'Plan erstellt (Notplan)' : 'Plan erstellt');
       currentPlan = data.plan;
+      // Herkunft merken, damit renderErgebnis den Hinweis zeigen kann.
+      currentPlan._quelle = data.quelle || 'ki';
+      currentPlan._hinweis = data.hinweis || null;
       // Leitstauden immer mind. 3 Exemplare (Profipraxis)
       currentPlan.pflanzen.forEach(p => {
         if (p.rolle === 'Leitstaude' && (p.stueckzahl || 1) < 3) p.stueckzahl = 3;
@@ -2695,16 +2706,49 @@
       if (formData.modus === 'professionell') { show('view-professionell'); proGoStep(6); }
       else { show('view-fragebogen'); goStep(5); }
       alert('Fehler: ' + err.message);
+    } finally {
+      // Timer in jedem Fall aufräumen, sonst läuft der Sekundenzähler im Hintergrund weiter.
+      stopLoadingSteps();
     }
   }
 
+  // Ladeanzeige. Bis August 2026 hakte sie alle vier Schritte nach 3 Sekunden ab und tat
+  // dann bis zu 17 Sekunden nichts — der Nutzer sah einen fertigen Fortschritt und wartete
+  // trotzdem weiter. Jetzt sind die Zeitpunkte an der gemessenen Dauer ausgerichtet
+  // (11–17 s), der letzte Schritt wird erst mit der Antwort abgehakt, und ein Sekundenzähler
+  // sagt, wie lange es üblicherweise dauert. Aus unbestimmtem Warten wird bestimmtes Warten.
+  let ladeTimer = null, ladeTimeouts = [];
+
   function animateLoadingSteps() {
-    const steps = ['ls-1', 'ls-2', 'ls-3', 'ls-4'];
-    steps.forEach((id, i) => {
-      setTimeout(() => {
-        document.getElementById(id).classList.add('done');
-      }, 600 + i * 800);
+    stopLoadingSteps();
+    ['ls-1', 'ls-2', 'ls-3', 'ls-4'].forEach(id => document.getElementById(id).classList.remove('done'));
+    // Schritt 4 bleibt bewusst offen, bis die Antwort da ist.
+    [['ls-1', 2000], ['ls-2', 5000], ['ls-3', 9000]].forEach(([id, ms]) => {
+      ladeTimeouts.push(setTimeout(() => document.getElementById(id).classList.add('done'), ms));
     });
+
+    const start = Date.now();
+    const status = document.getElementById('loading-status');
+    const tick = () => {
+      const s = Math.round((Date.now() - start) / 1000);
+      // Keine Schätzung aus der Fläche: die Messungen tragen sie nicht (40 m² brauchten
+      // 10,8 s, 8 m² brauchten 10,9 s). Lieber eine ehrliche Spanne als erfundene Präzision.
+      status.textContent = s < 20
+        ? `Läuft seit ${s} s — dauert meistens 10 bis 20 Sekunden.`
+        : s < 35
+          ? `Läuft seit ${s} s — heute dauert es länger als gewöhnlich. Wir bleiben dran.`
+          : `Läuft seit ${s} s — falls die KI nicht antwortet, stellen wir dir gleich einen Plan aus unserer Staudendatenbank zusammen.`;
+    };
+    tick();
+    ladeTimer = setInterval(tick, 1000);
+  }
+
+  function stopLoadingSteps() {
+    if (ladeTimer) { clearInterval(ladeTimer); ladeTimer = null; }
+    ladeTimeouts.forEach(clearTimeout);
+    ladeTimeouts = [];
+    const status = document.getElementById('loading-status');
+    if (status) status.textContent = '';
   }
 
   // ── Farb-Mapping ──────────────────────────────────────────────────────────────
@@ -4103,6 +4147,18 @@
 
     document.getElementById('ergebnis-subtitle').textContent =
       `${plan.pflanzen.length} Pflanzenarten · ${formData.gartenflaeche} m² · ${formData.licht} · ${formData.stil}`;
+
+    // Notplan kennzeichnen. escapeHtml ist hier nicht nötig, weil der Text per textContent
+    // gesetzt wird — aber der Zweig muss auch wieder ausblenden, sonst bliebe der Hinweis
+    // beim nächsten (erfolgreichen) Plan stehen.
+    const npBox = document.getElementById('notplan-hinweis');
+    if (plan._quelle === 'datenbank') {
+      document.getElementById('notplan-text').textContent = plan._hinweis
+        || 'Dieser Plan wurde ohne KI aus unserer Staudendatenbank zusammengestellt.';
+      npBox.style.display = 'block';
+    } else {
+      npBox.style.display = 'none';
+    }
 
     const stauden = plan.pflanzen.filter(p => p.rolle !== 'Geophyt');
     const geos = plan.pflanzen.filter(p => p.rolle === 'Geophyt');
