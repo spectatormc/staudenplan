@@ -134,7 +134,41 @@ db.exec(`
     event TEXT NOT NULL,
     quiz TEXT
   );
+  -- Anonyme Statistik je erstelltem Plan. Bis August 2026 wurde die PLZ bei jedem Plan
+  -- abgefragt, einmal für die Klimaregion-Zeile benutzt und dann verworfen — nach über 80
+  -- Plänen war deshalb unbekannt, aus welcher Gegend die Planersteller kommen.
+  -- Bewusst OHNE IP, ohne User-Agent und ohne Bezug zu einer E-Mail: Das bleibt damit eine
+  -- Statistik über Beete, keine Sammlung über Personen.
+  CREATE TABLE IF NOT EXISTS plan_statistik (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    erstellt_am TEXT DEFAULT (datetime('now')),
+    plz TEXT,
+    gartenflaeche REAL,
+    licht TEXT,
+    boden TEXT,
+    stil TEXT,
+    dichte TEXT,
+    vielfalt TEXT,
+    sichtseite TEXT,
+    geophyten INTEGER,
+    quelle TEXT,          -- 'ki' oder 'datenbank' (Notplan)
+    dauer_ms INTEGER,
+    arten INTEGER
+  );
 `);
+
+// Nachträglich ergänzte Spalten in email_gate. ALTER TABLE ist in SQLite idempotent nur über
+// den Umweg der Fehlerbehandlung — die Tabelle existiert bei Bestandsinstallationen bereits.
+for (const [spalte, typ] of [
+  ['plz', 'TEXT'],
+  ['boden', 'TEXT'],
+  ['werbung_einwilligung', 'INTEGER DEFAULT 0'],  // getrennt von der Servicemail
+  ['bestaetigt', 'INTEGER DEFAULT 0'],            // Double-Opt-In für die Werbeeinwilligung
+  ['token', 'TEXT'],                              // für Bestätigung und Abmeldung
+  ['abgemeldet_am', 'TEXT'],
+]) {
+  try { db.exec(`ALTER TABLE email_gate ADD COLUMN ${spalte} ${typ}`); } catch { /* Spalte existiert schon */ }
+}
 
 // ─── Gaißmayer-Kaufweiterleitung (ersetzt Amazon-Affiliate) ───────────────────
 // Ziel-URL zentral gepflegt: sobald ein Deep-Link / eine Kooperation existiert, hier ändern.
@@ -1397,7 +1431,15 @@ JSON-Format:
         const preis_stueck_eur = (artTreffer && dbP.preis_stueck_eur != null)
           ? dbP.preis_stueck_eur
           : p.preis_stueck_eur;
-        return { ...p, preis_stueck_eur, kauflink: goLink(nameBot), bild_url: dbP?.bild_url || null, pflanzabstand_cm, fehler };
+        // Giftigkeit aus der kuratierten Liste an den Plan hängen. Bis August 2026 war das
+        // Feld zwar für alle 709 Pflanzen gepflegt, kam im Planer aber nie an: Es wurde
+        // ausschließlich auf der Einzelpflanzenseite ausgegeben. Der Planer konnte damit
+        // Eisenhut oder Fingerhut in ein Familienbeet setzen, ohne ein Wort dazu — bei
+        // 141 giftigen und 22 stark giftigen Arten im Bestand.
+        const gift = giftigkeit(nameBot);
+        return { ...p, preis_stueck_eur, kauflink: goLink(nameBot), bild_url: dbP?.bild_url || null,
+                 pflanzabstand_cm, fehler,
+                 giftig: gift ? { stufe: gift.stufe, text: gift.text } : null };
       });
 
       // Gesamtkosten serverseitig aus (DB-)Preisen × Stückzahl — konsistent mit dem Frontend,
@@ -1432,6 +1474,26 @@ JSON-Format:
     if (!notplan) {
       console.log(`plan ok ms=${Date.now() - t0} versuche=${versuche} versuch_ms=${versuchMs.join(',')} modell=${modell} flaeche=${gartenflaeche} dichte=${dichte || 'normal'} pflanzen=${Array.isArray(plan.pflanzen) ? plan.pflanzen.length : 0}`);
     }
+    // Anonyme Zeile je Plan. Beantwortet die Frage, die vorher niemand beantworten konnte:
+    // aus welcher Gegend kommen die Leute, die wirklich bis zum fertigen Plan durchgehen?
+    // Nur die Angaben aus dem Formular, keine IP, kein Personenbezug. Ein Fehler hier darf
+    // die Antwort nie gefährden — deshalb gekapselt.
+    try {
+      const plzSauber = typeof plz === 'string' ? plz.replace(/\D/g, '').slice(0, 5) || null : null;
+      db.prepare(`INSERT INTO plan_statistik
+        (plz, gartenflaeche, licht, boden, stil, dichte, vielfalt, sichtseite, geophyten, quelle, dauer_ms, arten)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+        plzSauber, Number(gartenflaeche) || null,
+        licht || null, boden || null, stil || null,
+        dichte || null, vielfalt || null,
+        typeof sichtseite === 'string' ? sichtseite.slice(0, 60) : null,
+        geophyten ? 1 : 0,
+        notplan ? 'datenbank' : 'ki',
+        Date.now() - t0,
+        Array.isArray(plan.pflanzen) ? plan.pflanzen.length : null
+      );
+    } catch (e) { console.warn('plan_statistik nicht geschrieben:', e.message); }
+
     res.json({
       success: true, plan,
       quelle: notplan ? 'datenbank' : 'ki',
@@ -1507,19 +1569,91 @@ app.post('/api/alternativ', alternativLimiter, (req, res) => {
   });
 });
 
-app.post('/api/email-gate', rl({ windowMs: 60*60*1000, max: 10, message: { error: 'Zu viele Anfragen.' } }), (req, res) => {
-  const { email, gartenflaeche, licht, stil } = req.body;
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+// „Plan per E-Mail sichern". Zwei rechtlich verschiedene Dinge, deshalb getrennt behandelt:
+//   1. Die Mail mit dem Link zum eigenen Plan ist eine Servicemail, die der Nutzer gerade
+//      ausdrücklich angefordert hat. Sie geht sofort raus, ohne Bestätigungsschleife.
+//   2. „Gelegentliche Gartentipps" ist Werbung. Dafür braucht es eine eigene Einwilligung
+//      (Checkbox, nicht vorausgewählt) UND eine Bestätigung per Doppel-Opt-in, sonst kann
+//      jeder fremde Adressen eintragen. Erst nach Klick auf den Bestätigungslink zählt sie.
+app.post('/api/email-gate', rl({ windowMs: 60 * 60 * 1000, max: 10, message: { error: 'Zu viele Anfragen.' } }), async (req, res) => {
+  const { email, gartenflaeche, licht, boden, stil, plz, planUrl, werbung } = req.body;
+  if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 200) {
     return res.status(400).json({ error: 'Bitte eine gültige E-Mail-Adresse eingeben.' });
   }
+  // Nur eigene Links verschicken — sonst wäre der Endpunkt ein Werkzeug, um beliebige URLs
+  // aus dem Namen dieser Seite zu versenden.
+  const pfad = typeof planUrl === 'string' && /^\/plan\/[a-f0-9]{8,32}$/.test(planUrl) ? planUrl : null;
+  const basis = process.env.SITE_URL || 'https://www.staudenplan.de';
+  const willWerbung = werbung === true;
+  const token = crypto.randomBytes(16).toString('hex');
+
   try {
-    db.prepare(`INSERT INTO email_gate (email, gartenflaeche, licht, stil) VALUES (?, ?, ?, ?)`)
-      .run(email, gartenflaeche || null, licht || null, stil || null);
-    res.json({ success: true });
+    db.prepare(`INSERT INTO email_gate
+      (email, gartenflaeche, licht, boden, stil, plz, quelle, werbung_einwilligung, bestaetigt, token)
+      VALUES (?,?,?,?,?,?,?,?,0,?)`).run(
+      email, Number(gartenflaeche) || null, licht || null, boden || null, stil || null,
+      typeof plz === 'string' ? plz.replace(/\D/g, '').slice(0, 5) || null : null,
+      pfad ? 'plan-per-mail' : 'pdf-download',
+      willWerbung ? 1 : 0, token
+    );
   } catch (err) {
     console.error('Email-Gate Fehler:', err.message);
-    res.status(500).json({ error: 'Fehler beim Speichern.' });
+    return res.status(500).json({ error: 'Fehler beim Speichern.' });
   }
+
+  // Versand darf das Speichern nicht gefährden: Die Adresse ist bereits gesichert, ein
+  // Mailfehler wird protokolliert, der Nutzer bekommt trotzdem eine ehrliche Rückmeldung.
+  let versandOk = true;
+  try {
+    const bestaetigung = willWerbung
+      ? `\n\nDu möchtest gelegentlich Gartentipps bekommen. Bitte bestätige das einmalig hier:\n${basis}/newsletter/bestaetigen?token=${token}\nOhne diesen Klick schicken wir dir keine Tipps.`
+      : '';
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: pfad ? 'Dein Bepflanzungsplan' : 'Dein Plan bei Staudenplan.de',
+      text: (pfad
+        ? `Hier ist dein Bepflanzungsplan:\n${basis}${pfad}\n\nDen Link kannst du jederzeit wieder aufrufen und auch weitergeben.`
+        : 'Danke für dein Interesse an Staudenplan.de.')
+        + bestaetigung
+        + `\n\n—\nStaudenplan.de\nDu bekommst diese Mail, weil du sie auf staudenplan.de angefordert hast.`,
+    });
+  } catch (err) {
+    versandOk = false;
+    console.error('Email-Gate Versand fehlgeschlagen:', err.message);
+  }
+
+  res.json({ success: true, versandt: versandOk, bestaetigung_noetig: willWerbung });
+});
+
+// Doppel-Opt-in: erst dieser Klick macht aus der angekreuzten Checkbox eine belastbare
+// Einwilligung. Ohne ihn bleibt bestaetigt=0 und die Adresse wird nie beworben.
+app.get('/newsletter/bestaetigen', (req, res) => {
+  const token = String(req.query.token || '');
+  const seite = (titel, text) => `<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
+    <title>${escHtml(titel)} — Staudenplan.de</title>${LEGAL_STYLE}</head><body>${LEGAL_NAV}
+    <main><h1>${escHtml(titel)}</h1><p>${escHtml(text)}</p>
+    <p><a href="/">Zur Startseite</a></p></main>${LEGAL_FOOTER}</body></html>`;
+  if (!/^[a-f0-9]{32}$/.test(token)) return res.status(400).send(seite('Link ungültig', 'Dieser Bestätigungslink ist nicht lesbar.'));
+  const r = db.prepare('UPDATE email_gate SET bestaetigt = 1 WHERE token = ? AND werbung_einwilligung = 1').run(token);
+  if (!r.changes) return res.status(404).send(seite('Nichts zu bestätigen', 'Dieser Link ist abgelaufen oder wurde bereits verwendet.'));
+  res.send(seite('Danke, das war es schon', 'Deine Einwilligung ist bestätigt. Du kannst dich in jeder Mail mit einem Klick wieder abmelden.'));
+});
+
+// Abmeldung. Muss ohne Anmeldung und ohne Rückfrage funktionieren — ein Abmeldelink, der
+// erst ein Formular zeigt, ist keiner. Die Adresse bleibt für die Nachweispflicht stehen,
+// wird aber nicht mehr beworben.
+app.get('/newsletter/abmelden', (req, res) => {
+  const token = String(req.query.token || '');
+  const seite = (titel, text) => `<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
+    <title>${escHtml(titel)} — Staudenplan.de</title>${LEGAL_STYLE}</head><body>${LEGAL_NAV}
+    <main><h1>${escHtml(titel)}</h1><p>${escHtml(text)}</p>
+    <p><a href="/">Zur Startseite</a></p></main>${LEGAL_FOOTER}</body></html>`;
+  if (!/^[a-f0-9]{32}$/.test(token)) return res.status(400).send(seite('Link ungültig', 'Dieser Abmeldelink ist nicht lesbar.'));
+  db.prepare("UPDATE email_gate SET werbung_einwilligung = 0, bestaetigt = 0, abgemeldet_am = datetime('now') WHERE token = ?").run(token);
+  res.send(seite('Abgemeldet', 'Du bekommst keine Gartentipps mehr von uns. Deinen Planlink kannst du weiterhin aufrufen.'));
 });
 
 app.post('/api/anfrage', anfrageLimiter, async (req, res) => {
@@ -2168,6 +2302,62 @@ app.get('/admin/quiz', (req, res) => {
   </body></html>`);
 });
 
+// Wer plant hier eigentlich? Bis August 2026 wurde die PLZ bei jedem Plan abgefragt und
+// weggeworfen — die Frage, wie groß der regionale Anteil ist, war deshalb unbeantwortbar.
+app.get('/admin/plaene', (req, res) => {
+  if (!isAdmin(req)) return res.redirect('/admin/login?next=/admin/plaene');
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const q = (sql, ...a) => { try { return db.prepare(sql).all(...a); } catch { return []; } };
+
+  const gesamt = (q('SELECT COUNT(*) n FROM plan_statistik')[0] || {}).n || 0;
+  const mitPlz = (q("SELECT COUNT(*) n FROM plan_statistik WHERE plz IS NOT NULL AND plz != ''")[0] || {}).n || 0;
+  // Erste zwei Ziffern = Leitregion. Feiner aufzulösen lohnt bei dieser Fallzahl nicht.
+  const regionen = q(`SELECT substr(plz,1,2) AS lr, COUNT(*) n FROM plan_statistik
+                      WHERE plz IS NOT NULL AND length(plz) >= 2 GROUP BY lr ORDER BY n DESC`);
+  const proTag = q("SELECT substr(erstellt_am,1,10) tag, COUNT(*) n FROM plan_statistik GROUP BY tag ORDER BY tag DESC LIMIT 30");
+  const verteilung = (spalte) => q(`SELECT ${spalte} w, COUNT(*) n FROM plan_statistik WHERE ${spalte} IS NOT NULL GROUP BY w ORDER BY n DESC LIMIT 8`);
+  const flaeche = q(`SELECT MIN(gartenflaeche) min, MAX(gartenflaeche) max, AVG(gartenflaeche) avg FROM plan_statistik WHERE gartenflaeche > 0`)[0] || {};
+  const quelle = q("SELECT quelle w, COUNT(*) n FROM plan_statistik GROUP BY w");
+  const mails = q("SELECT COUNT(*) gesamt, SUM(werbung_einwilligung) angekreuzt, SUM(bestaetigt) bestaetigt FROM email_gate")[0] || {};
+
+  // Freising liegt in der Leitregion 85 — der Umkreis, in dem ein Betrieb fährt.
+  const regional = regionen.filter(r => ['80', '81', '82', '83', '84', '85', '86'].includes(r.lr)).reduce((s, r) => s + r.n, 0);
+
+  const tab = (titel, rows, spalte = 'Wert') => rows.length
+    ? `<h2>${titel}</h2><table><tr><th>${spalte}</th><th>Anzahl</th></tr>${rows.map(r => `<tr><td>${esc(r.w ?? r.lr ?? r.tag)}</td><td>${r.n}</td></tr>`).join('')}</table>`
+    : `<h2>${titel}</h2><p class="muted">Noch keine Daten.</p>`;
+
+  res.send(`<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
+  <title>Planungen · Admin</title>
+  <style>body{font-family:'Segoe UI',system-ui,sans-serif;background:#f8f4ef;color:#1a1a1a;max-width:900px;margin:0 auto;padding:32px 20px}
+  h1{color:#1b4332;font-size:1.5rem}h2{font-size:1.05rem;color:#1b4332;margin-top:28px}
+  .big{font-size:2rem;font-weight:800;color:#2d6a4f;line-height:1}
+  table{width:100%;border-collapse:collapse;margin-top:12px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.06)}
+  th,td{text-align:left;padding:10px 14px;border-bottom:1px solid #eee;font-size:.9rem}th{background:#1b4332;color:#fff}
+  td:nth-child(2),th:nth-child(2){text-align:right;font-weight:700}.muted{color:#999;font-size:.82rem}a{color:#2d6a4f}
+  .karten{display:flex;gap:16px;flex-wrap:wrap;margin-top:16px}
+  .karte{background:#fff;border-radius:12px;padding:20px 24px;box-shadow:0 2px 10px rgba(0,0,0,.06);flex:1;min-width:200px}</style></head><body>
+  <h1>📍 Planungen <a href="/admin/logout" style="float:right;font-size:.8rem;font-weight:400;color:#999;text-decoration:none">Abmelden →</a></h1>
+  <p class="muted">Anonyme Statistik je erstelltem Plan, ohne IP und ohne Personenbezug.
+    <a href="/admin/klicks">Kaufklicks</a> · <a href="/admin/anfragen">Anfragen</a> · <a href="/admin/quiz">Quiz</a></p>
+  <div class="karten">
+    <div class="karte"><div class="big">${gesamt}</div><div class="muted">Pläne erfasst</div></div>
+    <div class="karte"><div class="big">${mitPlz}</div><div class="muted">davon mit PLZ</div></div>
+    <div class="karte"><div class="big">${regional}</div><div class="muted">Leitregion 80–86 (Großraum München/Freising)</div></div>
+    <div class="karte"><div class="big">${mails.gesamt || 0}</div><div class="muted">E-Mail-Adressen — ${mails.angekreuzt || 0} für Tipps angekreuzt, ${mails.bestaetigt || 0} bestätigt</div></div>
+  </div>
+  ${gesamt === 0 ? '<p class="muted" style="margin-top:24px">Die Erfassung läuft seit dem Deploy am 08.08.2026. Ältere Pläne sind nicht nachträglich rekonstruierbar.</p>' : ''}
+  ${flaeche.min != null ? `<h2>Beetgröße</h2><p class="muted">kleinste ${Number(flaeche.min).toFixed(1)} m² · größte ${Number(flaeche.max).toFixed(1)} m² · Durchschnitt ${Number(flaeche.avg).toFixed(1)} m²</p>` : ''}
+  ${tab('Nach Leitregion (erste zwei PLZ-Ziffern)', regionen, 'Leitregion')}
+  ${tab('Lichtverhältnisse', verteilung('licht'), 'Licht')}
+  ${tab('Bodenart', verteilung('boden'), 'Boden')}
+  ${tab('Gartenstil', verteilung('stil'), 'Stil')}
+  ${tab('Woher kam der Plan', quelle, 'Quelle')}
+  ${tab('Pläne pro Tag (letzte 30)', proTag.map(r => ({ w: r.tag, n: r.n })), 'Tag')}
+  </body></html>`);
+});
+
 // ─── robots.txt ──────────────────────────────────────────────────────────────
 // ─── IndexNow ─────────────────────────────────────────────────────────────────
 const INDEXNOW_KEY = '57b3c160fda14faa96ad948cb07805aa';
@@ -2347,6 +2537,9 @@ app.get('/datenschutz', (req, res) => {
     <p><strong>Bepflanzungsplan-Anfragen:</strong> Wenn Sie über unser Kontaktformular eine Anfrage senden, speichern wir Ihren Namen, Ihre E-Mail-Adresse, Ihre Postleitzahl sowie die von Ihnen eingegebenen Gartenparameter. Diese Daten werden ausschließlich zur Bearbeitung Ihrer Anfrage und zur Erstellung eines Pflanzenangebots verwendet.</p>
     <p><strong>Server-Logfiles:</strong> Beim Besuch unserer Website werden automatisch technische Daten (IP-Adresse, Browsertyp, Betriebssystem, Uhrzeit) in Server-Logfiles gespeichert. Diese Daten werden ausschließlich zur technischen Fehleranalyse verwendet und nach 7 Tagen gelöscht.</p>
     <p><strong>KI-Verarbeitung:</strong> Ihre Gartenparameter werden zur Erstellung des Bepflanzungsplans an die OpenAI API übermittelt. Es werden keine personenbezogenen Daten (Name, E-Mail) an OpenAI übertragen.</p>
+    <p><strong>Plan per E-Mail:</strong> Wenn Sie sich den Link zu Ihrem Bepflanzungsplan zuschicken lassen, speichern wir Ihre E-Mail-Adresse zusammen mit den Eckdaten des Plans (Fläche, Lichtverhältnisse, Bodenart, Gartenstil, Postleitzahl). Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO — Sie haben diese Zusendung ausdrücklich angefordert. Wir verwenden die Adresse für diesen Zweck und löschen sie auf Wunsch jederzeit.</p>
+    <p><strong>Gartentipps per E-Mail (freiwillig):</strong> Nur wenn Sie das Kästchen „Schickt mir gelegentlich Gartentipps" aktiv angekreuzt <em>und</em> anschließend den Bestätigungslink in der E-Mail angeklickt haben, senden wir Ihnen gelegentlich Pflanz- und Pflegehinweise. Rechtsgrundlage ist Ihre Einwilligung nach Art. 6 Abs. 1 lit. a DSGVO. <strong>Sie können diese Einwilligung jederzeit widerrufen</strong> — über den Abmeldelink in jeder dieser E-Mails oder formlos per Nachricht an uns. Die Rechtmäßigkeit der bis dahin erfolgten Verarbeitung bleibt davon unberührt. Ohne Bestätigungsklick erhalten Sie keine Gartentipps.</p>
+    <p><strong>Anonyme Planungsstatistik:</strong> Bei jedem erstellten Bepflanzungsplan speichern wir die Eckdaten des geplanten Beets (Fläche, Licht, Boden, Stil, Pflanzdichte, Postleitzahl) ohne jeden Personenbezug — ohne IP-Adresse, ohne Kennung, ohne Verbindung zu einer E-Mail-Adresse. Diese Angaben lassen sich keiner Person zuordnen und dienen ausschließlich der Verbesserung des Planers und der Frage, für welche Standorte er genutzt wird. Rechtsgrundlage ist unser berechtigtes Interesse nach Art. 6 Abs. 1 lit. f DSGVO.</p>
     <h2>4. Ihre Rechte</h2>
     <p>Sie haben das Recht auf Auskunft, Berichtigung, Löschung, Einschränkung der Verarbeitung sowie Datenübertragbarkeit Ihrer gespeicherten personenbezogenen Daten. Wenden Sie sich dazu an: <a href="mailto:info@gartenschmiede.de">info@gartenschmiede.de</a></p>
     <p>Sie haben außerdem das Recht, sich bei einer Aufsichtsbehörde zu beschweren. Zuständig ist das Bayerische Landesamt für Datenschutzaufsicht (BayLDA), Promenade 18, 91522 Ansbach.</p>

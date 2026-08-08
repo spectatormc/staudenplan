@@ -1687,6 +1687,10 @@
     <p id="ergebnis-subtitle">Maßgeschneidert für deinen Garten</p>
     <div class="ergebnis-meta" id="ergebnis-meta"></div>
     <div id="saison-warnung" style="display:none;margin:12px 0 4px;padding:10px 14px;background:#fef9c3;border:1px solid #fde047;border-radius:8px;font-size:.85rem;color:#854d0e"></div>
+    <!-- Sammelwarnung für giftige Arten im Plan. Muss oben stehen: Wer ein Beet für einen
+         Garten mit Kindern plant, darf das nicht erst beim Durchscrollen der Pflanzenkarten
+         erfahren. Der Bestand enthält 141 giftige und 22 stark giftige Arten. -->
+    <div id="gift-warnung" style="display:none;margin:12px 0 4px;padding:12px 14px;background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;font-size:.85rem;line-height:1.6;color:#991b1b;text-align:left"></div>
     <!-- Hinweis, wenn der Plan ohne KI aus der Staudendatenbank kam. Muss sichtbar sein:
          ein Regelplan darf nie als KI-Plan durchgehen. -->
     <div id="notplan-hinweis" style="display:none;margin:12px 0 4px;padding:12px 14px;background:#eef6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:.85rem;color:#1e40af;text-align:left">
@@ -1799,7 +1803,13 @@
       <div class="viz-card">
         <div class="viz-card-title">
           <span>🎨 Grafischer Bepflanzungsplan — Draufsicht</span>
-          <button class="btn-print" style="font-size:.78rem;padding:6px 14px" onclick="generatePDF()">⬇️ PDF herunterladen</button>
+          <span style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn-print" style="font-size:.78rem;padding:6px 14px" onclick="generatePDF()">⬇️ PDF herunterladen</button>
+            <!-- Weiches Angebot: Das PDF bleibt frei zugänglich, die E-Mail ist eine
+                 zusätzliche Bequemlichkeit. Ein hartes Tor (ohne Adresse kein PDF) holt
+                 mehr Adressen, verdirbt aber den Moment, in dem der Plan gerade fertig ist. -->
+            <button class="btn-print" style="font-size:.78rem;padding:6px 14px" onclick="showEmailGate()">✉️ Plan per E-Mail sichern</button>
+          </span>
         </div>
         <div class="viz-card-body">
           <div class="viz-svg-wrap" id="grafisch-container"></div>
@@ -3875,19 +3885,35 @@
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       errEl.textContent = 'Bitte eine gültige E-Mail eingeben.'; return;
     }
-    btn.disabled = true; btn.textContent = 'Wird erstellt…';
+    btn.disabled = true; btn.textContent = 'Wird verschickt…';
     try {
-      await fetch('/api/email-gate', {
+      // Erst den Plan ablegen, damit die Mail einen echten Link enthält und nicht bloß
+      // eine Danksagung. Das ist der Gegenwert für die Adresse.
+      const planUrl = await planPfadHolen();
+      const res = await fetch('/api/email-gate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, gartenflaeche: formData.gartenflaeche, licht: formData.licht, stil: formData.stil })
+        body: JSON.stringify({
+          email, planUrl,
+          gartenflaeche: formData.gartenflaeche, licht: formData.licht,
+          boden: formData.boden, stil: formData.stil, plz: formData.plz || null,
+          // Fest auf false, solange es keine Gartentipps gibt — siehe Kommentar am Kästchen.
+          werbung: false
+        })
       });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Fehler beim Versand.');
       closeEmailGate();
-      await generatePDF();
+      if (window.plausible) plausible('Plan per Mail');
+      alert(data.versandt
+        ? (data.bestaetigung_noetig
+            ? 'Der Link ist unterwegs. In der Mail steht auch ein Bestätigungslink für die Gartentipps — ohne den bekommst du keine.'
+            : 'Der Link zu deinem Plan ist unterwegs.')
+        : 'Wir konnten die Mail gerade nicht zustellen. Dein Plan ist aber gespeichert: ' + location.origin + planUrl);
     } catch (e) {
-      errEl.textContent = 'Fehler — bitte erneut versuchen.';
+      errEl.textContent = e.message || 'Fehler — bitte erneut versuchen.';
     }
-    btn.disabled = false; btn.textContent = 'Kostenlos herunterladen →';
+    btn.disabled = false; btn.textContent = 'Link zuschicken →';
   }
 
   // ── PDF-Generator ─────────────────────────────────────────────────────────
@@ -4201,6 +4227,7 @@
           <a class="btn-kaufen" href="${escapeHtml(kaufUrl(p, 'karte'))}" target="_blank" rel="noopener nofollow" onclick="trackKauf(${i},'karte')">Bei Gaißmayer ansehen ↗</a>
           <div class="kauf-hinweis">Staudengärtnerei Gaißmayer · öffnet in neuem Tab</div>
           <button class="btn-alt" data-idx="${i}" onclick="alternativVorschlagen(${i})">🔄 Alternative vorschlagen</button>
+          ${p.giftig ? `<div style="margin-top:8px;padding:9px 12px;background:${p.giftig.stufe === 'stark' ? '#fef2f2' : '#fffbeb'};border:1px solid ${p.giftig.stufe === 'stark' ? '#fca5a5' : '#fde68a'};border-radius:8px;font-size:.8rem;line-height:1.5;color:${p.giftig.stufe === 'stark' ? '#991b1b' : '#92400e'}"><strong>${p.giftig.stufe === 'stark' ? '☠️ Stark giftig' : p.giftig.stufe === 'haustiere' ? '🐾 Für Haustiere giftig' : '⚠️ Giftig'}</strong> — ${escapeHtml(p.giftig.text)}</div>` : ''}
           ${p.fehler && p.fehler.length ? `<details class="pflanze-fehler"><summary>⚠️ Häufige Fehler (${p.fehler.length})</summary><ul>${p.fehler.map(f=>`<li>${escapeHtml(f)}</li>`).join('')}</ul></details>` : ''}
         </div>
       </div>`;
@@ -4243,6 +4270,25 @@
       warnEl.style.display = 'block';
     } else {
       warnEl.style.display = 'none';
+    }
+
+    // Giftige Arten sammeln und oben ausweisen. Stark giftige zuerst — Eisenhut wirkt
+    // schon über die Haut, das gehört nicht in eine Fußnote.
+    const giftEl = document.getElementById('gift-warnung');
+    const giftige = plan.pflanzen.filter(p => p.giftig);
+    if (giftige.length) {
+      const stark = giftige.filter(p => p.giftig.stufe === 'stark');
+      const nurTiere = giftige.filter(p => p.giftig.stufe === 'haustiere');
+      const uebrige = giftige.filter(p => p.giftig.stufe !== 'stark' && p.giftig.stufe !== 'haustiere');
+      const liste = (arr) => arr.map(p => escapeHtml(p.name_deutsch)).join(', ');
+      giftEl.innerHTML =
+        (stark.length ? `<strong>☠️ Stark giftig in diesem Plan:</strong> ${liste(stark)}. Alle Pflanzenteile sind stark giftig, ein Verzehr kann lebensgefährlich sein — bei Kindern im Garten einen anderen Platz wählen, bei Pflege- und Teilungsarbeiten Handschuhe tragen.<br>` : '')
+        + (uebrige.length ? `<strong>⚠️ Giftig:</strong> ${liste(uebrige)}. Pflanzenteile gehören nicht in den Mund.<br>` : '')
+        + (nurTiere.length ? `<strong>🐾 Für Haustiere giftig:</strong> ${liste(nurTiere)}.<br>` : '')
+        + `<span style="color:#7f1d1d;font-size:.8rem">Details stehen bei der jeweiligen Pflanze weiter unten. Wenn du das nicht möchtest, erstell den Plan neu — die Auswahl fällt jedes Mal anders aus.</span>`;
+      giftEl.style.display = 'block';
+    } else {
+      giftEl.style.display = 'none';
     }
 
     // Stückliste + Visualisierung vorbereiten
@@ -4361,40 +4407,41 @@
     }
   }
 
+  // Legt den Plan serverseitig ab und gibt seinen Pfad zurück (z. B. /plan/ab12cd34).
+  // Ausgelagert, weil zwei Wege ihn brauchen: der Teilen-Knopf und der E-Mail-Versand.
+  // Mehrfachaufrufe legen jeweils eine neue Kopie an — deshalb wird das Ergebnis gemerkt.
+  let _planPfad = null;
+  async function planPfadHolen() {
+    if (_planPfad) return _planPfad;
+    const platzierungen = (currentPlan._normPlacements || []).map(p => ({
+      x: Math.round(p.xFrac * 10000) / 10000,
+      y: Math.round(p.yFrac * 10000) / 10000,
+      r: Math.round(p.rFrac * 10000) / 10000,
+      i: p.pi
+    }));
+    const { _normPlacements, ...planZumTeilen } = currentPlan;
+    const res = await fetch('/api/plan-teilen', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plan: planZumTeilen, flaeche: formData.gartenflaeche, grafik: {
+        platzierungen,
+        flaeche: formData.gartenflaeche, beetLaenge: formData.beetLaenge, beetBreite: formData.beetBreite,
+        sichtseite: formData.sichtseite, dichte: formData.dichte,
+        form: formData.flaeche_form,
+        polygons: (formData.flaeche_form === 'zeichnen' ? polygons : [])
+          .map(p => ({ points: p.points.map(pt => ({ x: pt.x, y: pt.y })), area: p.area })) } })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'Fehler beim Speichern des Plans.');
+    _planPfad = data.url;
+    return _planPfad;
+  }
+
   async function planTeilen(btn) {
     if (!currentPlan || !currentPlan.pflanzen || !currentPlan.pflanzen.length) return;
     const orig = btn ? btn.textContent : '';
     if (btn) { btn.disabled = true; btn.textContent = 'Link wird erstellt …'; }
     try {
-      // Die im Browser berechnete Platzierung mitschicken, damit der geteilte Plan exakt so
-      // aussieht wie der eigene. Ohne sie rechnet der Server neu — und weil seine Zeichenfläche
-      // fest 720 px breit ist, der Browser aber bis zu 800 px nutzt, fallen Pflanzenradius und
-      // Kollisionsauflösung anders aus und die Anordnung weicht sichtbar ab.
-      // Nur die Zahlen, nicht die Pflanzenobjekte: _normPlacements trägt zu jedem Punkt eine
-      // vollständige Kopie der Pflanze, das wären bei dichten Plänen mehrere hundert Kilobyte.
-      const platzierungen = (currentPlan._normPlacements || []).map(p => ({
-        x: Math.round(p.xFrac * 10000) / 10000,
-        y: Math.round(p.yFrac * 10000) / 10000,
-        r: Math.round(p.rFrac * 10000) / 10000,
-        i: p.pi
-      }));
-      // _normPlacements selbst nicht mitspeichern — der Server bekommt die kompakte Fassung.
-      const { _normPlacements, ...planZumTeilen } = currentPlan;
-      const res = await fetch('/api/plan-teilen', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan: planZumTeilen, flaeche: formData.gartenflaeche, grafik: {
-          platzierungen,
-          flaeche: formData.gartenflaeche, beetLaenge: formData.beetLaenge, beetBreite: formData.beetBreite,
-          sichtseite: formData.sichtseite, dichte: formData.dichte,
-          // Freihandform mitschicken, sonst zeichnet die geteilte Seite ein Rechteck.
-          // Rohe Canvas-Koordinaten: der Server normalisiert sie genauso wie scaledPolygonsForSVG.
-          form: formData.flaeche_form,
-          polygons: (formData.flaeche_form === 'zeichnen' ? polygons : [])
-            .map(p => ({ points: p.points.map(pt => ({ x: pt.x, y: pt.y })), area: p.area })) } })
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || 'Fehler beim Teilen.');
-      const url = location.origin + data.url;
+      const url = location.origin + await planPfadHolen();
       if (window.plausible) plausible('Plan geteilt');
       try { await navigator.clipboard.writeText(url); } catch {}
       prompt('Dein Teilen-Link wurde in die Zwischenablage kopiert:', url);
@@ -4454,19 +4501,29 @@
 <!-- E-Mail-Gate Modal -->
 <div id="email-gate-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;align-items:center;justify-content:center;padding:20px">
   <div style="background:#fff;border-radius:20px;padding:36px 32px;max-width:420px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.3)">
-    <div style="font-size:3rem;margin-bottom:12px">📄</div>
-    <h2 style="font-size:1.4rem;color:#1b4332;margin-bottom:10px;font-weight:800">Plan als PDF herunterladen</h2>
-    <p style="color:#666;font-size:.9rem;line-height:1.6;margin-bottom:22px">Kostenlos — trag einfach deine E-Mail ein.<br>Keine Werbung, nur gelegentliche Gartentipps.</p>
+    <div style="font-size:3rem;margin-bottom:12px">✉️</div>
+    <h2 style="font-size:1.4rem;color:#1b4332;margin-bottom:10px;font-weight:800">Plan per E-Mail sichern</h2>
+    <p style="color:#666;font-size:.9rem;line-height:1.6;margin-bottom:20px">Wir schicken dir einen Link zu deinem Plan — so findest du ihn später wieder und kannst ihn weitergeben.</p>
     <input type="email" id="gate-email" placeholder="deine@email.de"
       style="width:100%;padding:13px 16px;border:2px solid #e0d9cf;border-radius:10px;font-size:1rem;outline:none;margin-bottom:8px;box-sizing:border-box"
       onfocus="this.style.borderColor='#2d6a4f'" onblur="this.style.borderColor='#e0d9cf'"
       onkeydown="if(event.key==='Enter') submitEmailGate()">
+    <!-- BEWUSST NOCH NICHT SICHTBAR: Die Einwilligung für „gelegentliche Gartentipps" ist
+         serverseitig fertig gebaut (getrennte Spalte, Doppel-Opt-in, Abmeldelink, Passus in
+         der Datenschutzerklärung) — aber es gibt noch keine Gartentipps zu versenden. Eine
+         Einwilligung einzusammeln, die man nicht einlöst, ist schlechter als gar keine zu
+         haben. Sobald die Mails stehen, hier das hidden entfernen und in submitEmailGate
+         wieder `.checked` statt `false` senden. -->
+    <label hidden style="display:none">
+      <input type="checkbox" id="gate-werbung">
+    </label>
     <p id="gate-error" style="color:#e53e3e;font-size:.82rem;min-height:18px;margin-bottom:8px"></p>
     <button id="gate-btn" onclick="submitEmailGate()"
       style="width:100%;background:linear-gradient(135deg,#2d6a4f,#1b4332);color:#fff;border:none;border-radius:12px;padding:14px;font-size:1rem;font-weight:700;cursor:pointer;margin-bottom:10px">
-      Kostenlos herunterladen →
+      Link zuschicken →
     </button>
     <button onclick="closeEmailGate()" style="background:none;border:none;color:#aaa;font-size:.85rem;cursor:pointer">Abbrechen</button>
+    <p style="color:#aaa;font-size:.72rem;line-height:1.5;margin-top:12px">Wie wir mit deiner Adresse umgehen, steht in der <a href="/datenschutz" target="_blank" style="color:#2d6a4f">Datenschutzerklärung</a>.</p>
   </div>
 </div>
 <!-- Feedback-Widget (unten rechts) -->
