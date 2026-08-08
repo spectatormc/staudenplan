@@ -3983,7 +3983,11 @@ const KAT_CONFIG = Object.assign(Object.create(null), {
   'Design':            { icon: '✏️', grad: 'linear-gradient(135deg,#1e293b,#475569)' },
   'Pflanzenportraits': { icon: '🌷', grad: 'linear-gradient(135deg,#3f2d1e,#a16207)' },
 });
-function katCfg(k) { return KAT_CONFIG[k] || { icon: '🌱', grad: 'linear-gradient(135deg,#1b4332,#52b788)', img: '' }; }
+// img ist optional und bei keiner Kategorie gesetzt. Es MUSS hier trotzdem als leerer String
+// stehen: stand im Hero `url('${cfg.img}')` ohne Prüfung, landete bei jedem Artikel das Wort
+// "undefined" im CSS. Der Browser löst das relativ zur Seite auf und fordert
+// /ratgeber/undefined an — eine 404 pro Artikelaufruf, in den Logs 31 mal nachweisbar.
+function katCfg(k) { return { icon: '🌱', grad: 'linear-gradient(135deg,#1b4332,#52b788)', img: '', ...(KAT_CONFIG[k] || {}) }; }
 function readingTime(text) { return Math.max(1, Math.round(text.split(/\s+/).length / 200)); }
 
 const FAVICON = `<link rel="icon" href="/favicon.ico" sizes="any"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="apple-touch-icon" href="/apple-touch-icon.png">`;
@@ -4276,7 +4280,7 @@ app.get('/ratgeber/:slug', (req, res) => {
 
   <!-- Artikel-Hero -->
   <div style="background:${cfg.grad};padding:48px 24px 40px;position:relative;overflow:hidden">
-    <div style="position:absolute;inset:0;background:url('${cfg.img}') center/cover no-repeat;opacity:.15"></div>
+    ${cfg.img ? `<div style="position:absolute;inset:0;background:url('${escHtml(cfg.img)}') center/cover no-repeat;opacity:.15"></div>` : ''}
     <div style="max-width:760px;margin:0 auto;position:relative">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
         <a href="/ratgeber" style="color:rgba(255,255,255,.7);text-decoration:none;font-size:.82rem">← Ratgeber</a>
