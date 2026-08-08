@@ -2761,6 +2761,18 @@
     if (status) status.textContent = '';
   }
 
+  // Beschriftung der Giftstufen. MUSS mit GIFT_REIHENFOLGE/GIFT_LABEL in stauden-server.js
+  // synchron bleiben — dieselbe Regel wie bei BLOOM_COLORS. Die Reihenfolge ist die
+  // Dringlichkeit: was ein Kind umbringen kann, steht oben.
+  const GIFT_REIHENFOLGE = ['stark', 'giftig', 'katzen', 'haustiere', 'reizend'];
+  const GIFT_LABEL = {
+    stark:     '☠️ Stark giftig',
+    giftig:    '⚠️ Giftig',
+    katzen:    '🐈 Für Katzen lebensgefährlich',
+    haustiere: '🐾 Für Haustiere giftig',
+    reizend:   '🧤 Hautreizend',
+  };
+
   // ── Farb-Mapping ──────────────────────────────────────────────────────────────
   // Farb-Keys KLEINGESCHRIEBEN — DB liefert gemischte Groß-/Kleinschreibung, Lookup ist
   // case-insensitiv. Deckt alle DB-Farbwerte ab. Synchron mit BLOOM_COLORS_SSR im Server.
@@ -3416,7 +3428,7 @@
       bedLabel = ``;
     }
 
-    const svg = `<svg width="${W}" height="${H + 24}" xmlns="http://www.w3.org/2000/svg" id="grafisch-svg" style="max-width:100%;border-radius:12px;display:block">
+    const svg = `<svg width="${W}" height="${H + 24}" viewBox="0 0 ${W} ${H + 24}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" id="grafisch-svg" style="max-width:100%;height:auto;border-radius:12px;display:block">
       <defs>
         ${gradDefs}
         <filter id="glow"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
@@ -3562,7 +3574,7 @@
       <g transform="translate(${PAD_L + plotW + 10},${PAD_T + 22})">${legItems}</g>` : '';
 
     const svgTotalW = PAD_L + plotW + PAD_R;
-    const svg = `<svg width="${svgTotalW}" height="${H}" xmlns="http://www.w3.org/2000/svg" style="max-width:100%;display:block">
+    const svg = `<svg width="${svgTotalW}" height="${H}" viewBox="0 0 ${svgTotalW} ${H}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" style="max-width:100%;height:auto;display:block">
       <defs>${schemClip}</defs>
       ${schemBed}
       <g clip-path="url(#schemClip)">${grid.join('')}</g>
@@ -3688,7 +3700,7 @@
       hMarks.push(`<text x="${PAD_L-6}" y="${py+4}" text-anchor="end" font-size="9" fill="#aaa" font-family="system-ui">${hv}</text>`);
     }
 
-    const svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg" style="max-width:100%;display:block">
+    const svg = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" style="max-width:100%;height:auto;display:block">
       <defs>
         <filter id="glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
         <linearGradient id="skyGrad" x1="0" y1="0" x2="0" y2="1">
@@ -3819,7 +3831,7 @@
     const rightMid    = proj(bedW, bedD / 2, WALL);
     const lx = Math.max(22, leftMid.x - 10);       // clamp so left label stays on canvas
 
-    const svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg" overflow="visible" style="max-width:100%;display:block;border-radius:10px">
+    const svg = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" overflow="visible" style="max-width:100%;height:auto;display:block;border-radius:10px">
       <defs>
         <filter id="glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
         <filter id="isoBlur" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="3.5"/></filter>
@@ -4009,6 +4021,32 @@
       doc.setFontSize(10); doc.setFont('helvetica', 'bolditalic'); doc.setTextColor(27, 67, 50);
       const konzeptLines = doc.splitTextToSize('Konzept: ' + plan.konzept, CW);
       doc.text(konzeptLines, MARGIN, y); y += konzeptLines.length * 5 + 4;
+    }
+
+    // ── Giftige Arten ──
+    // Muss ins PDF, nicht nur auf den Bildschirm: Das PDF wird ausgedruckt und mit in den
+    // Garten genommen, der Haftungsausschluss der Website reist damit nicht mit. Steht
+    // bewusst VOR der Grafik und der Stückliste, damit man es nicht überblättert.
+    const giftPdf = (plan.pflanzen || []).filter(p => p.giftig);
+    if (giftPdf.length) {
+      const nachStufePdf = {};
+      giftPdf.forEach(p => (nachStufePdf[p.giftig.stufe] = nachStufePdf[p.giftig.stufe] || []).push(p));
+      // Ohne Emoji: jsPDF nutzt Helvetica, das keine Emoji-Glyphen hat — sie kämen als
+      // Kästchen oder gar nicht heraus.
+      const PDF_LABEL = { stark: 'STARK GIFTIG', giftig: 'Giftig', katzen: 'Für Katzen lebensgefährlich',
+                          haustiere: 'Für Haustiere giftig', reizend: 'Hautreizend' };
+      const zeilen = GIFT_REIHENFOLGE.filter(s => nachStufePdf[s]).map(s =>
+        (PDF_LABEL[s] || 'Giftig') + ': ' + nachStufePdf[s].map(p => p.name_deutsch).join(', ')
+        + '. ' + nachStufePdf[s][0].giftig.text.split('. ').slice(0, 2).join('. '));
+      const text = doc.splitTextToSize(zeilen.join('\n'), CW - 8);
+      const hoehe = text.length * 4.6 + 9;
+      if (y + hoehe > 275) { doc.addPage(); y = 20; }
+      doc.setFillColor(254, 242, 242); doc.setDrawColor(252, 165, 165);
+      doc.roundedRect(MARGIN, y, CW, hoehe, 2, 2, 'FD');
+      doc.setFontSize(8.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(153, 27, 27);
+      doc.text(text, MARGIN + 4, y + 6);
+      y += hoehe + 6;
+      doc.setTextColor(60, 60, 60);
     }
 
     // ── Grafischer Plan ──
@@ -4257,7 +4295,7 @@
           <a class="btn-kaufen" href="${escapeHtml(kaufUrl(p, 'karte'))}" target="_blank" rel="noopener nofollow" onclick="trackKauf(${i},'karte')">Bei Gaißmayer ansehen ↗</a>
           <div class="kauf-hinweis">Staudengärtnerei Gaißmayer · öffnet in neuem Tab</div>
           <button class="btn-alt" data-idx="${i}" onclick="alternativVorschlagen(${i})">🔄 Alternative vorschlagen</button>
-          ${p.giftig ? `<div style="margin-top:8px;padding:9px 12px;background:${p.giftig.stufe === 'stark' ? '#fef2f2' : '#fffbeb'};border:1px solid ${p.giftig.stufe === 'stark' ? '#fca5a5' : '#fde68a'};border-radius:8px;font-size:.8rem;line-height:1.5;color:${p.giftig.stufe === 'stark' ? '#991b1b' : '#92400e'}"><strong>${p.giftig.stufe === 'stark' ? '☠️ Stark giftig' : p.giftig.stufe === 'haustiere' ? '🐾 Für Haustiere giftig' : '⚠️ Giftig'}</strong> — ${escapeHtml(p.giftig.text)}</div>` : ''}
+          ${p.giftig ? `<div style="margin-top:8px;padding:9px 12px;background:${p.giftig.stufe === 'stark' ? '#fef2f2' : '#fffbeb'};border:1px solid ${p.giftig.stufe === 'stark' ? '#fca5a5' : '#fde68a'};border-radius:8px;font-size:.8rem;line-height:1.5;color:${p.giftig.stufe === 'stark' ? '#991b1b' : '#92400e'}"><strong>${GIFT_LABEL[p.giftig.stufe] || '⚠️ Giftig'}</strong> — ${escapeHtml(p.giftig.text)}</div>` : ''}
           ${p.fehler && p.fehler.length ? `<details class="pflanze-fehler"><summary>⚠️ Häufige Fehler (${p.fehler.length})</summary><ul>${p.fehler.map(f=>`<li>${escapeHtml(f)}</li>`).join('')}</ul></details>` : ''}
         </div>
       </div>`;
@@ -4307,15 +4345,15 @@
     const giftEl = document.getElementById('gift-warnung');
     const giftige = plan.pflanzen.filter(p => p.giftig);
     if (giftige.length) {
-      const stark = giftige.filter(p => p.giftig.stufe === 'stark');
-      const nurTiere = giftige.filter(p => p.giftig.stufe === 'haustiere');
-      const uebrige = giftige.filter(p => p.giftig.stufe !== 'stark' && p.giftig.stufe !== 'haustiere');
-      const liste = (arr) => arr.map(p => escapeHtml(p.name_deutsch)).join(', ');
-      giftEl.innerHTML =
-        (stark.length ? `<strong>☠️ Stark giftig in diesem Plan:</strong> ${liste(stark)}. Alle Pflanzenteile sind stark giftig, ein Verzehr kann lebensgefährlich sein — bei Kindern im Garten einen anderen Platz wählen, bei Pflege- und Teilungsarbeiten Handschuhe tragen.<br>` : '')
-        + (uebrige.length ? `<strong>⚠️ Giftig:</strong> ${liste(uebrige)}. Pflanzenteile gehören nicht in den Mund.<br>` : '')
-        + (nurTiere.length ? `<strong>🐾 Für Haustiere giftig:</strong> ${liste(nurTiere)}.<br>` : '')
-        + `<span style="color:#7f1d1d;font-size:.8rem">Details stehen bei der jeweiligen Pflanze weiter unten. Wenn du das nicht möchtest, erstell den Plan neu — die Auswahl fällt jedes Mal anders aus.</span>`;
+      const nachStufe = {};
+      giftige.forEach(p => (nachStufe[p.giftig.stufe] = nachStufe[p.giftig.stufe] || []).push(p));
+      giftEl.innerHTML = GIFT_REIHENFOLGE.filter(s => nachStufe[s]).map(s => {
+        const arten = nachStufe[s].map(p => escapeHtml(p.name_deutsch)).join(', ');
+        // Erklärtext aus der kuratierten Liste übernehmen statt selbst formulieren.
+        const text = escapeHtml(nachStufe[s][0].giftig.text.split('. ').slice(0, 2).join('. '));
+        return `<strong>${GIFT_LABEL[s]}:</strong> ${arten}. ${text}`;
+      }).join('<br>')
+        + `<br><span style="color:#7f1d1d;font-size:.8rem">Details stehen bei der jeweiligen Pflanze weiter unten. Wenn du das nicht möchtest, erstell den Plan neu — die Auswahl fällt jedes Mal anders aus.</span>`;
       giftEl.style.display = 'block';
     } else {
       giftEl.style.display = 'none';

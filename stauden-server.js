@@ -617,6 +617,19 @@ function notplanStandort(p, sichtseite) {
 // Stückzahlformel ihn zur größten Position im Beet macht — in einem Testlauf 215 Krokusse in
 // einem 60-m²-Beet, das nach dem Abblühen im April leer dasteht. Der KI-Pfad behandelt sie
 // deshalb als eigene Schicht (Rolle "Geophyt"), der Notplan tut das jetzt genauso.
+// Beschriftung der Giftstufen. Muss mit GIFT_LABEL in stauden-portal.html synchron bleiben.
+// Die Reihenfolge ist die Dringlichkeit — was ein Kind umbringen kann, steht oben.
+// „katzen" und „reizend" sind bewusst eigene Stufen: Ein Sammeltopf „giftig" würde aus
+// „für Katzen lebensgefährlich, auch das Vasenwasser" ein „nicht in den Mund nehmen" machen.
+const GIFT_REIHENFOLGE = ['stark', 'giftig', 'katzen', 'haustiere', 'reizend'];
+const GIFT_LABEL = {
+  stark:     '☠️ Stark giftig',
+  giftig:    '⚠️ Giftig',
+  katzen:    '🐈 Für Katzen lebensgefährlich',
+  haustiere: '🐾 Für Haustiere giftig',
+  reizend:   '🧤 Hautreizend',
+};
+
 const GEOPHYTEN_GATTUNGEN = ['Tulipa', 'Narcissus', 'Allium', 'Muscari', 'Crocus', 'Galanthus', 'Scilla', 'Camassia', 'Nectaroscordum', 'Fritillaria'];
 const istGeophyt = p => GEOPHYTEN_GATTUNGEN.some(g => String(p.name_botanisch || '').startsWith(g + ' '));
 
@@ -5165,7 +5178,13 @@ function renderGrafischSSR(pflanzen, flaeche, opts) {
     ? `<text x="${W/2}" y="${scaleY+26}" text-anchor="middle" font-size="10" fill="#aaa" font-family="system-ui">Freihandfläche · ${Number(flaeche || 0).toFixed(1)} m²</text>`
     : '';
 
-  const svg = `<svg width="${W}" height="${H+24+(istFreihand?14:0)}" xmlns="http://www.w3.org/2000/svg" style="max-width:100%;border-radius:12px;display:block">
+  // viewBox ist auf einem Handy nicht optional: Ohne sie hat das SVG kein eigenes
+  // Koordinatensystem, das mitskaliert. max-width:100% verkleinert dann nur den Rahmen,
+  // der Inhalt bleibt in 720 Nutzereinheiten stehen und wird rechts abgeschnitten — auf
+  // einem 380-px-Gerät fehlte fast die Hälfte des Beets. height:auto gehört dazu, sonst
+  // bleibt die Höhe am Attribut kleben und das Seitenverhältnis kippt.
+  const svgH = H + 24 + (istFreihand ? 14 : 0);
+  const svg = `<svg width="${W}" height="${svgH}" viewBox="0 0 ${W} ${svgH}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" style="max-width:100%;height:auto;border-radius:12px;display:block">
     <defs>
       ${gradDefs}
       <filter id="fuellBlur" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur in="SourceGraphic" stdDeviation="2.5"/></filter>
@@ -5270,9 +5289,31 @@ function renderBeispielPlanSSR(plan, flaeche, grafikOpts, quelle = '') {
 
   const grafisch = flaeche ? renderGrafischSSR(pflanzen, flaeche, grafikOpts) : '';
 
+  // Giftige Arten im geteilten Plan. Der Befund wird hier NEU berechnet statt aus dem
+  // gespeicherten Plan gelesen: Pläne, die vor dem 08.08.2026 geteilt wurden, tragen das
+  // Feld nicht — sie bekommen die Warnung so trotzdem. Der Empfänger eines geteilten Links
+  // hat den Plan nicht selbst erstellt und kennt die Pflanzen oft nicht.
+  const giftListe = pflanzen.map(p => ({ p, g: giftigkeit(p.name_botanisch) })).filter(x => x.g);
+  let giftBlock = '';
+  if (giftListe.length) {
+    const nachStufe = {};
+    giftListe.forEach(x => (nachStufe[x.g.stufe] = nachStufe[x.g.stufe] || []).push(x));
+    giftBlock = `<div style="margin:12px 0;padding:12px 14px;background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;font-size:.85rem;line-height:1.6;color:#991b1b">`
+      + GIFT_REIHENFOLGE.filter(s => nachStufe[s]).map(s => {
+        const arten = nachStufe[s].map(x => escHtml(x.p.name_deutsch)).join(', ');
+        // Der Erklärtext kommt aus der kuratierten Liste, nicht aus eigener Formulierung:
+        // „katzen" heißt lebensgefährlich durch Nierenversagen, „reizend" betrifft die Haut —
+        // eine Sammelformulierung würde beides zu „nicht in den Mund nehmen" verflachen.
+        const text = escHtml(nachStufe[s][0].g.text.split('. ').slice(0, 2).join('. '));
+        return `<strong>${GIFT_LABEL[s]}:</strong> ${arten}. ${text}`;
+      }).join('<br>')
+      + `</div>`;
+  }
+
   return `<div class="card-wrap">
     <h2 class="sec-title">🌿 KI-Pflanzplan für dieses Beet</h2>
     ${meta}
+    ${giftBlock}
     ${grafisch}
     <p class="sec-title" style="font-size:.95rem;margin-top:8px">Pflanzenauswahl</p>
     <div class="pflanzen-grid">${cards}</div>
