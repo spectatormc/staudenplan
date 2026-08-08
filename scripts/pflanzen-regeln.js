@@ -121,8 +121,18 @@ function verstoesse(felder, p) {
   const g = gattung(p.name_botanisch);
   const raus = [];
   const rs = felder.rueckschnitt || '';
-  if ((NICHT_REMONTIEREND.has(g) || LAUB_EINZIEHEN.has(g)) && REMONTIER_FLOSKEL.test(rs + ' ' + (felder.tipp || ''))) {
-    raus.push('behauptet eine zweite Blüte bei einer nicht remontierenden Art');
+  // Die Floskel allein reicht nicht als Befund: Ein guter Text NENNT die zweite Blüte oft, um
+  // sie zu verneinen ("bringt keine zweite Blüte", "eine zweite Blüte lässt sich damit nicht
+  // auslösen"). Die erste Fassung dieser Prüfung hat drei solche korrekten Sätze als Verstoß
+  // gemeldet. Deshalb wird jetzt der Satz um den Treffer herum auf Verneinung geprüft.
+  if (NICHT_REMONTIEREND.has(g) || LAUB_EINZIEHEN.has(g)) {
+    const text = rs + ' ' + (felder.tipp || '');
+    for (const satz of text.split(/(?<=[.!?;:])\s+/)) {
+      if (!REMONTIER_FLOSKEL.test(satz)) continue;
+      const verneint = /\b(keine?[nrs]?|nicht|nie|niemals|ohne|statt|vergeblich|kein)\b/i.test(satz)
+        || /\bnur einmal\b/i.test(satz);
+      if (!verneint) { raus.push('behauptet eine zweite Blüte bei einer nicht remontierenden Art'); break; }
+    }
   }
   if (/\d+\s*[-–]\s*\d+\s*cm/.test(rs + (felder.tipp || '') + (felder.pflanzzeit || ''))) {
     raus.push('nennt einen Zentimeter-Abstand, obwohl das Feld getrennt gepflegt wird');
@@ -142,7 +152,12 @@ function verstoesse(felder, p) {
   const d = (felder.duengen || '').toLowerCase();
   const f = (felder.fehler || []).join(' ').toLowerCase();
   const empfiehltRegelmaessig = /(regelmäßig|jährlich|jedes frühjahr|im frühjahr).{0,40}(dünge|langzeitdünger)|(dünge|langzeitdünger).{0,40}(regelmäßig|jährlich|jedes frühjahr)/.test(d);
-  const verneint = /nicht düngen|keine düngung|kein dünger|verzichte|nicht notwendig|nicht erforderlich|sparsam/.test(d);
+  // Neben echten Verneinungen zählen auch BEGRENZUNGEN als Entwarnung: "eine Gabe im Frühjahr
+  // genügt" empfiehlt gerade keine wiederholte Düngung, sondern deckelt sie. Ohne diesen Teil
+  // meldete die Prüfung einen Widerspruch, wo der Text sauber abgestuft war (einmal im
+  // Frühjahr, Nachdüngung nur bei sichtbarem Mangel, zu viel Stickstoff schadet).
+  const verneint = /nicht düngen|keine düngung|kein dünger|verzichte|nicht notwendig|nicht erforderlich|sparsam/.test(d)
+    || /(genügt|genuegt|reicht (aus|völlig|vollig)?|mehr braucht|braucht (sie |er |es )?nicht mehr|einmal (im|pro) jahr|eine (einzige )?gabe)/.test(d);
   const warntDavor = /überdüng|zu viel dünger|übermäßige düngung|dünger schadet|nährstoffreiche[nrs]? böden? schaden/.test(f);
   if (empfiehltRegelmaessig && !verneint && warntDavor) raus.push('empfiehlt regelmäßige Düngung und warnt zugleich davor');
   return raus;
