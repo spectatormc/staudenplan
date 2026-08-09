@@ -1,0 +1,72 @@
+[
+  {
+    "id": 205,
+    "botanisch": "Astilbe chinensis 'Pumila'",
+    "neu": "Zwerg-Prachtspiere",
+    "quelle": "Gattungskonvention in der Datenbank (Astilbe = Prachtspiere, Astilbe chinensis = Chinesische Prachtspiere) und die eigene Beschreibung „Niedrige Astilbe\", 30 cm",
+    "alt": "Astilbe"
+  },
+  {
+    "id": 330,
+    "botanisch": "Lespedeza thunbergii",
+    "neu": "Buschklee",
+    "quelle": "eigene Beschreibung: „auch als Buschklee bekannt\"",
+    "alt": "Lespedeza"
+  },
+  {
+    "id": 353,
+    "botanisch": "Ligularia stenocephala",
+    "neu": "Schmalkopf-Goldkolben",
+    "quelle": "Gattungskonvention (Ligularia dentata = Gezähnter Goldkolben). NICHT „Schmalkopf-Ligularie\" — den Namen trägt bereits die Sorte ‚The Rocket‘ (id 354), zwei gleiche Namen wären schlechter als gar keiner",
+    "alt": "Ligularia"
+  },
+  {
+    "id": 368,
+    "botanisch": "Lamium orvala",
+    "neu": "Großblütige Taubnessel",
+    "quelle": "eigene Beschreibung: „auch bekannt als Großblütige Taubnessel\"",
+    "alt": "Lamium"
+  },
+  {
+    "id": 416,
+    "botanisch": "Zizia aurea",
+    "neu": "Gold-Alexander",
+    "quelle": "eigene Beschreibung: „auch bekannt als Gold-Alexander\"",
+    "alt": "Zizia"
+  },
+  {
+    "id": 511,
+    "botanisch": "Muhlenbergia capillaris",
+    "neu": "Haargras",
+    "quelle": "eigene Beschreibung: „auch als Haargras bekannt\"",
+    "alt": "Muhlenbergia"
+  },
+  {
+    "id": 690,
+    "botanisch": "Trillium recurvatum",
+    "neu": "Rotes Dreiblatt",
+    "quelle": "eigene Beschreibung „auch als Rote Dreiblatt bekannt\" (Endung korrigiert) und Gattungskonvention (Trillium grandiflorum = Großes Dreiblatt)",
+    "alt": "Trillium Recurvatum"
+  },
+  {
+    "id": 726,
+    "botanisch": "Moltkia petraea",
+    "neu": "Felsen-Moltkie",
+    "quelle": "EXTERN belegt — Wikipedia (de), stauden-ratgeber.de, Sarastro Stauden, Staudengärtnerei Forssman. Der einzige der neun Namen, den die Datenbank selbst nicht hergab",
+    "alt": "Moltkia"
+  },
+  {
+    "id": 740,
+    "botanisch": "Jovibarba hirta",
+    "neu": "Bärtige Hauswurz",
+    "quelle": "eigene Beschreibung „auch bekannt als ‚Bärtige Hauswurz‘\" und Gattungskonvention (Sempervivum = Hauswurz)",
+    "alt": "Jovibarba"
+  },
+  {
+    "id": 194,
+    "botanisch": "Sanguisorba minor",
+    "neu": "Kleiner Wiesenknopf",
+    "quelle": "Grammatik: „Kleine Wiesenknopf\" ist falsch, der Wiesenknopf ist männlich. Die Geschwister heißen bereits „Großer Wiesenknopf\" und „Japanischer Wiesenknopf\"",
+    "alt": "Kleine Wiesenknopf"
+  }
+]
