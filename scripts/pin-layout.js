@@ -69,6 +69,31 @@ const istBeetpflanze = p => !/wasserfläche/i.test(String(p.lebensbereich || '')
                          && !mengeAus(p.feuchtigkeit).has('nass');
 
 /*
+ * Arten, die hier NICHT winterhart sind, aus den Pins heraushalten.
+ *
+ * Das Feld `winterhart_zone` taugt dafür nicht: Bei 299 Pflanzen mit Bild stehen 223 auf
+ * exakt Zone 5 und KEINE EINZIGE über Zone 7 — das ist ein Vorgabewert, keine Angabe.
+ * Entsprechend trägt Salvia elegans aus Mexiko dieselbe Zone 6 wie der heimische Buschklee.
+ *
+ * Die Liste ist bewusst kurz und enthält nur unstrittige Fälle: Arten, die der deutsche
+ * Handel selbst als einjährig oder als Kübelpflanze führt. Pennisetum setaceum 'Rubrum'
+ * etwa wird als „Einjähriges Garten-Federborstengras" verkauft und ist bis −6 °C hart —
+ * es stand bereits auf dem Juli- und Oktober-Pin als Staude fürs Beet.
+ *
+ * Ausschließen ist hier die sichere Richtung: Liege ich falsch, fehlen fünf Pins. Liege ich
+ * richtig und tue nichts, empfiehlt die Seite Pflanzen, die den ersten Winter nicht
+ * überstehen. Die Zonen selbst gehören trotzdem geprüft — siehe Notiz an den Betreiber.
+ */
+const NICHT_WINTERHART = new Set([
+  'Salvia elegans',                 // Mexiko, bei uns Kübel- oder Einjahrespflanze
+  'Melinis nerviglumis',            // Südafrika, im Handel als einjähriges Ziergras
+  "Pennisetum setaceum 'Rubrum'",   // Handelsname „Einjähriges Garten-Federborstengras", bis −6 °C
+  'Osteospermum ecklonis',          // Südafrika, klassische Beet- und Balkonpflanze
+  'Agapanthus africanus',           // Südafrika, überwintert frostfrei
+]);
+const istWinterhartHier = p => !NICHT_WINTERHART.has(String(p.name_botanisch || '').trim());
+
+/*
  * Gräser, Seggen und Binsen erkennen. Nötig, weil sie unter „Was im August blüht" zwar
  * korrekt, aber irreführend sind: Vier Gräser in einem Sechserraster sehen aus, als hätte
  * die Auswahl versagt — wer die Überschrift liest, erwartet Blüten. Im Winterbeet sind sie
@@ -128,5 +153,5 @@ function umbrechenBreit(text, font, size, maxBreite) {
 
 module.exports = { B, H, FONT, FONT_B, GRUEN, MONATE, MON_KURZ, MON_NAME, FARBTON,
                    GIFT_LABEL, GIFT_RANG, spanne, bluehtIm, farbeVon, mengeAus, schnitt,
-                   hatDeutschenNamen, istBeetpflanze, istGras, textBreite, passendeGroesse,
+                   hatDeutschenNamen, istBeetpflanze, istGras, istWinterhartHier, textBreite, passendeGroesse,
                    zeichenProZeile, umbrechen, umbrechenBreit };

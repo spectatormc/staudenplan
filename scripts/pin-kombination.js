@@ -47,7 +47,8 @@ function ladePflanzen(db) {
                      WHERE bild_ki = 1 AND bild_url IS NOT NULL AND hoehe_cm_max > 0`).all()
            .filter(p => spanne(p.bluehzeit) && fs.existsSync(path.join(WURZEL, 'public', p.bild_url.replace(/^\//, ''))))
            .filter(L.hatDeutschenNamen)
-           .filter(L.istBeetpflanze);
+           .filter(L.istBeetpflanze)
+           .filter(L.istWinterhartHier);
 }
 
 /*

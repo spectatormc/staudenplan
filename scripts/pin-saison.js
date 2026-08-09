@@ -57,6 +57,7 @@ function ladePflanzen(db) {
                      FROM pflanzen WHERE bild_ki = 1 AND bild_url IS NOT NULL`).all()
            .filter(L.hatDeutschenNamen)
            .filter(L.istBeetpflanze)
+           .filter(L.istWinterhartHier)
            .filter(p => fs.existsSync(path.join(WURZEL, 'public', p.bild_url.replace(/^\//, ''))));
 }
 
