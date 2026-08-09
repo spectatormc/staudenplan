@@ -49,6 +49,24 @@ const ZONEN = [
   { bot: 'Nassella tenuissima', zone: 7, warum: 'Mexiko/Südamerika, in kalten Lagen unzuverlässig' },
   { bot: 'Alstroemeria aurantiaca', zone: 7, warum: 'Südamerika, Knollen brauchen Schutz' },
   { bot: "Imperata cylindrica 'Red Baron'", zone: 7, warum: 'in kalten Lagen häufiger Totalausfall' },
+  /* Zweite Runde, 09.08.2026: Gattungen, in denen harte und weiche Arten gemischt sind.
+   * Die erste Runde war nach Herkunft gegangen und hatte damit nur ganze Gattungen erfasst.
+   * Hier zählt die Art — Lavandula angustifolia ist winterhart, Lavandula latifolia nicht. */
+  { bot: 'Lavandula latifolia', zone: 9, warum: 'BELEGT: Speiklavendel verträgt nur etwa −5 °C und ist im Gegensatz zu Lavandula angustifolia NICHT frosthart (Plantura, lavendel.net, Gaißmayer). Stand auf Zone 6, das wären −23 °C' },
+  { bot: 'Lavandula x intermedia', zone: 7, warum: 'Lavandin liegt zwischen den Elternarten, in rauen Lagen mit Schutz' },
+  { bot: 'Erigeron karvinskianus', zone: 7, warum: 'BELEGT: „nur bedingt winterhart", in kälteren Regionen abdecken oder im Topf überwintern (Pflanzen-Kölle, Lubera)' },
+  { bot: 'Agastache mexicana', zone: 8, warum: 'Mexiko, im Handel als nicht zuverlässig winterhart geführt' },
+  { bot: "Agastache 'Apricot Sunrise'", zone: 7, warum: 'Hybride mit Agastache mexicana im Erbgut' },
+  { bot: 'Penstemon campanulatus', zone: 8, warum: 'Mexiko und Guatemala, deutlich weicher als die nordamerikanischen Arten der Gattung' },
+  { bot: 'Ballota pseudodictamnus', zone: 7, warum: 'Kreta und östliches Mittelmeer, braucht trockenen Winterstand' },
+  { bot: 'Teucrium polium', zone: 7, warum: 'Mittelmeerraum, weicher als der heimische Edel-Gamander' },
+  { bot: 'Acanthus mollis', zone: 7, warum: 'weicher als Acanthus spinosus, Laub friert regelmäßig zurück' },
+  { bot: 'Euphorbia wulfenii', zone: 7, warum: 'Unterart von Euphorbia characias, die bereits auf Zone 7 steht' },
+  { bot: 'Verbena bonariensis', zone: 7, warum: 'Südamerika; hält sich hier meist über Selbstaussaat, nicht über die Wurzel' },
+  { bot: 'Crocosmia masoniorum', zone: 7, warum: 'weicher als die Gartenhybriden, Knollen brauchen Schutz' },
+  { bot: 'Kniphofia uvaria', zone: 7, warum: 'Südafrika, Herz muss im Winter trocken stehen' },
+  { bot: 'Ipheion uniflorum', zone: 7, warum: 'Argentinien und Uruguay, in kalten Lagen mit Laubdecke' },
+
   // Aus der Gegenprüfung Feld ↔ eigener Fließtext: der Text ist die genauere Angabe.
   { bot: 'Delosperma cooperi',  zone: 7, warum: 'eigener Text: bis −15 °C' },
   { bot: 'Geranium x magnificum', zone: 6, warum: 'eigener Text: bis −20 °C' },
@@ -166,7 +184,16 @@ db.prepare('SELECT * FROM pflanzen').all().forEach(p => {
   merke('Lebensbereich', p, 'lebensbereich', p.lebensbereich, neu, /^[A-Za-z]{1,3}\d/.test(roh) ? 'Kürzel in Klartext' : 'Schreibweise und Reihenfolge vereinheitlicht');
 });
 
-EINZELN.forEach(e => { const p = finde(e.bot); merke('Einzelfall', p, e.feld, p[e.feld], e.wert, e.warum); });
+/*
+ * Die Einzelfälle ändern teilweise den botanischen Namen selbst — nach dem ersten Lauf gibt
+ * es „Lycopus" nicht mehr, sondern „Lycopus europaeus". Deshalb hier auch unter dem neuen
+ * Namen suchen, sonst bricht jeder zweite Lauf ab.
+ */
+EINZELN.forEach(e => {
+  const p = db.prepare('SELECT * FROM pflanzen WHERE name_botanisch = ? OR name_botanisch = ?').get(e.bot, e.wert);
+  if (!p) throw new Error(`nicht gefunden: „${e.bot}" — abgebrochen, statt die falsche Pflanze zu ändern`);
+  merke('Einzelfall', p, e.feld, p[e.feld], e.wert, e.warum);
+});
 
 // Ausgabe
 const proBereich = new Map();
