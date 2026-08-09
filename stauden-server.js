@@ -446,10 +446,30 @@ const STIL_MAP = {
  * Die Kurzform ("Sonne" statt "Vollsonne (6+ h)") bleibt gültig: Ältere gespeicherte
  * Formulare und die Beispielaufrufe in der Dokumentation verwenden sie.
  */
-function bekannterWert(wert, map) {
-  const w = String(wert || '').trim();
-  return Object.prototype.hasOwnProperty.call(map, w) || Object.values(map).includes(w);
-}
+/*
+ * ACHTUNG, hier lag schon ein Fehler: Die Prüfung stützte sich zuerst auf LICHT_MAP,
+ * BODEN_MAP und STIL_MAP. Diese Tabellen sind aber KEINE Vollständigkeitsliste, sondern
+ * eine Übersetzungshilfe mit Rückfallregel — STIL_MAP kennt vier Einträge, die Oberfläche
+ * bietet acht an. „Prairie-Stil / Naturalistisch", „Mediterraner Garten", „Japanischer
+ * Garten" und „Steingarten / Alpin" wären damit abgewiesen worden, obwohl sie täglich
+ * gewählt werden. Aufgefallen an den echten Werten in plan_statistik.
+ *
+ * Die Listen unten stammen deshalb aus dem Client (Attribute data-licht/data-boden und die
+ * Aufrufe von selectOption) und aus den tatsächlich eingegangenen Werten. Die Kurzformen
+ * bleiben gültig: Sie kommen aus älteren gespeicherten Formularen und aus Testaufrufen.
+ *
+ * Wer eine Auswahlmöglichkeit im Client ergänzt, muss sie hier eintragen.
+ */
+const ERLAUBT_LICHT = new Set(['Vollsonne (6+ h)', 'Halbschatten (3–6 h)', 'Schatten (unter 3 h)',
+  'Wechselnde Bedingungen', 'Sonne', 'Halbschatten', 'Schatten']);
+const ERLAUBT_BODEN = new Set(['Sandig / durchlässig', 'Lehmig / schwer', 'Normal / humos',
+  'Normal / unbekannt', 'sandig', 'lehmig', 'normal']);
+const ERLAUBT_STIL = new Set(['Naturgarten / Wildgarten', 'Bauerngarten / Romantisch',
+  'Modern / Minimalistisch', 'Cottage-Garten / Englisch', 'Prairie-Stil / Naturalistisch',
+  'Mediterraner Garten', 'Japanischer Garten', 'Steingarten / Alpin',
+  'Naturgarten', 'Bauerngarten', 'Modern', 'Cottage', 'Mediterran']);
+
+const bekannterWert = (wert, erlaubt) => erlaubt.has(String(wert || '').trim());
 
 function getFeuchtigkeit(boden, standortBeschr) {
   const s = (standortBeschr || '').toLowerCase();
@@ -1444,9 +1464,9 @@ app.post('/api/plan', planHartLimiter, planLimiter, async (req, res) => {
   // Werte gegen das bekannte Vokabular prüfen (siehe bekannterWert). Vorher genügte es,
   // dass es Zeichenketten waren — „Mondlicht" und „Vulkanasche" lieferten einen Plan.
   const unbekannt = [
-    !bekannterWert(licht, LICHT_MAP) ? 'Lichtverhältnisse' : null,
-    !bekannterWert(boden, BODEN_MAP) ? 'Bodentyp' : null,
-    !bekannterWert(stil, STIL_MAP)   ? 'Gartenstil' : null,
+    !bekannterWert(licht, ERLAUBT_LICHT) ? 'Lichtverhältnisse' : null,
+    !bekannterWert(boden, ERLAUBT_BODEN) ? 'Bodentyp' : null,
+    !bekannterWert(stil, ERLAUBT_STIL)   ? 'Gartenstil' : null,
   ].filter(Boolean);
   if (unbekannt.length) {
     console.warn('Plananfrage mit unbekannten Werten abgelehnt: licht=%j boden=%j stil=%j', licht, boden, stil);
