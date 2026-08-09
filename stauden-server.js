@@ -469,6 +469,15 @@ const FEUCHT_COMPAT = {
  * KEINE Pflanze ist deswegen offline — alle 709 behalten Lexikonseite und Bilder. Es geht
  * nur darum, was der Planer in ein Staudenbeet setzt. Betrifft 14 Arten.
  */
+// Spalten, die ein Kandidat für den Planer mitbringt. Auf Modulebene, weil inzwischen drei
+// Abfragen sie brauchen (Rollenauswahl, Ausweichpfad, Nutzungsschwerpunkte).
+const PLAN_COLS = `name_deutsch, name_botanisch, beschreibung, licht, boden, stil,
+           bluehzeit, farbe, hoehe_cm_min, hoehe_cm_max,
+           pflege_sterne, preis_stueck_eur, bienen_freundlich, heimisch,
+           feuchtigkeit, wuchs,
+           lebensbereich, breite_cm_max, rolle_empfehlung,
+           kombinationspartner, winteraspekt, trockenheitstoleranz, lebensdauer`;
+
 const PLANBAR = `(wuchs IS NULL OR wuchs != 'invasiv')
       AND (status IS NULL OR status = 'live')
       AND (winterhart_zone IS NULL OR winterhart_zone <= 7)
@@ -485,12 +494,7 @@ function getPflanzenkandidaten(licht, boden, stil, standortBeschr, kindersicher 
   const feuchTerms  = FEUCHT_COMPAT[feuchtigkeit] || ['normal'];
   const feuchPlaceholders = feuchTerms.map(() => '?').join(',');
 
-  const COLS = `name_deutsch, name_botanisch, beschreibung, licht, boden, stil,
-           bluehzeit, farbe, hoehe_cm_min, hoehe_cm_max,
-           pflege_sterne, preis_stueck_eur, bienen_freundlich, heimisch,
-           feuchtigkeit, wuchs,
-           lebensbereich, breite_cm_max, rolle_empfehlung,
-           kombinationspartner, winteraspekt, trockenheitstoleranz, lebensdauer`;
+  const COLS = PLAN_COLS;
 
   // WHERE-Varianten (Vollmatch → Licht+Feucht → nur Licht)
   const FULL_WHERE  = `licht LIKE ? AND (boden LIKE ? OR boden LIKE ?) AND stil LIKE ?
@@ -591,6 +595,106 @@ function getRelevantesWissen(stil, licht, feuchtigkeit) {
  * Übervorsicht, sondern die Eigenart der Gruppe: Eine Blumenzwiebel sieht aus wie etwas
  * Essbares und liegt beim Pflanzen offen herum.
  */
+/*
+ * Nutzungswünsche mit Daten hinterlegen.
+ *
+ * Bis zum 09.08.2026 landeten alle acht Schalter ausschließlich in der Prompt-Zeile
+ * „Gartennutzung/Schwerpunkt: …" und beeinflussten die Pflanzenauswahl mit keinem Zeichen.
+ * Die Landingpage /bienenfreundliche-stauden behauptete derweil wörtlich: „Unser
+ * KI-Bepflanzungsplan wählt automatisch bienenfreundliche Kombinationen aus, wenn du
+ * ‚Bienengarten‘ als Gartennutzung angibst."
+ *
+ * ZUSÄTZLICHE KANDIDATEN STATT HARTER FILTER — bewusst, und anders als bei „Kindersicher".
+ * Dort geht es um Sicherheit, da muss jede gefährliche Art weg. Hier geht es um einen
+ * Schwerpunkt: Ein Beet, das NUR aus Sichtschutz-Stauden besteht, wäre eine Wand ohne
+ * Vordergrund, und „Schnittblumen" heißt nicht, dass jede Pflanze zum Schneiden sein soll.
+ * Die passenden Arten werden deshalb garantiert in die Kandidatenliste gelegt, aus der das
+ * Modell wählt — und die Anweisung sagt, was damit zu tun ist. Was nicht in der Liste steht,
+ * kann nicht eingeplant werden; was drinsteht, hat eine echte Chance.
+ */
+const NUTZUNG_REGELN = {
+  Bienengarten: {
+    bedingung: 'bienen_freundlich = 1',
+    anweisung: 'BIENENGARTEN: Mindestens drei Viertel der geplanten Arten müssen mit 🐝 markiert sein. Achte auf ein durchgehendes Nektarband — in jedem Monat von März bis Oktober sollte etwas blühen.',
+  },
+  Winteraspekt: {
+    bedingung: `winteraspekt IS NOT NULL AND (winteraspekt LIKE '%Samenstand%' OR winteraspekt LIKE '%Struktur%'
+                OR winteraspekt LIKE '%immergrün%' OR winteraspekt LIKE '%wintergrün%')`,
+    anweisung: 'WINTERASPEKT: Mindestens {n} der geplanten Arten müssen mit ✅Winteraspekt markiert sein und im Winter etwas hermachen — stehenbleibende Samenstände, Gräserstruktur oder immergrünes Laub. Weise im Konzept darauf hin, dass diese Arten erst im Frühjahr zurückgeschnitten werden.',
+  },
+  Sichtschutz: {
+    bedingung: 'hoehe_cm_max >= 120',
+    anweisung: 'SICHTSCHUTZ: Mindestens {n} der geplanten Arten müssen mit ✅Sichtschutz markiert sein (ab 120 cm) in ausreichender Stückzahl als geschlossene Gruppe. Stauden sind allerdings kein ganzjähriger Sichtschutz — sie ziehen im Winter ein. Sag das im Konzept in einem Satz.',
+  },
+  Bodendecker: {
+    bedingung: `(hoehe_cm_max <= 40 AND breite_cm_max >= hoehe_cm_max)
+                OR beschreibung LIKE '%odendecker%' OR inhalt_lang LIKE '%odendecker%'`,
+    anweisung: 'BODENDECKER: Mindestens {n} der geplanten Arten müssen mit ✅Bodendecker markiert sein. Setze diese flächig wachsenden, niedrige Arten in großen Gruppen als durchgehende Unterpflanzung ein, damit wenig offener Boden bleibt.',
+  },
+  Duftgarten: {
+    bedingung: `beschreibung LIKE '%duft%' OR inhalt_lang LIKE '%duft%' OR inhalt_lang LIKE '%aromatisch%'`,
+    anweisung: 'DUFTGARTEN: Mindestens {n} der geplanten Arten müssen mit ✅Duftgarten markiert sein. Setze sie dorthin, wo man vorbeigeht — an Wegrand und Sitzplatz, nicht in die hinterste Reihe.',
+  },
+  Schmetterlinge: {
+    bedingung: `beschreibung LIKE '%chmetterling%' OR inhalt_lang LIKE '%chmetterling%' OR inhalt_lang LIKE '%Falter%'`,
+    anweisung: 'SCHMETTERLINGE: Mindestens {n} der geplanten Arten müssen mit ✅Schmetterlinge markiert sein — offene, nektarreiche Blüten in großen Gruppen — einzelne Pflanzen werden kaum angeflogen.',
+  },
+  Schnittblumen: {
+    bedingung: `beschreibung LIKE '%chnittblume%' OR inhalt_lang LIKE '%chnittblume%' OR inhalt_lang LIKE '%Vase%'`,
+    anweisung: 'SCHNITTBLUMEN: Mindestens {n} der geplanten Arten müssen mit ✅Schnittblumen markiert sein — langstielig und zum Schneiden geeignet — sie müssen nicht das ganze Beet ausmachen.',
+  },
+};
+
+/*
+ * Legt zu jedem gewählten Schwerpunkt passende Arten in die Kandidatenliste. Standort und
+ * die PLANBAR-Regeln gelten weiter, „Kindersicher" ebenfalls — ein Schwerpunkt darf eine
+ * Sicherheitszusage nicht aushebeln.
+ */
+function ergaenzeNutzungskandidaten(kandidaten, nutzung, licht, kindersicher) {
+  if (!Array.isArray(nutzung) || !nutzung.length) return { kandidaten, anweisungen: [] };
+  const lichtTerm = LICHT_MAP[licht] || String(licht).split(' ')[0];
+  const bekannt = new Set(kandidaten.map(p => p.name_botanisch));
+  const anweisungen = [];
+
+  for (const wunsch of nutzung) {
+    const regel = NUTZUNG_REGELN[wunsch];
+    if (!regel) continue;                                  // „Kindersicher" läuft über den Filter
+    let treffer;
+    try {
+      treffer = db.prepare(
+        `SELECT ${PLAN_COLS} FROM pflanzen
+         WHERE licht LIKE ? AND (${regel.bedingung}) AND ${PLANBAR}`
+      ).all(`%${lichtTerm}%`);
+    } catch (e) { console.warn('Nutzungsregel „%s" fehlgeschlagen: %s', wunsch, e.message); continue; }
+
+    if (kindersicher) treffer = treffer.filter(p => istKindersicher(p.name_botanisch));
+    const passend = new Set(treffer.map(p => p.name_botanisch));
+
+    const neu = treffer.filter(p => !bekannt.has(p.name_botanisch)).slice(0, 12);
+    neu.forEach(p => bekannt.add(p.name_botanisch));
+    kandidaten = kandidaten.concat(neu);
+
+    /*
+     * Markieren, und zwar ALLE passenden Kandidaten — auch die, die schon vorher in der
+     * Liste standen. Ohne diese Kennzeichnung sieht das Modell nicht, welche Art den
+     * Schwerpunkt erfüllt: Beim ersten Versuch lieferte ein Duftgarten neun Arten, von
+     * denen keine einzige duftete, und das Konzept behauptete trotzdem „mit duftenden
+     * Stauden". Für Bienen (🐝) und Winteraspekt (❄️) gab es solche Zeichen schon — genau
+     * die beiden Schwerpunkte hatten auf Anhieb funktioniert.
+     */
+    kandidaten.forEach(p => {
+      if (passend.has(p.name_botanisch)) p.schwerpunkt = [...new Set([...(p.schwerpunkt || []), wunsch])];
+    });
+
+    // Nur anweisen, wofür es auch Pflanzen gibt — sonst fordert der Prompt etwas ein,
+    // das die Liste nicht hergibt, und das Modell erfindet sich Arten dazu.
+    const vorhanden = kandidaten.filter(p => passend.has(p.name_botanisch)).length;
+    if (vorhanden >= 3) anweisungen.push(regel.anweisung.replace('{n}', Math.min(3, Math.floor(vorhanden / 2))));
+    else console.warn('Nutzung „%s": nur %d passende Arten für %s — Anweisung weggelassen', wunsch, vorhanden, licht);
+  }
+  return { kandidaten, anweisungen };
+}
+
 function getGeophytenKandidaten(licht, kindersicher = false) {
   const lichtTerm = LICHT_MAP[licht] || licht.split(' ')[0];
   const GENERA = ['Tulipa', 'Narcissus', 'Allium', 'Muscari', 'Crocus', 'Galanthus', 'Scilla', 'Camassia', 'Nectaroscordum'];
@@ -863,6 +967,10 @@ Du empfiehlst ausschließlich in Deutschland winterharte Pflanzen. Antworte imme
         p.trockenheitstoleranz === 'hoch' ? '☀️trockenheitsresistent' : '',
         p.wuchs && p.wuchs !== 'horstig' ? `⚠️${p.wuchs}` : '',
         p.winteraspekt && p.winteraspekt !== 'unauffällig' ? `❄️${p.winteraspekt}` : '',
+        // Erfüllte Nutzungsschwerpunkte. Ohne diese Kennzeichnung kann das Modell nicht
+        // erkennen, welche Art duftet oder sich als Schnittblume eignet — es stand nur im
+        // Fließtext der Beschreibung, den die Kandidatenliste gar nicht überträgt.
+        Array.isArray(p.schwerpunkt) && p.schwerpunkt.length ? `✅${p.schwerpunkt.join('+')}` : '',
       ].filter(Boolean).join(' ');
       const lebensb = p.lebensbereich ? ` | LB:${p.lebensbereich}` : '';
       const kombi = p.kombinationspartner ? ` | Kombi:${p.kombinationspartner}` : '';
@@ -1314,13 +1422,42 @@ app.post('/api/plan', planHartLimiter, planLimiter, async (req, res) => {
    */
   const kindersicher = Array.isArray(nutzung) && nutzung.some(n => /kindersicher|kinderfreundlich/i.test(String(n)));
 
-  const kandidaten = getPflanzenkandidaten(licht, boden, stil, standort_beschreibung, kindersicher);
+  let kandidaten = getPflanzenkandidaten(licht, boden, stil, standort_beschreibung, kindersicher);
+
+  // Die übrigen sieben Nutzungsschalter wirkten bis 09.08.2026 ebenfalls nicht auf die
+  // Auswahl. Jetzt legen sie passende Arten in die Liste und erzeugen eine klare Anweisung.
+  const nutzungErgebnis = ergaenzeNutzungskandidaten(kandidaten, nutzung, licht, kindersicher);
+  kandidaten = nutzungErgebnis.kandidaten;
+
+  /*
+   * Pflegeaufwand: Nur „Minimal" lässt sich belegen. Die Spalte pflege_sterne vergibt bei
+   * 531 von 709 Pflanzen eine 2 und nur bei DREI eine 3 — als dreistufige Unterscheidung ist
+   * sie wertlos. Für „Minimal" gibt es dagegen 175 Arten mit einem Stern, das trägt. Bei
+   * „Mittel" und „Intensiv" wird deshalb nicht eingeschränkt, was auch inhaltlich passt:
+   * Wer Zeit hat, braucht keine Auswahlbegrenzung.
+   */
+  if (/minimal/i.test(String(pflegezeit || ''))) {
+    const lichtTerm = LICHT_MAP[licht] || String(licht).split(' ')[0];
+    let pflegeleicht = db.prepare(
+      `SELECT ${PLAN_COLS} FROM pflanzen WHERE licht LIKE ? AND pflege_sterne = 1 AND ${PLANBAR}
+       ORDER BY RANDOM() LIMIT ${kindersicher ? 45 : 15}`).all(`%${lichtTerm}%`);
+    if (kindersicher) pflegeleicht = pflegeleicht.filter(p => istKindersicher(p.name_botanisch));
+    const schon = new Set(kandidaten.map(p => p.name_botanisch));
+    kandidaten = kandidaten.concat(pflegeleicht.filter(p => !schon.has(p.name_botanisch)).slice(0, 15));
+    nutzungErgebnis.anweisungen.push('PFLEGEAUFWAND MINIMAL: Bevorzuge Arten mit einem Pflegestern — keine Arten, die Stützen, regelmäßiges Teilen oder häufigen Rückschnitt brauchen.');
+  }
+
   const wissen = getRelevantesWissen(stil, licht, feuchtigkeit);
 
   const geophytenKandidaten = geophyten ? getGeophytenKandidaten(licht, kindersicher) : [];
 
   if (kandidaten.length > 0) {
-    console.log(`RAG: ${kandidaten.length} Pflanzenkandidaten (feuchtigkeit=${feuchtigkeit}), ${wissen.length} Wissensdokumente${geophytenKandidaten.length > 0 ? `, ${geophytenKandidaten.length} Geophyten` : ''}`);
+    // Markierte Kandidaten mitloggen: Ohne diese Zahl lässt sich später nicht unterscheiden,
+    // ob ein Schwerpunkt am fehlenden Angebot oder am Modell gescheitert ist.
+    const markiert = {};
+    kandidaten.forEach(p => (p.schwerpunkt || []).forEach(s => markiert[s] = (markiert[s] || 0) + 1));
+    const markText = Object.entries(markiert).map(([s, n]) => `${s}:${n}`).join(' ');
+    console.log(`RAG: ${kandidaten.length} Pflanzenkandidaten (feuchtigkeit=${feuchtigkeit}), ${wissen.length} Wissensdokumente${geophytenKandidaten.length > 0 ? `, ${geophytenKandidaten.length} Geophyten` : ''}${markText ? ` | Schwerpunkte ${markText}` : ''}`);
   }
 
   const systemPrompt = buildSystemPrompt(kandidaten, wissen, geophytenKandidaten);
@@ -1335,6 +1472,11 @@ app.post('/api/plan', planHartLimiter, planLimiter, async (req, res) => {
   // Der Filter allein reicht: Was nicht in der Kandidatenliste steht, kann das Modell nicht
   // wählen. Die Anweisung steht trotzdem dabei, damit es nicht von sich aus eine giftige Art
   // ergänzt — und weil sie erklärt, warum die Liste kürzer ist als sonst.
+  // Anweisungen zu den Schwerpunkten, für die auch Pflanzen in der Liste stehen.
+  const nutzungAnweisungen = nutzungErgebnis.anweisungen.length
+    ? '\n\n' + nutzungErgebnis.anweisungen.join('\n')
+    : '';
+
   const kindersicherHinweis = kindersicher
     ? '\n\nWICHTIG — KINDERSICHERER GARTEN: Verwende AUSSCHLIESSLICH Pflanzen aus der Kandidatenliste. '
       + 'Ergänze auf keinen Fall eigene Arten. Die Liste enthält bereits nur ungiftige Arten ohne Dornen '
@@ -1366,7 +1508,7 @@ app.post('/api/plan', planHartLimiter, planLimiter, async (req, res) => {
 - Gartenstil: ${stil}
 - Beettyp / Sichtseite: ${sichtseite || 'einseitig'}
 - Farbwunsch: ${farbe || 'keine Präferenz'}
-- Blühsaison-Priorität: ${saison || 'ganzjährig'}${plz ? `\n- Region (PLZ ${plz}): ${klimaregion || 'Mitteleuropa, gemäßigtes Klima'}` : ''}${lieblingsList ? `\n- Lieblingspflanzen (unbedingt einplanen): ${lieblingsList}` : ''}${budget ? `\n- Budget: maximal ${budget} € Gesamtkosten` : ''}${nutzungList ? `\n- Gartennutzung/Schwerpunkt: ${nutzungList}` : ''}${pflegezeit ? `\n- Gewünschte Pflegeintensität: ${pflegezeit}` : ''}${kindersicherHinweis}
+- Blühsaison-Priorität: ${saison || 'ganzjährig'}${plz ? `\n- Region (PLZ ${plz}): ${klimaregion || 'Mitteleuropa, gemäßigtes Klima'}` : ''}${lieblingsList ? `\n- Lieblingspflanzen (unbedingt einplanen): ${lieblingsList}` : ''}${budget ? `\n- Budget: maximal ${budget} € Gesamtkosten` : ''}${nutzungList ? `\n- Gartennutzung/Schwerpunkt: ${nutzungList}` : ''}${pflegezeit ? `\n- Gewünschte Pflegeintensität: ${pflegezeit}` : ''}${nutzungAnweisungen}${kindersicherHinweis}
 
 ${lieblingsList ? `WICHTIG ZU DEN LIEBLINGSPFLANZEN: Prüfe ob die gewünschten Pflanzen zum angegebenen Standort (${licht}, ${boden}, Feuchtigkeit: ${feuchtigkeit}) passen. Falls eine Pflanze nicht passt, weise im "tipps"-Feld explizit darauf hin und schlage eine Alternative vor. Dennoch: Baue alle Lieblingspflanzen ein, sofern irgendwie vertretbar.\n` : ''}${sichtseite && sichtseite.includes('Einseitig') ? 'ANORDNUNG: Einseitig einsehbares Beet — hohe Pflanzen (>80 cm) im Hintergrund, mittlere in der Mitte, niedrige (<40 cm) im Vordergrund. Im Feld "standort" jeder Pflanze angeben: "Hintergrund", "Mitte" oder "Vordergrund".' : ''}${sichtseite && sichtseite.includes('Rundbeet') ? 'ANORDNUNG: Rundbeet / Inselbeet — höchste Pflanzen in der Mitte, nach außen abnehmende Höhen. Im Feld "standort" angeben: "Mitte", "Mittelzone" oder "Rand".' : ''}${sichtseite && sichtseite.includes('Eckbeet') ? 'ANORDNUNG: Eckbeet — höchste Pflanzen an der Ecke/Rückwand, diagonal nach vorne-links und vorne-rechts abfallend. Im Feld "standort" angeben: "Ecke/Hintergrund", "Mitte" oder "Vordergrund".' : ''}
 ${vielfaltAnweisung} ${dichteAnweisung} Berechne Stückzahlen für ${gartenflaeche} m².
@@ -1475,6 +1617,59 @@ JSON-Format:
           ? 'Die Planerstellung hat zu lange gedauert. Bitte versuch es noch einmal — bei kleineren Flächen geht es meist schneller.'
           : 'Fehler bei der KI-Planung. Bitte versuche es erneut.'
       });
+    }
+
+    /*
+     * Schwerpunkte deterministisch durchsetzen.
+     *
+     * Dieselbe Erfahrung wie beim Budget, das aus genau diesem Grund schon serverseitig
+     * gekappt wird: Das Modell hält Nebenbedingungen nicht ein, wenn mehrere gleichzeitig
+     * gelten. Gemessen bei „Duftgarten + Schnittblumen" mit je 13 markierten Kandidaten in
+     * der Liste — geliefert wurden 2 und 1 statt der geforderten 3 und 3.
+     *
+     * Getauscht wird rollengetreu: Eine Füllstaude wird durch eine Füllstaude ersetzt, damit
+     * Höhenstaffelung und Stückzahlen stimmig bleiben. Zuerst fliegen Arten raus, die gar
+     * keinen der gewünschten Schwerpunkte erfüllen — wer schon zwei Wünsche bedient, bleibt.
+     */
+    if (Array.isArray(plan.pflanzen) && nutzungErgebnis.anweisungen.length) {
+      const rolleVon = p => p.rolle || ((p.hoehe_cm || 50) >= 100 ? 'Leitstaude' : (p.hoehe_cm || 50) >= 50 ? 'Begleitstaude' : 'Füllstaude');
+      const erfuellt = (name, wunsch) => kandidaten.some(k => k.name_botanisch === name && (k.schwerpunkt || []).includes(wunsch));
+      const punkte = p => (nutzung || []).filter(w => erfuellt(p.name_botanisch, w)).length;
+
+      for (const wunsch of (nutzung || [])) {
+        if (!NUTZUNG_REGELN[wunsch]) continue;
+        const markiert = kandidaten.filter(k => (k.schwerpunkt || []).includes(wunsch));
+        const soll = Math.min(3, Math.floor(markiert.length / 2));
+        let ist = plan.pflanzen.filter(p => erfuellt(p.name_botanisch, wunsch)).length;
+        if (ist >= soll) continue;
+
+        const drin = new Set(plan.pflanzen.map(p => p.name_botanisch));
+        for (const ersatz of markiert) {
+          if (ist >= soll) break;
+          if (drin.has(ersatz.name_botanisch)) continue;
+          const rolle = ersatz.rolle_empfehlung
+            || ((ersatz.hoehe_cm_max || 50) >= 100 ? 'Leitstaude' : (ersatz.hoehe_cm_max || 50) >= 50 ? 'Begleitstaude' : 'Füllstaude');
+          // Kandidat mit derselben Rolle und den wenigsten erfüllten Wünschen ersetzen.
+          const opfer = plan.pflanzen
+            .map((p, i) => ({ p, i, rolle: rolleVon(p), pkt: punkte(p) }))
+            .filter(x => x.rolle === rolle && x.pkt === 0)
+            .sort((a, b) => a.pkt - b.pkt)[0];
+          if (!opfer) continue;
+          plan.pflanzen[opfer.i] = {
+            ...opfer.p,
+            name_deutsch: ersatz.name_deutsch, name_botanisch: ersatz.name_botanisch,
+            beschreibung: ersatz.beschreibung || opfer.p.beschreibung,
+            bluehzeit: ersatz.bluehzeit || opfer.p.bluehzeit, farbe: ersatz.farbe || opfer.p.farbe,
+            hoehe_cm: ersatz.hoehe_cm_max || opfer.p.hoehe_cm,
+            pflege_sterne: ersatz.pflege_sterne || opfer.p.pflege_sterne,
+            preis_stueck_eur: ersatz.preis_stueck_eur ?? opfer.p.preis_stueck_eur,
+          };
+          drin.delete(opfer.p.name_botanisch); drin.add(ersatz.name_botanisch);
+          ist++;
+          console.log('Schwerpunkt „%s": %s ersetzt durch %s', wunsch, opfer.p.name_deutsch, ersatz.name_deutsch);
+        }
+        if (ist < soll) console.warn('Schwerpunkt „%s": nur %d von %d erreicht — kein passender Tauschpartner', wunsch, ist, soll);
+      }
     }
 
     // Bilder, Pflanzabstand UND Preis aus DB anreichern.
