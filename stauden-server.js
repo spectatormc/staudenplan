@@ -431,6 +431,26 @@ const STIL_MAP = {
   'Cottage-Garten / Englisch': 'Cottage',
 };
 
+/*
+ * Prüft, ob ein Wert aus dem bekannten Vokabular stammt.
+ *
+ * Bis zum 09.08.2026 fehlte diese Prüfung ganz. Ein Test mit licht="Mondlicht",
+ * boden="Vulkanasche" und stil="Raumstation" lieferte HTTP 200, success:true und einen Plan
+ * mit sieben Pflanzen — vier davon FREI ERFUNDEN, weil bei null Kandidaten die gesamte
+ * Pflanzenliste im Prompt entfällt und das Modell aus eigenem Wissen antwortet. Darunter
+ * Rittersporn (stark giftig, vom Kindersicher-Netz abgefangen) und Gundermann, ein
+ * wucherndes Unkraut. Das Konzept lautete „Ein kinderfreundliches Raumstation-Staudenbeet".
+ *
+ * Die Oberfläche bietet nur feste Werte an — kommt etwas anderes an, ist der Aufruf kaputt
+ * oder fremd, und dann ist eine klare Fehlermeldung besser als ein erfundener Plan.
+ * Die Kurzform ("Sonne" statt "Vollsonne (6+ h)") bleibt gültig: Ältere gespeicherte
+ * Formulare und die Beispielaufrufe in der Dokumentation verwenden sie.
+ */
+function bekannterWert(wert, map) {
+  const w = String(wert || '').trim();
+  return Object.prototype.hasOwnProperty.call(map, w) || Object.values(map).includes(w);
+}
+
 function getFeuchtigkeit(boden, standortBeschr) {
   const s = (standortBeschr || '').toLowerCase();
   if (s.includes('nass') || s.includes('teichrand') || s.includes('sumpf')) return 'nass';
@@ -538,15 +558,22 @@ function getPflanzenkandidaten(licht, boden, stil, standortBeschr, kindersicher 
   let begleit = roleQuery(FULL_WHERE, FULL_ARGS, BEGLEIT_F, 15);
   let fuell   = roleQuery(FULL_WHERE, FULL_ARGS, FUELL_F,   10);
 
-  // Fallback pro Rolle auf Licht+Feuchtigkeit wenn zu wenige Treffer
-  if (leit.length    < 3) leit    = roleQuery(LICHT_WHERE, LICHT_ARGS, LEIT_F,    8);
-  if (begleit.length < 5) begleit = roleQuery(LICHT_WHERE, LICHT_ARGS, BEGLEIT_F, 15);
-  if (fuell.length   < 3) fuell   = roleQuery(LICHT_WHERE, LICHT_ARGS, FUELL_F,   10);
+  /*
+   * Ausweichpfade. Die zweite Stufe lässt Bodentyp UND Gartenstil fallen, die dritte auch
+   * noch die Feuchtestufe — es bleibt nur das Licht. Das ist richtig so, ein Plan ist besser
+   * als eine Fehlermeldung. Bisher geschah es aber lautlos: Wer „Mediterran" gewählt hatte,
+   * bekam unter Umständen eine Auswahl ohne jeden Bezug zum Stil und erfuhr es nie.
+   * Jetzt wird mitgeschrieben, was aufgegeben wurde; der Aufrufer hängt es an den Plan.
+   */
+  const aufgegeben = new Set();
 
-  // Letzter Fallback nur auf Licht
-  if (leit.length    < 2) leit    = roleQuery(LAST_WHERE, LAST_ARGS, LEIT_F,    8);
-  if (begleit.length < 3) begleit = roleQuery(LAST_WHERE, LAST_ARGS, BEGLEIT_F, 15);
-  if (fuell.length   < 2) fuell   = roleQuery(LAST_WHERE, LAST_ARGS, FUELL_F,   10);
+  if (leit.length    < 3) { leit    = roleQuery(LICHT_WHERE, LICHT_ARGS, LEIT_F,    8);  aufgegeben.add('Bodentyp').add('Gartenstil'); }
+  if (begleit.length < 5) { begleit = roleQuery(LICHT_WHERE, LICHT_ARGS, BEGLEIT_F, 15); aufgegeben.add('Bodentyp').add('Gartenstil'); }
+  if (fuell.length   < 3) { fuell   = roleQuery(LICHT_WHERE, LICHT_ARGS, FUELL_F,   10); aufgegeben.add('Bodentyp').add('Gartenstil'); }
+
+  if (leit.length    < 2) { leit    = roleQuery(LAST_WHERE, LAST_ARGS, LEIT_F,    8);  aufgegeben.add('Bodenfeuchte'); }
+  if (begleit.length < 3) { begleit = roleQuery(LAST_WHERE, LAST_ARGS, BEGLEIT_F, 15); aufgegeben.add('Bodenfeuchte'); }
+  if (fuell.length   < 2) { fuell   = roleQuery(LAST_WHERE, LAST_ARGS, FUELL_F,   10); aufgegeben.add('Bodenfeuchte'); }
 
   // Deduplizieren und zusammenführen (Leit → Begleit → Füll)
   const seen = new Set();
@@ -556,13 +583,18 @@ function getPflanzenkandidaten(licht, boden, stil, standortBeschr, kindersicher 
     return true;
   });
 
-  if (kandidaten.length >= 8) return kandidaten;
+  // Die Liste der gelockerten Bedingungen reist als Eigenschaft mit, damit die Route sie
+  // ohne zweiten Rückgabewert weiterreichen kann.
+  const mitVermerk = liste => { liste.aufgegeben = [...aufgegeben]; return liste; };
+
+  if (kandidaten.length >= 8) return mitVermerk(kandidaten);
 
   // Absoluter Fallback: alle passenden Pflanzen nach Licht
+  aufgegeben.add('Bodentyp').add('Gartenstil').add('Bodenfeuchte');
   const rest = db.prepare(
     `SELECT ${COLS} FROM pflanzen WHERE ${LAST_WHERE} ORDER BY RANDOM() LIMIT ${kindersicher ? 105 : 35}`
   ).all(...LAST_ARGS);
-  return kindersicher ? rest.filter(p => istKindersicher(p.name_botanisch)).slice(0, 35) : rest;
+  return mitVermerk(kindersicher ? rest.filter(p => istKindersicher(p.name_botanisch)).slice(0, 35) : rest);
 }
 
 function getRelevantesWissen(stil, licht, feuchtigkeit) {
@@ -1409,6 +1441,18 @@ app.post('/api/plan', planHartLimiter, planLimiter, async (req, res) => {
     return res.status(400).json({ error: 'Ungültige Eingabewerte.' });
   }
 
+  // Werte gegen das bekannte Vokabular prüfen (siehe bekannterWert). Vorher genügte es,
+  // dass es Zeichenketten waren — „Mondlicht" und „Vulkanasche" lieferten einen Plan.
+  const unbekannt = [
+    !bekannterWert(licht, LICHT_MAP) ? 'Lichtverhältnisse' : null,
+    !bekannterWert(boden, BODEN_MAP) ? 'Bodentyp' : null,
+    !bekannterWert(stil, STIL_MAP)   ? 'Gartenstil' : null,
+  ].filter(Boolean);
+  if (unbekannt.length) {
+    console.warn('Plananfrage mit unbekannten Werten abgelehnt: licht=%j boden=%j stil=%j', licht, boden, stil);
+    return res.status(400).json({ error: `Unbekannte Angabe bei: ${unbekannt.join(', ')}. Bitte wähle die Werte aus der Liste.` });
+  }
+
   // RAG: Hol Kontext aus der Wissensdatenbank
   const feuchtigkeit = getFeuchtigkeit(boden, standort_beschreibung);
   /*
@@ -1423,6 +1467,9 @@ app.post('/api/plan', planHartLimiter, planLimiter, async (req, res) => {
   const kindersicher = Array.isArray(nutzung) && nutzung.some(n => /kindersicher|kinderfreundlich/i.test(String(n)));
 
   let kandidaten = getPflanzenkandidaten(licht, boden, stil, standort_beschreibung, kindersicher);
+  // Sofort sichern: Die Liste wird gleich per concat erweitert, und dabei geht die
+  // angehängte Eigenschaft verloren.
+  const gelockert = kandidaten.aufgegeben || [];
 
   // Die übrigen sieben Nutzungsschalter wirkten bis 09.08.2026 ebenfalls nicht auf die
   // Auswahl. Jetzt legen sie passende Arten in die Liste und erzeugen eine klare Anweisung.
@@ -1430,21 +1477,52 @@ app.post('/api/plan', planHartLimiter, planLimiter, async (req, res) => {
   kandidaten = nutzungErgebnis.kandidaten;
 
   /*
-   * Pflegeaufwand: Nur „Minimal" lässt sich belegen. Die Spalte pflege_sterne vergibt bei
-   * 531 von 709 Pflanzen eine 2 und nur bei DREI eine 3 — als dreistufige Unterscheidung ist
-   * sie wertlos. Für „Minimal" gibt es dagegen 175 Arten mit einem Stern, das trägt. Bei
-   * „Mittel" und „Intensiv" wird deshalb nicht eingeschränkt, was auch inhaltlich passt:
-   * Wer Zeit hat, braucht keine Auswahlbegrenzung.
+   * Pflegeaufwand. Die Spalte pflege_sterne war bis zum 09.08.2026 unbrauchbar: 531 von 709
+   * Pflanzen hatten 2 Sterne, 175 einen und DREI drei — „Intensiv" hätte drei Arten ergeben.
+   * Sie wird jetzt aus den Merkmalen hergeleitet, die wirklich Arbeit machen (Ausläufer,
+   * Selbstaussaat, Wuchshöhe, Wasserbedarf; siehe scripts/pflegeaufwand-herleiten.js) und
+   * verteilt sich auf 434 / 238 / 37.
+   *
+   * Die Stufe ist eine Obergrenze, keine Zielvorgabe: Wer viel Zeit hat, will nicht
+   * ausschließlich pflegeintensive Stauden, sondern nimmt sie in Kauf.
    */
-  if (/minimal/i.test(String(pflegezeit || ''))) {
+  const pflegeGrenze = /minimal/i.test(String(pflegezeit || '')) ? 1
+                     : /mittel/i.test(String(pflegezeit || ''))  ? 2 : null;
+  if (pflegeGrenze) {
     const lichtTerm = LICHT_MAP[licht] || String(licht).split(' ')[0];
-    let pflegeleicht = db.prepare(
-      `SELECT ${PLAN_COLS} FROM pflanzen WHERE licht LIKE ? AND pflege_sterne = 1 AND ${PLANBAR}
-       ORDER BY RANDOM() LIMIT ${kindersicher ? 45 : 15}`).all(`%${lichtTerm}%`);
-    if (kindersicher) pflegeleicht = pflegeleicht.filter(p => istKindersicher(p.name_botanisch));
+    let leicht = db.prepare(
+      `SELECT ${PLAN_COLS} FROM pflanzen WHERE licht LIKE ? AND pflege_sterne <= ? AND ${PLANBAR}
+       ORDER BY RANDOM() LIMIT ${kindersicher ? 45 : 15}`).all(`%${lichtTerm}%`, pflegeGrenze);
+    if (kindersicher) leicht = leicht.filter(p => istKindersicher(p.name_botanisch));
     const schon = new Set(kandidaten.map(p => p.name_botanisch));
-    kandidaten = kandidaten.concat(pflegeleicht.filter(p => !schon.has(p.name_botanisch)).slice(0, 15));
-    nutzungErgebnis.anweisungen.push('PFLEGEAUFWAND MINIMAL: Bevorzuge Arten mit einem Pflegestern — keine Arten, die Stützen, regelmäßiges Teilen oder häufigen Rückschnitt brauchen.');
+    kandidaten = kandidaten.concat(leicht.filter(p => !schon.has(p.name_botanisch)).slice(0, 15));
+    // Pflegeintensive Arten aus der Liste nehmen, statt nur um Zurückhaltung zu bitten —
+    // sonst steht die Goldrute mit ihren Ausläufern im „pflegeleichten" Beet.
+    const vorher = kandidaten.length;
+    kandidaten = kandidaten.filter(p => (p.pflege_sterne || 2) <= pflegeGrenze);
+    if (kandidaten.length < 8) kandidaten = kandidaten.concat(leicht).slice(0, Math.max(20, kandidaten.length));
+    nutzungErgebnis.anweisungen.push(pflegeGrenze === 1
+      ? 'PFLEGEAUFWAND MINIMAL: Nur Arten, die ohne Stützen, ohne regelmäßiges Teilen und ohne häufiges Gießen auskommen.'
+      : 'PFLEGEAUFWAND MITTEL: Keine Arten, die gleichzeitig Ausläufer treiben, Stützen brauchen und gegossen werden müssen.');
+    console.log('Pflegegrenze ≤%d★: %d von %d Kandidaten bleiben', pflegeGrenze, kandidaten.length, vorher);
+  }
+
+  /*
+   * Ohne Kandidaten wird im Prompt die gesamte Pflanzenliste weggelassen — das Modell
+   * antwortet dann aus eigenem Wissen. Im Test kamen so vier frei erfundene Arten in einen
+   * Plan, darunter Rittersporn und Gundermann: ohne Bild, ohne Preis, ohne Lexikonseite und
+   * an allen Regeln vorbei, die auf der Datenbank aufsetzen (Winterhärte, Lebensdauer).
+   * Lieber ein klarer Fehler als ein Plan, der nicht zur Seite gehört.
+   */
+  const MIN_KANDIDATEN = 5;
+  if (kandidaten.length < MIN_KANDIDATEN) {
+    console.warn('Plananfrage ohne ausreichende Kandidaten: %d bei licht=%j boden=%j stil=%j kindersicher=%s',
+      kandidaten.length, licht, boden, stil, kindersicher);
+    return res.status(422).json({
+      error: kindersicher
+        ? 'Für diesen Standort finden wir nicht genügend kindersichere Stauden. Nimm den Haken bei „Kindersicher" heraus oder wähle andere Standortangaben.'
+        : 'Für diese Kombination aus Standort, Boden und Stil finden wir zu wenige passende Stauden. Bitte ändere eine der Angaben.',
+    });
   }
 
   const wissen = getRelevantesWissen(stil, licht, feuchtigkeit);
@@ -1791,12 +1869,19 @@ JSON-Format:
       );
     } catch (e) { console.warn('plan_statistik nicht geschrieben:', e.message); }
 
+    // Gelockerte Bedingungen offenlegen. Wer „Mediterran" und „lehmig" angibt und beides
+    // still fallen sieht, hält den Plan sonst für eine Antwort auf seine Angaben.
+    const lockerHinweis = gelockert.length
+      ? `Für die gewählte Kombination gab es zu wenige passende Stauden. Wir haben ${gelockert.length === 1 ? 'die Angabe' : 'die Angaben'} ${gelockert.join(' und ')} bei der Auswahl gelockert — Lichtverhältnisse und Winterhärte gelten unverändert.`
+      : undefined;
+
     res.json({
       success: true, plan,
       quelle: notplan ? 'datenbank' : 'ki',
       hinweis: notplan
         ? 'Die KI war gerade nicht erreichbar. Dieser Plan wurde nach denselben Regeln aus unserer Staudendatenbank zusammengestellt — Höhenstaffelung, Rollenverteilung und Blütenfolge stimmen, nur die persönliche Handschrift fehlt.'
-        : undefined,
+        : lockerHinweis,
+      gelockert: gelockert.length ? gelockert : undefined,
       rag: { kandidaten: kandidaten.length, wissen: wissen.length }
     });
   } catch (err) {
