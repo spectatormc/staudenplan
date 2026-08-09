@@ -108,11 +108,18 @@ const GRAS_GATTUNG = new Set(['Achnatherum','Andropogon','Anemanthele','Arrhenat
   'Briza','Bromus','Calamagrostis','Carex','Chasmanthium','Cortaderia','Deschampsia','Elymus',
   'Eragrostis','Festuca','Glyceria','Hakonechloa','Helictotrichon','Imperata','Juncus','Koeleria',
   'Luzula','Melica','Melinis','Milium','Miscanthus','Molinia','Muhlenbergia','Nassella','Panicum',
-  'Pennisetum','Phalaris','Poa','Schizachyrium','Schoenoplectus','Scirpus','Sesleria','Sorghastrum',
-  'Spartina','Spodiopogon','Sporobolus','Stipa','Typha']);
+  'Pennisetum','Phalaris','Phragmites','Poa','Schizachyrium','Schoenoplectus','Scirpus','Sesleria',
+  'Sorghastrum','Spartina','Spodiopogon','Sporobolus','Stipa','Typha']);
 const GRAS_WORT = /gras|schmiele|hirse|segge|binse|quecke|trespe|rohrkolben|lampenputzer|schwaden|zwenke|riedgras|marbel|simse|hafer|schilf|schwingel/i;
-const istGras = p => GRAS_GATTUNG.has(String(p.name_botanisch || '').split(' ')[0])
-                  || GRAS_WORT.test(String(p.name_deutsch || ''));
+// „Gras" im deutschen Namen heißt nicht Gras: Die Grasnelke ist ein Bleiwurzgewächs, das
+// Blauäugige Gras ein Schwertliliengewächs. Beide blühen und sind Bienenweiden — sie über
+// den Namen zu Gräsern zu erklären, wäre genau der Fehler, den diese Prüfung finden soll.
+const KEIN_GRAS = new Set(['Armeria', 'Sisyrinchium']);
+const istGras = p => {
+  const gattung = String(p.name_botanisch || '').split(' ')[0];
+  if (KEIN_GRAS.has(gattung)) return false;
+  return GRAS_GATTUNG.has(gattung) || GRAS_WORT.test(String(p.name_deutsch || ''));
+};
 
 /*
  * Textbreite bei ImageMagick erfragen statt aus der Zeichenzahl schätzen. Eine geschätzte
