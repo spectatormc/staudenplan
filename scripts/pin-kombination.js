@@ -32,84 +32,22 @@ const path = require('path');
 const fs = require('fs');
 const { giftigkeit } = require('./pflanzen-giftigkeit');
 
+const L = require('./pin-layout');
+
 const WURZEL = path.join(__dirname, '..');
-const B = 1000, H = 1500, BILD_H = 580;
-const FONT = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf';
-const FONT_B = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
-const GRUEN = '#1b4332';
-
-const MONATE = { Januar:1, Februar:2, 'März':3, April:4, Mai:5, Juni:6,
-                 Juli:7, August:8, September:9, Oktober:10, November:11, Dezember:12 };
-const MON_KURZ = ['J','F','M','A','M','J','J','A','S','O','N','D'];
-const MON_NAME = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
-
-// Die Blütenfarbe wird als Balkenfarbe im Kalender benutzt. Ohne Zuordnung wäre der Kalender
-// dreimal dieselbe Farbe und würde nichts über die Kombination verraten.
-const FARBTON = {
-  'weiß':'#f8f9fa', 'gelb':'#ffd166', 'rosa':'#f4a3c0', 'grün':'#74c69d', 'blau':'#6ba3d6',
-  'rot':'#e5544b', 'lila':'#b18ad4', 'violett':'#a17ac9', 'orange':'#f79154', 'purpur':'#c264a0',
-  'braun':'#b08968', 'silbrig':'#ced4da', 'beige':'#e6d9b8', 'rotbraun':'#a9564b',
-  'silbrig-grün':'#c2d5c0', 'dunkelviolett':'#8b6bb1', 'karamell':'#d49a5c',
-  'blauviolett':'#8a8ad0', 'schwarz':'#6c757d', 'lachs':'#f0917c', 'dunkelrot':'#b23a3a',
-  'burgunderrot':'#9d3b52', 'lavendel':'#c3b1e1', 'silber':'#dee2e6',
-};
-
-function spanne(bluehzeit) {
-  const t = String(bluehzeit || '').split(/\s*(?:–|—|-|bis)\s*/).map(s => s.trim());
-  const a = MONATE[t[0]], e = MONATE[t[1]] || MONATE[t[0]];
-  return (a && e && e >= a) ? [a, e] : null;
-}
-const mengeAus = s => new Set(String(s || '').split('|').map(x => x.trim().toLowerCase()).filter(Boolean));
-const schnitt = (a, b) => [...mengeAus(a)].filter(x => mengeAus(b).has(x));
-const farbeVon = p => String(p.farbe || '').split(/[|,]/)[0].trim().toLowerCase();
-
-/*
- * Textbreite bei ImageMagick erfragen statt aus der Zeichenzahl schätzen. Die Monatsnamen
- * unterscheiden sich stark („Mai bis Juli" gegen „September bis November"), und eine
- * geschätzte Breite hat den Titel schon rechts aus dem Bild laufen lassen.
- */
-function textBreite(text, font, size) {
-  const out = execFileSync('convert', ['-font', font, '-pointsize', String(size),
-                                       `label:${text}`, '-format', '%w', 'info:'], { encoding: 'utf8' });
-  return Number(String(out).trim()) || 0;
-}
-
-// Größte Schriftgröße, bei der der Text noch in die Breite passt.
-function passendeGroesse(text, font, start, min, maxBreite) {
-  let s = start;
-  while (s > min && textBreite(text, font, s) > maxBreite) s -= 2;
-  return s;
-}
-
-// Zeichen pro Zeile aus einer echten Messung ableiten (ein Aufruf statt einer je Wort).
-function zeichenProZeile(text, font, size, maxBreite) {
-  const b = textBreite(text, font, size);
-  return b ? Math.max(8, Math.floor(text.length * maxBreite / b)) : 40;
-}
-
-function umbrechen(text, max) {
-  const worte = String(text).split(/\s+/); const zeilen = []; let z = '';
-  for (const w of worte) {
-    if ((z + ' ' + w).trim().length > max) { if (z) zeilen.push(z.trim()); z = w; } else z = (z + ' ' + w).trim();
-  }
-  if (z) zeilen.push(z); return zeilen;
-}
+const BILD_H = 580;                                   // Kopfband mit den drei Bildern
+const { B, H, FONT, FONT_B, GRUEN, MON_KURZ, MON_NAME, FARBTON,
+        spanne, farbeVon, schnitt, passendeGroesse, zeichenProZeile, umbrechen } = L;
 
 function ladePflanzen(db) {
   return db.prepare(`SELECT id, name_deutsch, name_botanisch, farbe, licht, feuchtigkeit, bluehzeit,
-                            hoehe_cm_min, hoehe_cm_max, bienen_freundlich, heimisch, kombinationspartner, bild_url
+                            hoehe_cm_min, hoehe_cm_max, bienen_freundlich, heimisch, kombinationspartner,
+                            lebensbereich, bild_url
                      FROM pflanzen
                      WHERE bild_ki = 1 AND bild_url IS NOT NULL AND hoehe_cm_max > 0`).all()
            .filter(p => spanne(p.bluehzeit) && fs.existsSync(path.join(WURZEL, 'public', p.bild_url.replace(/^\//, ''))))
-           // Pflanzen ohne echten deutschen Namen aussortieren: Bei ihnen steht die Gattung im
-           // Feld name_deutsch, der Pin liest sich dann „Muhlenbergia · Muhlenbergia capillaris".
-           // Betrifft neun Arten. Einen deutschen Namen dafür zu erfinden wäre schlimmer als sie
-           // wegzulassen — sobald die Namen gepflegt sind, fallen sie von selbst wieder herein.
-           .filter(p => {
-             const deutsch = String(p.name_deutsch || '').trim().toLowerCase();
-             return deutsch && deutsch !== String(p.name_botanisch || '').split(' ')[0].toLowerCase()
-                            && deutsch !== String(p.name_botanisch || '').toLowerCase();
-           });
+           .filter(L.hatDeutschenNamen)
+           .filter(L.istBeetpflanze);
 }
 
 /*
@@ -264,12 +202,9 @@ function kombiPin(kombi, ziel) {
   // Herbstzeitlose als hübsche Beetidee zeigen, ohne ein Wort dazu.
   const giftig = d.map((p, i) => ({ i, p, g: giftigkeit(p.name_botanisch) })).filter(x => x.g);
   if (giftig.length) {
-    const rang = { stark: 0, giftig: 1, katzen: 2, haustiere: 3, reizend: 4 };
-    giftig.sort((a, b) => (rang[a.g.stufe] ?? 9) - (rang[b.g.stufe] ?? 9));
-    const label = { stark:'Stark giftig', giftig:'Giftig', katzen:'Für Katzen lebensgefährlich',
-                    haustiere:'Für Haustiere giftig', reizend:'Hautreizend' };
+    giftig.sort((a, b) => (L.GIFT_RANG[a.g.stufe] ?? 9) - (L.GIFT_RANG[b.g.stufe] ?? 9));
     const stark = giftig[0].g.stufe === 'stark';
-    const text = giftig.map(x => `${label[x.g.stufe] || 'Giftig'}: ${x.p.name_deutsch}`).join('   ·   ');
+    const text = giftig.map(x => `${L.GIFT_LABEL[x.g.stufe] || 'Giftig'}: ${x.p.name_deutsch}`).join('   ·   ');
     args.push('-font', FONT_B, '-pointsize', '26', '-fill', stark ? '#fca5a5' : '#fde68a');
     for (const z of umbrechen('! ' + text, zeichenProZeile('! ' + text, FONT_B, 26, innen))) {
       args.push('-annotate', `+60+${y}`, z); y += 34;
