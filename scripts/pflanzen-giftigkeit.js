@@ -68,7 +68,41 @@ const STUFEN = {
   Nerium:      'giftig',
   Taxus:       'stark',
 
+  // Ergänzt am 09.08.2026, nachdem eine Prüfung der Hahnenfußgewächse ergab: 37 von 44
+  // Arten hatten einen Eintrag, sieben nicht. Das Leberblümchen stand bereits ohne Warnung
+  // auf einem fertigen Pinterest-Bild, während sein naher Verwandter Buschwindröschen
+  // gewarnt wurde. Seitdem trägt diese Liste zusätzlich den Filter „Kindersicher" — sie ist
+  // nicht mehr nur Hinweistext, sondern entscheidet, was der Planer überhaupt vorschlägt.
+  Hepatica:    'giftig',  // Protoanemonin wie bei den übrigen Hahnenfußgewächsen
+  Thalictrum:  'giftig',  // Alkaloide
+  Eranthis:    'stark',   // herzwirksame Glykoside, blüht als eines der ersten im Garten
+  // Weitere Gattungen im Bestand, deren Giftigkeit gut belegt ist. Auf Gattungsebene wie
+  // der Rest der Liste: lieber einmal zu viel gewarnt als einmal zu wenig.
+  Corydalis:   'giftig',  // Isochinolin-Alkaloide
+  Lamprocapnos:'giftig',  // Tränendes Herz, Alkaloide, dazu hautreizend
+  Dicentra:    'giftig',
+  Diphylleia:  'giftig',  // wie Podophyllum
+  Ornithogalum:'giftig',  // herzwirksame Glykoside
+  Leucojum:    'giftig',  // Amaryllisgewächs-Alkaloide wie Galanthus
+  Fritillaria: 'giftig',  // Alkaloide
+  Hyacinthoides:'giftig', // wie Scilla
+  Chionodoxa:  'giftig',
+  Puschkinia:  'giftig',
+  Muscari:     'giftig',  // Saponine
+  Sarcococca:  'giftig',  // Buchsbaumgewächs, Steroidalkaloide
+  Pachysandra: 'giftig',  // ebenfalls Buchsbaumgewächs
+  Echium:      'giftig',  // Pyrrolizidinalkaloide wie Symphytum
+  Petasites:   'giftig',  // Pyrrolizidinalkaloide
+  Amsonia:     'giftig',  // Hundsgiftgewächs, Milchsaft
+  Trillium:    'giftig',  // Saponine
+  Nuphar:      'giftig',
+  Nymphaea:    'giftig',
+
   // — Haut- und Schleimhautkontakt —
+  Angelica:    'reizend', // Furocumarine, phototoxisch wie Heracleum
+  Ferula:      'reizend', // Doldenblütler, phototoxisch
+  Hypericum:   'reizend', // Hypericin, photosensibilisierend
+  Helenium:    'reizend', // Sesquiterpenlactone, Kontaktdermatitis
   Euphorbia:   'reizend', // Milchsaft, auch augenschädigend
   Ruta:        'reizend', // phototoxisch
   Ammi:        'reizend', // phototoxisch (Furocumarine)
@@ -101,6 +135,43 @@ const HAUSTIERE = new Set(['Allium', 'Tulipa', 'Narcissus', 'Hyacinthus', 'Conva
 const KATZENGIFT = new Set(['Lilium', 'Hemerocallis']);
 const KATZENTEXT = 'Für Katzen lebensgefährlich: Alle Pflanzenteile — auch Pollen am Fell und das Wasser aus der Vase — können akutes Nierenversagen auslösen. In Haushalten mit Katzen nicht pflanzen und nicht als Schnittblume ins Haus holen. Für Menschen ist die Pflanze dagegen wenig problematisch.';
 
+/*
+ * Verletzungsgefahr — Dornen, Stacheln, stechende Blattspitzen.
+ *
+ * Getrennt von der Giftigkeit, weil es eine andere Gefahr ist und im Pflanzentext anders
+ * beschrieben gehört. Für die Auswahl „Kindersicher" zählt sie aber genauso: Die Palmlilie
+ * hat nadelspitze Blattenden auf Augenhöhe eines Kleinkinds, und eine Mannstreu ist kein
+ * Spielrasenrand. Der Nutzer hat ausdrücklich gesagt, es dürfe nichts verwendet werden,
+ * „das auch nur im Ansatz gefährlich ist".
+ */
+const VERLETZUNG = {
+  Rosa:       'Dornen',
+  Eryngium:   'stechende Blätter und Blütenköpfe',
+  Acanthus:   'stachelige Blattränder',
+  Yucca:      'nadelspitze Blattenden',
+  Carlina:    'stechende Hüllblätter',
+  Cirsium:    'Stacheln',
+  Echinops:   'stechende Blätter',
+  Gunnera:    'stachelige Blattstiele',
+  Berberis:   'Dornen',
+  Onopordum:  'Stacheln',
+};
+
+/*
+ * Für die Auswahl „Kindersicher": Gibt einen Grund zurück, wenn die Pflanze dort NICHT
+ * hingehört, sonst null. Bewusst streng — jede Stufe zählt, auch „reizend" und „nur für
+ * Haustiere giftig", denn ein Kind steckt sich Pflanzenteile genauso in den Mund wie ein Hund.
+ */
+function kindersicherGrund(nameBotanisch) {
+  const g = gattung(nameBotanisch);
+  if (VERLETZUNG[g]) return `Verletzungsgefahr: ${VERLETZUNG[g]}`;
+  const gift = giftigkeit(nameBotanisch);
+  if (!gift) return null;
+  return ({ stark: 'stark giftig', giftig: 'giftig', reizend: 'hautreizend',
+            katzen: 'für Katzen lebensgefährlich', haustiere: 'für Haustiere giftig' })[gift.stufe] || 'giftig';
+}
+const istKindersicher = nameBotanisch => kindersicherGrund(nameBotanisch) === null;
+
 const BASISTEXT = {
   stark:   'Alle Pflanzenteile sind stark giftig, ein Verzehr kann lebensgefährlich sein. In Gärten mit kleinen Kindern besser auf einen anderen Standort ausweichen; bei Pflege- und Teilungsarbeiten Handschuhe tragen.',
   giftig:  'Die Pflanze ist giftig, Pflanzenteile gehören nicht in den Mund. In Familiengärten einen Platz abseits der Spielbereiche wählen.',
@@ -130,4 +201,5 @@ function giftigkeit(nameBotanisch) {
   return { stufe: stufe || 'haustiere', text: teile.join(' ') };
 }
 
-module.exports = { giftigkeit, gattung, STUFEN, HAUSTIERE };
+module.exports = { giftigkeit, gattung, STUFEN, HAUSTIERE, VERLETZUNG,
+                   kindersicherGrund, istKindersicher };

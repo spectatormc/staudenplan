@@ -13,7 +13,7 @@ const crypto = require('crypto');
 // Kuratierte Giftigkeits-Einstufung auf Gattungsebene. Bewusst eine Liste im Code und kein
 // DB-Feld: Die Warnung muss über den ganzen Bestand einheitlich sein und darf nicht davon
 // abhängen, ob eine einzelne Zeile schon durch einen Datenlauf gegangen ist.
-const { giftigkeit } = require('./scripts/pflanzen-giftigkeit');
+const { giftigkeit, istKindersicher, kindersicherGrund } = require('./scripts/pflanzen-giftigkeit');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -474,7 +474,7 @@ const PLANBAR = `(wuchs IS NULL OR wuchs != 'invasiv')
       AND (winterhart_zone IS NULL OR winterhart_zone <= 7)
       AND (lebensdauer IS NULL OR lebensdauer != 'einjaehrig')`;
 
-function getPflanzenkandidaten(licht, boden, stil, standortBeschr) {
+function getPflanzenkandidaten(licht, boden, stil, standortBeschr, kindersicher = false) {
   const pflanzenCount = db.prepare("SELECT COUNT(*) as n FROM pflanzen WHERE name_deutsch != 'Test-Pflanze'").get().n;
   if (pflanzenCount === 0) return [];
 
@@ -511,10 +511,22 @@ function getPflanzenkandidaten(licht, boden, stil, standortBeschr) {
   const BEGLEIT_F = `(rolle_empfehlung = 'Begleitstaude' OR (rolle_empfehlung IS NULL AND COALESCE(hoehe_cm_max,50) >= 50 AND COALESCE(hoehe_cm_max,50) < 100))`;
   const FUELL_F   = `(rolle_empfehlung = 'Füllstaude'    OR (rolle_empfehlung IS NULL AND COALESCE(hoehe_cm_max,50) < 50))`;
 
+  /*
+   * Der Kindersicher-Filter sitzt hier und nicht weiter oben, damit ihn ALLE Ausweichpfade
+   * durchlaufen — auch die beiden Fallbacks weiter unten, die greifen, wenn zu wenige
+   * Treffer da sind. Genau dort wäre er sonst still umgangen worden.
+   *
+   * In JS statt in SQL, weil die Einstufung in scripts/pflanzen-giftigkeit.js auf
+   * Gattungsebene kuratiert ist und nicht als Spalte vorliegt. Deshalb wird mehr geholt und
+   * danach gekürzt: Rund 29 % des Bestands fallen weg, ohne Aufschlag käme bei LIMIT 8 nur
+   * eine Handvoll heraus.
+   */
   function roleQuery(where, args, roleFilter, n) {
-    return db.prepare(
-      `SELECT ${COLS} FROM pflanzen WHERE ${where} AND ${roleFilter} ORDER BY RANDOM() LIMIT ${n}`
+    const limit = kindersicher ? n * 3 : n;
+    const rows = db.prepare(
+      `SELECT ${COLS} FROM pflanzen WHERE ${where} AND ${roleFilter} ORDER BY RANDOM() LIMIT ${limit}`
     ).all(...args);
+    return kindersicher ? rows.filter(p => istKindersicher(p.name_botanisch)).slice(0, n) : rows;
   }
 
   // Rollenausgewogene Selektion: Leit / Begleit / Füll separat abfragen
@@ -543,9 +555,10 @@ function getPflanzenkandidaten(licht, boden, stil, standortBeschr) {
   if (kandidaten.length >= 8) return kandidaten;
 
   // Absoluter Fallback: alle passenden Pflanzen nach Licht
-  return db.prepare(
-    `SELECT ${COLS} FROM pflanzen WHERE ${LAST_WHERE} ORDER BY RANDOM() LIMIT 35`
+  const rest = db.prepare(
+    `SELECT ${COLS} FROM pflanzen WHERE ${LAST_WHERE} ORDER BY RANDOM() LIMIT ${kindersicher ? 105 : 35}`
   ).all(...LAST_ARGS);
+  return kindersicher ? rest.filter(p => istKindersicher(p.name_botanisch)).slice(0, 35) : rest;
 }
 
 function getRelevantesWissen(stil, licht, feuchtigkeit) {
@@ -571,18 +584,26 @@ function getRelevantesWissen(stil, licht, feuchtigkeit) {
   }
 }
 
-function getGeophytenKandidaten(licht) {
+/*
+ * Zwiebelblüher. Hier ist der Kindersicher-Filter am schärfsten spürbar: Narzisse,
+ * Blaustern, Traubenhyazinthe, Schneeglöckchen und Milchstern sind giftig, Tulpe und
+ * Zierlauch zumindest für Haustiere — von neun Gattungen bleiben zwei übrig. Das ist keine
+ * Übervorsicht, sondern die Eigenart der Gruppe: Eine Blumenzwiebel sieht aus wie etwas
+ * Essbares und liegt beim Pflanzen offen herum.
+ */
+function getGeophytenKandidaten(licht, kindersicher = false) {
   const lichtTerm = LICHT_MAP[licht] || licht.split(' ')[0];
   const GENERA = ['Tulipa', 'Narcissus', 'Allium', 'Muscari', 'Crocus', 'Galanthus', 'Scilla', 'Camassia', 'Nectaroscordum'];
   const clause = GENERA.map(() => 'name_botanisch LIKE ?').join(' OR ');
   try {
-    return db.prepare(
+    const rows = db.prepare(
       `SELECT name_deutsch, name_botanisch, bluehzeit, farbe, hoehe_cm_min, hoehe_cm_max, preis_stueck_eur, licht
        FROM pflanzen
        WHERE (${clause}) AND licht LIKE ?
          AND ${PLANBAR}
-       ORDER BY RANDOM() LIMIT 10`
+       ORDER BY RANDOM() LIMIT ${kindersicher ? 40 : 10}`
     ).all(...GENERA.map(g => `${g}%`), `%${lichtTerm}%`);
+    return kindersicher ? rows.filter(p => istKindersicher(p.name_botanisch)).slice(0, 10) : rows;
   } catch { return []; }
 }
 
@@ -1282,10 +1303,21 @@ app.post('/api/plan', planHartLimiter, planLimiter, async (req, res) => {
 
   // RAG: Hol Kontext aus der Wissensdatenbank
   const feuchtigkeit = getFeuchtigkeit(boden, standort_beschreibung);
-  const kandidaten = getPflanzenkandidaten(licht, boden, stil, standort_beschreibung);
+  /*
+   * „Kindersicher" war bis zum 09.08.2026 nur ein Wort im Prompt — die Angabe landete
+   * ausschließlich in der Zeile „Gartennutzung/Schwerpunkt" und filterte nichts. Entsprechend
+   * kamen Eisenhut und Fingerhut in Familienbeeten an, obwohl die kuratierte Giftliste seit
+   * Wochen vorlag. Derselbe Fehler wie bei der Winterhärte: eine Zusage ohne Regel.
+   *
+   * Jetzt entscheidet die Angabe, WELCHE Pflanzen das Modell überhaupt zu sehen bekommt.
+   * Was nicht in der Kandidatenliste steht, kann auch nicht eingeplant werden.
+   */
+  const kindersicher = Array.isArray(nutzung) && nutzung.some(n => /kindersicher|kinderfreundlich/i.test(String(n)));
+
+  const kandidaten = getPflanzenkandidaten(licht, boden, stil, standort_beschreibung, kindersicher);
   const wissen = getRelevantesWissen(stil, licht, feuchtigkeit);
 
-  const geophytenKandidaten = geophyten ? getGeophytenKandidaten(licht) : [];
+  const geophytenKandidaten = geophyten ? getGeophytenKandidaten(licht, kindersicher) : [];
 
   if (kandidaten.length > 0) {
     console.log(`RAG: ${kandidaten.length} Pflanzenkandidaten (feuchtigkeit=${feuchtigkeit}), ${wissen.length} Wissensdokumente${geophytenKandidaten.length > 0 ? `, ${geophytenKandidaten.length} Geophyten` : ''}`);
@@ -1299,6 +1331,16 @@ app.post('/api/plan', planHartLimiter, planLimiter, async (req, res) => {
   const nutzungList = Array.isArray(nutzung) && nutzung.length > 0
     ? nutzung.join(', ')
     : null;
+
+  // Der Filter allein reicht: Was nicht in der Kandidatenliste steht, kann das Modell nicht
+  // wählen. Die Anweisung steht trotzdem dabei, damit es nicht von sich aus eine giftige Art
+  // ergänzt — und weil sie erklärt, warum die Liste kürzer ist als sonst.
+  const kindersicherHinweis = kindersicher
+    ? '\n\nWICHTIG — KINDERSICHERER GARTEN: Verwende AUSSCHLIESSLICH Pflanzen aus der Kandidatenliste. '
+      + 'Ergänze auf keinen Fall eigene Arten. Die Liste enthält bereits nur ungiftige Arten ohne Dornen '
+      + 'oder Stacheln; jede zusätzliche Art würde diese Zusage brechen. Erwähne im Konzept mit einem '
+      + 'Satz, dass alle vorgeschlagenen Pflanzen ungiftig und dornenfrei sind.'
+    : '';
 
   const vielfaltAnweisung = (() => {
     if (vielfalt === 'wenig') return `Empfehle 6–7 winterharte Stauden — bewusst wenige Arten für eine ruhige, klar strukturierte Wirkung, dafür mit hoher Wiederholung in großen Gruppen. Das ist die kleinstmögliche Auswahl, die noch alle Schichten erfüllt (mind. 1 Leitstaude, 3 Begleitstauden, 2 Füllstauden).`;
@@ -1324,7 +1366,7 @@ app.post('/api/plan', planHartLimiter, planLimiter, async (req, res) => {
 - Gartenstil: ${stil}
 - Beettyp / Sichtseite: ${sichtseite || 'einseitig'}
 - Farbwunsch: ${farbe || 'keine Präferenz'}
-- Blühsaison-Priorität: ${saison || 'ganzjährig'}${plz ? `\n- Region (PLZ ${plz}): ${klimaregion || 'Mitteleuropa, gemäßigtes Klima'}` : ''}${lieblingsList ? `\n- Lieblingspflanzen (unbedingt einplanen): ${lieblingsList}` : ''}${budget ? `\n- Budget: maximal ${budget} € Gesamtkosten` : ''}${nutzungList ? `\n- Gartennutzung/Schwerpunkt: ${nutzungList}` : ''}${pflegezeit ? `\n- Gewünschte Pflegeintensität: ${pflegezeit}` : ''}
+- Blühsaison-Priorität: ${saison || 'ganzjährig'}${plz ? `\n- Region (PLZ ${plz}): ${klimaregion || 'Mitteleuropa, gemäßigtes Klima'}` : ''}${lieblingsList ? `\n- Lieblingspflanzen (unbedingt einplanen): ${lieblingsList}` : ''}${budget ? `\n- Budget: maximal ${budget} € Gesamtkosten` : ''}${nutzungList ? `\n- Gartennutzung/Schwerpunkt: ${nutzungList}` : ''}${pflegezeit ? `\n- Gewünschte Pflegeintensität: ${pflegezeit}` : ''}${kindersicherHinweis}
 
 ${lieblingsList ? `WICHTIG ZU DEN LIEBLINGSPFLANZEN: Prüfe ob die gewünschten Pflanzen zum angegebenen Standort (${licht}, ${boden}, Feuchtigkeit: ${feuchtigkeit}) passen. Falls eine Pflanze nicht passt, weise im "tipps"-Feld explizit darauf hin und schlage eine Alternative vor. Dennoch: Baue alle Lieblingspflanzen ein, sofern irgendwie vertretbar.\n` : ''}${sichtseite && sichtseite.includes('Einseitig') ? 'ANORDNUNG: Einseitig einsehbares Beet — hohe Pflanzen (>80 cm) im Hintergrund, mittlere in der Mitte, niedrige (<40 cm) im Vordergrund. Im Feld "standort" jeder Pflanze angeben: "Hintergrund", "Mitte" oder "Vordergrund".' : ''}${sichtseite && sichtseite.includes('Rundbeet') ? 'ANORDNUNG: Rundbeet / Inselbeet — höchste Pflanzen in der Mitte, nach außen abnehmende Höhen. Im Feld "standort" angeben: "Mitte", "Mittelzone" oder "Rand".' : ''}${sichtseite && sichtseite.includes('Eckbeet') ? 'ANORDNUNG: Eckbeet — höchste Pflanzen an der Ecke/Rückwand, diagonal nach vorne-links und vorne-rechts abfallend. Im Feld "standort" angeben: "Ecke/Hintergrund", "Mitte" oder "Vordergrund".' : ''}
 ${vielfaltAnweisung} ${dichteAnweisung} Berechne Stückzahlen für ${gartenflaeche} m².
@@ -1484,6 +1526,23 @@ JSON-Format:
                  pflanzabstand_cm, fehler,
                  giftig: gift ? { stufe: gift.stufe, text: gift.text } : null };
       });
+
+      /*
+       * Zweites Netz für „Kindersicher". Die Kandidatenliste ist bereits gefiltert, aber das
+       * Modell ist nicht daran gebunden — es kann eine Art frei ergänzen, und genau dann
+       * stünde wieder Fingerhut im Familienbeet. Hier wird gestrichen, nicht gewarnt: Bei
+       * dieser Auswahl ist ein Plan mit einer Art weniger besser als einer mit einer
+       * giftigen Art plus Hinweis.
+       */
+      if (kindersicher) {
+        const entfernt = plan.pflanzen.filter(p => kindersicherGrund(p.name_botanisch));
+        if (entfernt.length) {
+          plan.pflanzen = plan.pflanzen.filter(p => !kindersicherGrund(p.name_botanisch));
+          console.warn('kindersicher: %d Art(en) nachträglich entfernt — %s',
+            entfernt.length,
+            entfernt.map(p => `${p.name_botanisch} (${kindersicherGrund(p.name_botanisch)})`).join(', '));
+        }
+      }
 
       // Gesamtkosten serverseitig aus (DB-)Preisen × Stückzahl — konsistent mit dem Frontend,
       // kein frei erfundener Modell-String mehr.
