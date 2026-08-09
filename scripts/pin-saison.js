@@ -52,7 +52,7 @@ const WINTER_WERT = {
 
 function ladePflanzen(db) {
   return db.prepare(`SELECT id, name_deutsch, name_botanisch, farbe, licht, feuchtigkeit, bluehzeit,
-                            hoehe_cm_max, winteraspekt, bienen_freundlich, heimisch,
+                            hoehe_cm_max, winteraspekt, bienen_freundlich, heimisch, winterhart_zone, lebensdauer,
                             lebensbereich, bild_url
                      FROM pflanzen WHERE bild_ki = 1 AND bild_url IS NOT NULL`).all()
            .filter(L.hatDeutschenNamen)

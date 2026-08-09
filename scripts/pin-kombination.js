@@ -42,7 +42,7 @@ const { B, H, FONT, FONT_B, GRUEN, MON_KURZ, MON_NAME, FARBTON,
 function ladePflanzen(db) {
   return db.prepare(`SELECT id, name_deutsch, name_botanisch, farbe, licht, feuchtigkeit, bluehzeit,
                             hoehe_cm_min, hoehe_cm_max, bienen_freundlich, heimisch, kombinationspartner,
-                            lebensbereich, bild_url
+                            lebensbereich, winterhart_zone, lebensdauer, bild_url
                      FROM pflanzen
                      WHERE bild_ki = 1 AND bild_url IS NOT NULL AND hoehe_cm_max > 0`).all()
            .filter(p => spanne(p.bluehzeit) && fs.existsSync(path.join(WURZEL, 'public', p.bild_url.replace(/^\//, ''))))

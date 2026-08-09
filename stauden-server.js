@@ -451,6 +451,29 @@ const FEUCHT_COMPAT = {
   'nass':          ['nass', 'feucht'],
 };
 
+/*
+ * Was in einen Bepflanzungsplan darf. Stand bisher sechsmal einzeln im Code und prüfte nur
+ * `wuchs` und `status` — die Winterhärte wurde NIE gelesen, obwohl die Seite an drei Stellen
+ * mit „geprüften, winterharten Stauden für deutsche Gärten" wirbt und der Systemprompt sagt
+ * „Du empfiehlst ausschließlich in Deutschland winterharte Pflanzen". Ohne diese Bedingung
+ * konnte der Planer Zistrosen und Kapmargeriten in ein Beet setzen, das auf Jahre angelegt ist.
+ *
+ * Zone ≤ 7: Der Wert ist die kälteste Zone, die eine Art noch verträgt. Deutschland liegt
+ * zwischen 6a (Alpenvorland, Mittelgebirge) und 8a (Rheintal, Niederrhein). Zone 7 hält bis
+ * −18 °C und ist damit fast überall nutzbar; ab Zone 8 wird es eine Kübelpflanze.
+ *
+ * Einjährige bleiben draußen, Zweijährige nicht: Wilde Karde und Nachtviole säen sich
+ * zuverlässig selbst aus und gehören in naturnahe Pflanzungen. Eine Sommerblume dagegen ist
+ * im nächsten Frühjahr weg.
+ *
+ * KEINE Pflanze ist deswegen offline — alle 709 behalten Lexikonseite und Bilder. Es geht
+ * nur darum, was der Planer in ein Staudenbeet setzt. Betrifft 14 Arten.
+ */
+const PLANBAR = `(wuchs IS NULL OR wuchs != 'invasiv')
+      AND (status IS NULL OR status = 'live')
+      AND (winterhart_zone IS NULL OR winterhart_zone <= 7)
+      AND (lebensdauer IS NULL OR lebensdauer != 'einjaehrig')`;
+
 function getPflanzenkandidaten(licht, boden, stil, standortBeschr) {
   const pflanzenCount = db.prepare("SELECT COUNT(*) as n FROM pflanzen WHERE name_deutsch != 'Test-Pflanze'").get().n;
   if (pflanzenCount === 0) return [];
@@ -467,20 +490,20 @@ function getPflanzenkandidaten(licht, boden, stil, standortBeschr) {
            pflege_sterne, preis_stueck_eur, bienen_freundlich, heimisch,
            feuchtigkeit, wuchs,
            lebensbereich, breite_cm_max, rolle_empfehlung,
-           kombinationspartner, winteraspekt, trockenheitstoleranz`;
+           kombinationspartner, winteraspekt, trockenheitstoleranz, lebensdauer`;
 
   // WHERE-Varianten (Vollmatch → Licht+Feucht → nur Licht)
   const FULL_WHERE  = `licht LIKE ? AND (boden LIKE ? OR boden LIKE ?) AND stil LIKE ?
       AND (feuchtigkeit IN (${feuchPlaceholders}) OR feuchtigkeit IS NULL)
-      AND (wuchs IS NULL OR wuchs != 'invasiv') AND (status IS NULL OR status = 'live')`;
+      AND ${PLANBAR}`;
   const FULL_ARGS   = [`%${lichtTerm}%`, `%${bodenTerm}%`, '%normal%', `%${stilTerm}%`, ...feuchTerms];
 
   const LICHT_WHERE = `licht LIKE ?
       AND (feuchtigkeit IN (${feuchPlaceholders}) OR feuchtigkeit IS NULL)
-      AND (wuchs IS NULL OR wuchs != 'invasiv') AND (status IS NULL OR status = 'live')`;
+      AND ${PLANBAR}`;
   const LICHT_ARGS  = [`%${lichtTerm}%`, ...feuchTerms];
 
-  const LAST_WHERE  = `licht LIKE ? AND (wuchs IS NULL OR wuchs != 'invasiv') AND (status IS NULL OR status = 'live')`;
+  const LAST_WHERE  = `licht LIKE ? AND ${PLANBAR}`;
   const LAST_ARGS   = [`%${lichtTerm}%`];
 
   // Rollen-Filter (spiegelt die Logik aus buildSystemPrompt Zeile ~269)
@@ -557,7 +580,7 @@ function getGeophytenKandidaten(licht) {
       `SELECT name_deutsch, name_botanisch, bluehzeit, farbe, hoehe_cm_min, hoehe_cm_max, preis_stueck_eur, licht
        FROM pflanzen
        WHERE (${clause}) AND licht LIKE ?
-         AND (wuchs IS NULL OR wuchs != 'invasiv') AND (status IS NULL OR status = 'live')
+         AND ${PLANBAR}
        ORDER BY RANDOM() LIMIT 10`
     ).all(...GENERA.map(g => `${g}%`), `%${lichtTerm}%`);
   } catch { return []; }
@@ -850,6 +873,11 @@ app.get('/', (req, res) => {
   try {
     // Inject SEO content from DB into the SPA
     const pflanzenCount = db.prepare("SELECT COUNT(*) as n FROM pflanzen WHERE name_deutsch != 'Test-Pflanze'").get().n;
+    // Zwei Zahlen, weil zwei verschiedene Aussagen: pflanzenCount ist das Lexikon,
+    // planbarCount das, was der Planer nach PLANBAR wirklich einsetzen darf. Vorher stand
+    // überall dieselbe Zahl — auch dort, wo "winterhart" behauptet wurde.
+    const planbarCount = db.prepare(`SELECT COUNT(*) as n FROM pflanzen
+      WHERE name_deutsch != 'Test-Pflanze' AND ${PLANBAR}`).get().n;
     let wissenCount = 0;
     try { wissenCount = db.prepare('SELECT COUNT(*) as n FROM wissen').get().n; } catch {}
 
@@ -887,12 +915,14 @@ app.get('/', (req, res) => {
 
     const fs = require('fs');
     let html = fs.readFileSync(path.join(__dirname, 'stauden-portal.html'), 'utf8');
-    html = html.replace(/__PFLANZEN_COUNT__/g, pflanzenCount);
+    // planbarCount, nicht pflanzenCount: Alle vier Stellen im Client behaupten „winterharte"
+    // bzw. „geprüfte" Stauden (Meta-Beschreibung, og:description, JSON-LD, Fußzeile).
+    html = html.replace(/__PFLANZEN_COUNT__/g, planbarCount);
 
   // FAQ (targetet reale Search-Console-Queries: "bepflanzungsplan erstellen", "beetplaner
   // online kostenlos", "staudenbeet planen online", "stauden pro m²") — HTML + FAQPage-Schema.
   const homeFaq = [
-    { q: 'Wie erstelle ich einen Bepflanzungsplan?', a: `Beschreibe deinen Garten — Fläche, Lichtbedingungen, Bodentyp und Gartenstil — und unser KI-Gartenplaner erstellt in rund 2 Minuten einen individuellen Bepflanzungsplan aus ${pflanzenCount}+ winterharten Stauden. Du bekommst einen grafischen Plan, eine Stückliste und einen Blühkalender — kostenlos und ohne Anmeldung.` },
+    { q: 'Wie erstelle ich einen Bepflanzungsplan?', a: `Beschreibe deinen Garten — Fläche, Lichtbedingungen, Bodentyp und Gartenstil — und unser KI-Gartenplaner erstellt in rund 2 Minuten einen individuellen Bepflanzungsplan aus ${planbarCount}+ winterharten Stauden. Du bekommst einen grafischen Plan, eine Stückliste und einen Blühkalender — kostenlos und ohne Anmeldung.` },
     { q: 'Gibt es einen kostenlosen Beetplaner online?', a: 'Ja. Staudenplan.de ist ein komplett kostenloser Beetplaner online: Du kannst dein Staudenbeet planen, ohne Konto und ohne E-Mail. Der KI-Planer schlägt standortgerechte Stauden vor und berechnet Stückzahlen und Kosten automatisch.' },
     { q: 'Was kostet ein Bepflanzungsplan?', a: 'Das Erstellen des Bepflanzungsplans bei Staudenplan.de ist kostenlos. Bezahlt wird nur, wenn du die vorgeschlagenen Pflanzen tatsächlich kaufst — so kannst du dein Staudenbeet unverbindlich online planen.' },
     { q: 'Kann ich mein Staudenbeet online planen?', a: 'Ja, genau dafür ist der Planer da. Du zeichnest die Beetfläche direkt ein oder gibst Maße ein, wählst Standort und Stil, und erhältst einen fertigen Pflanzplan mit Höhenstaffelung, Blütenfolge und bewährten Pflanzenkombinationen.' },
@@ -917,7 +947,7 @@ app.get('/', (req, res) => {
   <section class="seo-intro">
     <div class="seo-intro-inner">
       <h2>Bepflanzungsplan online kostenlos erstellen — KI-gestützt & individuell</h2>
-      <p>Ein professioneller <strong>Bepflanzungsplan</strong> ist die Grundlage für ein schönes, pflegeleichtes Staudenbeet. Unser KI-Gartenplaner erstellt dir in wenigen Minuten einen maßgeschneiderten Plan — abgestimmt auf Standort, Bodentyp, Gartenstil und deine persönlichen Wünsche. Mit über <strong>${pflanzenCount} geprüften, winterharten Stauden</strong> für deutsche Gärten.</p>
+      <p>Ein professioneller <strong>Bepflanzungsplan</strong> ist die Grundlage für ein schönes, pflegeleichtes Staudenbeet. Unser KI-Gartenplaner erstellt dir in wenigen Minuten einen maßgeschneiderten Plan — abgestimmt auf Standort, Bodentyp, Gartenstil und deine persönlichen Wünsche. Mit über <strong>${planbarCount} geprüften, winterharten Stauden</strong> für deutsche Gärten.</p>
       <p>Anders als generische KI-Tools nutzt unser Planer eine kuratierte Pflanzendatenbank mit echten Staudenexperten-Wissen: Lebensbereiche nach Hansen &amp; Stahl, ökologisch wertvolle Heimische, bewährte Pflanzenkombinationen. Das Ergebnis ist ein <strong>Bepflanzungsplan der wirklich funktioniert</strong> — mit Stückliste, grafischem Plan und direkter Bestellmöglichkeit.</p>
       <p style="margin-top:16px;font-size:.88rem;color:#666;border-top:1px solid #dde8e0;padding-top:14px">💡 <strong>Was kostet Gartenplanung?</strong> Einen Überblick über typische Kosten für Gartenplanung findest du bei <a href="https://gartenbau-kosten.de/gartenplanung/gartenplanung-kosten/" target="_blank" rel="noopener" style="color:#2d6a4f;font-weight:600">gartenbau-kosten.de →</a></p>
     </div>
@@ -929,7 +959,7 @@ app.get('/', (req, res) => {
       <h2>So erstellt du deinen Bepflanzungsplan</h2>
       <div class="seo-steps">
         <div class="seo-step"><div class="ss-num">1</div><h3>Garten beschreiben</h3><p>Fläche, Lichtbedingungen, Bodentyp und gewünschten Gartenstil eingeben — oder die Fläche direkt im Plan einzeichnen.</p></div>
-        <div class="seo-step"><div class="ss-num">2</div><h3>KI generiert deinen Plan</h3><p>Unsere KI durchsucht ${pflanzenCount} geprüfte Stauden und ${wissenCount} Expertentexte — und erstellt einen individuellen, standortgerechten Bepflanzungsplan.</p></div>
+        <div class="seo-step"><div class="ss-num">2</div><h3>KI generiert deinen Plan</h3><p>Unsere KI durchsucht ${planbarCount} geprüfte Stauden und ${wissenCount} Expertentexte — und erstellt einen individuellen, standortgerechten Bepflanzungsplan.</p></div>
         <div class="seo-step"><div class="ss-num">3</div><h3>Pflanzen bestellen</h3><p>Mit Stückliste, grafischem Pflanzplan und Jahreskalender. Die Pflanzen können direkt als Komplettpaket bestellt werden.</p></div>
       </div>
     </div>
@@ -1058,7 +1088,7 @@ app.get('/', (req, res) => {
     <div class="seo-footer-inner">
       <div class="seo-footer-col">
         <h4>🌿 Staudenplan.de</h4>
-        <p>KI-gestützte Gartenplanung mit ${pflanzenCount} winterharten Stauden für deutsche Gärten.</p>
+        <p>KI-gestützte Gartenplanung mit ${planbarCount} winterharten Stauden für deutsche Gärten.</p>
       </div>
       <div class="seo-footer-col">
         <h4>Ratgeber</h4>
@@ -1545,16 +1575,14 @@ app.post('/api/alternativ', alternativLimiter, (req, res) => {
   if (!pflanze) {
     const rows = db.prepare(`SELECT ${COLS} FROM pflanzen
       WHERE licht LIKE ? AND (boden LIKE ? OR boden LIKE ?) AND stil LIKE ?
-        AND (wuchs IS NULL OR wuchs != 'invasiv')
-        AND (status IS NULL OR status = 'live') ${exClause}
+        AND ${PLANBAR} ${exClause}
       ORDER BY RANDOM() LIMIT 1`)
       .all(`%${lichtTerm}%`, `%${bodenTerm}%`, '%normal%', `%${stilTerm}%`, ...(exclude || []));
     if (rows.length) pflanze = rows[0];
   }
   if (!pflanze) {
     const rows = db.prepare(`SELECT ${COLS} FROM pflanzen
-      WHERE licht LIKE ? AND (wuchs IS NULL OR wuchs != 'invasiv')
-        AND (status IS NULL OR status = 'live') ${exClause}
+      WHERE licht LIKE ? AND ${PLANBAR} ${exClause}
       ORDER BY RANDOM() LIMIT 1`)
       .all(`%${lichtTerm}%`, ...(exclude || []));
     if (rows.length) pflanze = rows[0];
@@ -4065,7 +4093,9 @@ app.get('/bienenfreundliche-stauden', (req, res) => {
 });
 
 app.get('/staudenbeet-planen', (req, res) => {
-  const pflanzenCount = db.prepare("SELECT COUNT(*) as n FROM pflanzen").get().n;
+  // Die Zahl steht hier in einem Satz über den Planer, nicht über das Lexikon — deshalb die
+  // planbare Menge und nicht alle 709.
+  const pflanzenCount = db.prepare(`SELECT COUNT(*) as n FROM pflanzen WHERE ${PLANBAR}`).get().n;
   let artikel = [];
   try { artikel = db.prepare(`SELECT titel FROM wissen WHERE titel LIKE '%plan%' OR titel LIKE '%Planung%' OR titel LIKE '%kombin%' OR titel LIKE '%Standort%' OR inhalt LIKE '%Bepflanzungsplan%' LIMIT 6`).all(); } catch {}
   const artikelHtml = artikel.map(a => `<a href="/ratgeber/${slugify(a.titel)}" style="display:flex;align-items:center;gap:10px;background:#fff;border-radius:10px;padding:14px 18px;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.06);transition:background .12s;margin-bottom:10px" onmouseover="this.style.background='#f0fdf4'" onmouseout="this.style.background='#fff'"><span style="font-size:1.2rem">📖</span><span style="font-size:.9rem;font-weight:600;color:#1b4332">${a.titel}</span><span style="margin-left:auto;color:#2d6a4f;font-weight:700;font-size:.82rem">Lesen →</span></a>`).join('');

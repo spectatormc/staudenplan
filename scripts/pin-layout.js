@@ -69,29 +69,16 @@ const istBeetpflanze = p => !/wasserfläche/i.test(String(p.lebensbereich || '')
                          && !mengeAus(p.feuchtigkeit).has('nass');
 
 /*
- * Arten, die hier NICHT winterhart sind, aus den Pins heraushalten.
+ * Was ein Pin zeigen darf: winterhart in Deutschland und mehrjährig.
  *
- * Das Feld `winterhart_zone` taugt dafür nicht: Bei 299 Pflanzen mit Bild stehen 223 auf
- * exakt Zone 5 und KEINE EINZIGE über Zone 7 — das ist ein Vorgabewert, keine Angabe.
- * Entsprechend trägt Salvia elegans aus Mexiko dieselbe Zone 6 wie der heimische Buschklee.
- *
- * Die Liste ist bewusst kurz und enthält nur unstrittige Fälle: Arten, die der deutsche
- * Handel selbst als einjährig oder als Kübelpflanze führt. Pennisetum setaceum 'Rubrum'
- * etwa wird als „Einjähriges Garten-Federborstengras" verkauft und ist bis −6 °C hart —
- * es stand bereits auf dem Juli- und Oktober-Pin als Staude fürs Beet.
- *
- * Ausschließen ist hier die sichere Richtung: Liege ich falsch, fehlen fünf Pins. Liege ich
- * richtig und tue nichts, empfiehlt die Seite Pflanzen, die den ersten Winter nicht
- * überstehen. Die Zonen selbst gehören trotzdem geprüft — siehe Notiz an den Betreiber.
+ * Bis zum 09.08.2026 stand hier eine hartcodierte Liste von fünf Arten, weil das Feld
+ * `winterhart_zone` unbrauchbar war — 223 von 299 Pflanzen mit Bild standen auf exakt
+ * Zone 5, keine über Zone 7, und Salvia elegans aus Mexiko trug dieselbe Zone 6 wie der
+ * heimische Buschklee. Seit der Datenkorrektur stimmen die Felder, und die Regel liest
+ * sie, statt sie zu umgehen. Dieselbe Bedingung wie PLANBAR in stauden-server.js.
  */
-const NICHT_WINTERHART = new Set([
-  'Salvia elegans',                 // Mexiko, bei uns Kübel- oder Einjahrespflanze
-  'Melinis nerviglumis',            // Südafrika, im Handel als einjähriges Ziergras
-  "Pennisetum setaceum 'Rubrum'",   // Handelsname „Einjähriges Garten-Federborstengras", bis −6 °C
-  'Osteospermum ecklonis',          // Südafrika, klassische Beet- und Balkonpflanze
-  'Agapanthus africanus',           // Südafrika, überwintert frostfrei
-]);
-const istWinterhartHier = p => !NICHT_WINTERHART.has(String(p.name_botanisch || '').trim());
+const istWinterhartHier = p => (p.winterhart_zone == null || p.winterhart_zone <= 7)
+                            && (p.lebensdauer == null || p.lebensdauer !== 'einjaehrig');
 
 /*
  * Gräser, Seggen und Binsen erkennen. Nötig, weil sie unter „Was im August blüht" zwar
