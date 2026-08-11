@@ -3900,37 +3900,50 @@ app.get('/pflanze/:slug', (req, res) => {
     ? pflanze.bild_url
     : `https://www.staudenplan.de${pflanze.bild_url || '/images/og-default.jpg'}`;
 
+  // Mehrfachwerte stehen in der DB pipe-getrennt ("Sonne|Halbschatten"). Der Trenner ist ein
+  // internes Speicherformat und hat in der öffentlichen Ausgabe nichts verloren — als Array
+  // liest jeder Konsument die Werte einzeln statt als eine Zeichenkette mit Sonderzeichen.
+  const mehrwert = v => { const t = String(v).split('|').map(s => s.trim()).filter(Boolean); return t.length > 1 ? t : t[0]; };
   const additionalProps = [
     pflanze.bluehzeit  && { "@type": "PropertyValue", "name": "Blühzeit",      "value": pflanze.bluehzeit },
-    pflanze.licht      && { "@type": "PropertyValue", "name": "Lichtbedarf",   "value": pflanze.licht },
-    pflanze.feuchtigkeit && { "@type": "PropertyValue", "name": "Feuchtigkeit","value": pflanze.feuchtigkeit },
-    pflanze.boden      && { "@type": "PropertyValue", "name": "Boden",         "value": pflanze.boden },
+    pflanze.licht      && { "@type": "PropertyValue", "name": "Lichtbedarf",   "value": mehrwert(pflanze.licht) },
+    pflanze.feuchtigkeit && { "@type": "PropertyValue", "name": "Feuchtigkeit","value": mehrwert(pflanze.feuchtigkeit) },
+    pflanze.boden      && { "@type": "PropertyValue", "name": "Boden",         "value": mehrwert(pflanze.boden) },
     hoehe !== '— cm'   && { "@type": "PropertyValue", "name": "Wuchshöhe",     "value": hoehe },
     pflanze.winterhart_zone && { "@type": "PropertyValue", "name": "Winterhärte", "value": `Zone ${pflanze.winterhart_zone}` },
+    pflanze.farbe      && { "@type": "PropertyValue", "name": "Blütenfarbe",   "value": mehrwert(pflanze.farbe) },
   ].filter(Boolean);
 
   const schemaOrg = JSON.stringify([
     {
       "@context": "https://schema.org",
-      "@type": "Product",
-      "name": `${pflanze.name_deutsch} (${pflanze.name_botanisch})`,
+      // KEIN "Product" (und damit auch kein "offers"): Staudenplan.de verkauft nichts.
+      //
+      // Bis 08/2026 stand hier ein Product mit Verkaufspreis unter dem Händlernamen
+      // "Staudenplan.de", Versandkosten von 4,95 €, 1-2 Tagen Bearbeitung und 14 Tagen
+      // kostenloser Rückgabe — alles frei erfunden, auf jeder Pflanzenseite, ohne AGB und
+      // ohne Widerrufsbelehrung. Die Preise in der DB sind Kalkulationsgrößen für die
+      // Plansumme, keine Handelspreise (Stichprobe: Echinacea purpurea 8,00 € in der DB
+      // gegen 5,10 € bei Gaißmayer). Der Block entstand als Reaktion auf die
+      // Search-Console-Warnung "Missing field offers" (Commit bd1e628).
+      //
+      // Das bloße Streichen von "offers" hat den Typ zurückgelassen und damit einen
+      // kritischen Fehler erzeugt ("Entweder offers, review oder aggregateRating müssen
+      // angegeben werden", GSC ab 07.08.2026): Ein Product ohne eines dieser drei Felder
+      // ist für Google kein gültiges Angebot. Der Fehler war folgenlos für das Ranking —
+      // Product-Rich-Results ohne Angebot gibt es ohnehin nicht —, aber er verdeckt in der
+      // Search Console echte Befunde. Richtig ist, gar keinen Handelsartikel zu behaupten:
+      // Taxon (pending.schema.org) beschreibt genau das, was die Seite ist, nämlich eine
+      // Pflanzenart. Google wertet den Typ nicht für Rich Results aus und meldet ihn
+      // deshalb auch nicht — die Merkmale bleiben trotzdem maschinenlesbar.
+      // Product NICHT wieder einbauen, solange hier nicht wirklich verkauft wird.
+      "@type": "Taxon",
+      "name": pflanze.name_botanisch,
+      "alternateName": pflanze.name_deutsch,
+      "taxonRank": "Art",
       "description": pflanze.beschreibung || '',
       "image": bildAbsolut,
-      "color": pflanze.farbe || undefined,
-      "category": "Gartenstauden",
-      "brand": { "@type": "Brand", "name": "Staudenplan.de" },
       "additionalProperty": additionalProps,
-      "mpn": pflanze.name_botanisch,
-      // BEWUSST KEIN "offers": Staudenplan.de verkauft nichts. Der Block enthielt bis 08/2026
-      // einen Verkaufspreis unter dem Händlernamen "Staudenplan.de", Versandkosten von 4,95 €,
-      // 1-2 Tage Bearbeitung und 14 Tage kostenlose Rückgabe — alles frei erfunden, auf allen
-      // 713 Pflanzenseiten, ohne AGB und ohne Widerrufsbelehrung. Die Preise in der DB sind
-      // Kalkulationsgrößen für die Plansumme, keine Handelspreise (Stichprobe: Echinacea
-      // purpurea 8,00 € in der DB gegen 5,10 € bei Gaißmayer).
-      // Der Block ist ursprünglich als Reaktion auf die Search-Console-Warnung
-      // "Missing field offers" entstanden (Commit bd1e628). Diese Warnung ist folgenlos:
-      // Product-Rich-Results ohne Angebot gibt es ohnehin nicht, wir verlieren also nichts.
-      // NICHT wieder einbauen, solange hier nicht wirklich verkauft wird.
     },
     {
       "@context": "https://schema.org",
@@ -4062,9 +4075,15 @@ app.get('/pflanze/:slug', (req, res) => {
   <link rel="canonical" href="https://www.staudenplan.de/pflanze/${slug}">
   <meta property="og:title" content="${escHtml(pflanze.name_deutsch)} — Pflege, Standort & Kauftipp">
   <meta property="og:description" content="${escHtml((pflanze.beschreibung || '').substring(0, 155))}">
-  <meta property="og:image" content="${escHtml(pflanze.bild_url || 'https://www.staudenplan.de/images/og-default.jpg')}">
+  <!-- bildAbsolut, nicht pflanze.bild_url: In der DB stehen die Bildpfade relativ
+       ("/images/pflanzen/…"), so schreiben es alle Bild-Skripte zurück. Facebook und Pinterest
+       lösen relative og:image-Werte nicht gegen die Seiten-URL auf — die Vorschau blieb dadurch
+       auf allen Pflanzenseiten leer. Das JSON-LD daneben nutzte längst die absolute Variante. -->
+  <meta property="og:image" content="${escHtml(bildAbsolut)}">
   <meta property="og:url" content="https://www.staudenplan.de/pflanze/${slug}">
-  <meta property="og:type" content="product">
+  <!-- og:type="article", nicht "product": Pinterest und Facebook lesen "product" als Kaufangebot
+       und erwarten dann og:price/og:availability — die es hier nicht gibt (siehe Taxon-Kommentar). -->
+  <meta property="og:type" content="article">
   <script type="application/ld+json">${schemaOrg.replace(/</g, '\\u003c')}</script>
   ${faqSchema ? `<script type="application/ld+json">${faqSchema.replace(/</g, '\\u003c')}</script>` : ''}
   <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',system-ui,sans-serif;background:#f8f4ef;color:#1a1a1a}@media(max-width:680px){.pflanz-grid{grid-template-columns:1fr!important}.pflanz-hero-inner{flex-direction:column!important}}details>summary::-webkit-details-marker{display:none}</style>
