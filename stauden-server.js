@@ -208,6 +208,11 @@ const escJsonLd = (obj) => JSON.stringify(obj).replace(/</g, '\\u003c');
   'ALTER TABLE pflanzen ADD COLUMN bild_vorschlag TEXT',
   'ALTER TABLE pflanzen ADD COLUMN bild_geprueft INTEGER DEFAULT 0',
   'ALTER TABLE pflanzen ADD COLUMN bild_check_info TEXT',
+  // lebensdauer wird in der RAG-Abfrage gelesen (im SELECT der Kandidatenspalten und als
+  // Filter gegen 'einjaehrig'), war aber nie hier eingetragen. Auf einer DB ohne die Spalte antwortet die
+  // STARTSEITE mit HTTP 500 ("no such column: lebensdauer") — auf dem Produktivserver ist sie
+  // durch ein Skript vorhanden, eine frisch nach DEPLOY.md aufgebaute DB hätte sie nicht.
+  'ALTER TABLE pflanzen ADD COLUMN lebensdauer TEXT',
   // Klicks: maschinelle Aufrufe werden markiert statt verworfen — die Weiterleitung
   // funktioniert weiter, die Statistik zeigt aber nur echte Nachfrage.
   'ALTER TABLE klicks ADD COLUMN bot INTEGER DEFAULT 0',
@@ -1141,7 +1146,12 @@ app.get('/', (req, res) => {
       <div class="seo-steps">
         <div class="seo-step"><div class="ss-num">1</div><h3>Garten beschreiben</h3><p>Fläche, Lichtbedingungen, Bodentyp und gewünschten Gartenstil eingeben — oder die Fläche direkt im Plan einzeichnen.</p></div>
         <div class="seo-step"><div class="ss-num">2</div><h3>KI generiert deinen Plan</h3><p>Unsere KI durchsucht ${planbarCount} geprüfte Stauden und ${wissenCount} Expertentexte — und erstellt einen individuellen, standortgerechten Bepflanzungsplan.</p></div>
-        <div class="seo-step"><div class="ss-num">3</div><h3>Pflanzen bestellen</h3><p>Mit Stückliste, grafischem Pflanzplan und Jahreskalender. Die Pflanzen können direkt als Komplettpaket bestellt werden.</p></div>
+        <!-- Nicht "bestellen": Auf staudenplan.de wird nichts verkauft und nichts bestellt. Es gibt
+             genau zwei Wege — pro Staude ein Link zur Gärtnerei, oder eine unverbindliche Anfrage
+             fürs Komplettpaket, auf die die Gärtnerei mit einem Angebot antwortet (Modal
+             "Paket bei der Gärtnerei anfragen"). "Direkt als Komplettpaket bestellt werden"
+             versprach einen Bestellvorgang, den es hier nicht gibt. -->
+        <div class="seo-step"><div class="ss-num">3</div><h3>Pflanzen besorgen</h3><p>Mit Stückliste, grafischem Pflanzplan und Jahreskalender. Jede Staude ist zur Gärtnerei verlinkt — oder du fragst das Komplettpaket unverbindlich an und bekommst ein Angebot.</p></div>
       </div>
     </div>
   </section>
@@ -4372,7 +4382,7 @@ function kategorieSeitenHTML({ titel, metaDesc, h1, intro, pflanzen, artikelLink
   <meta property="og:title" content="${titel}">
   <meta property="og:description" content="${metaDesc}">
   <meta property="og:type" content="website">
-  <script type="application/ld+json">${JSON.stringify({
+  <script type="application/ld+json">${escJsonLd({
     '@context':'https://schema.org','@type':'CollectionPage',
     'name': titel, 'description': metaDesc,
     'url': `https://www.staudenplan.de/${slug}`,
@@ -5645,11 +5655,46 @@ function renderBeispielPlanSSR(plan, flaeche, grafikOpts, quelle = '') {
   const pflanzen = plan.pflanzen;
 
   const gesamt = pflanzen.reduce((s,p) => s + (Number(p.stueckzahl) || 0), 0);
+  // Die Beträge stammen aus preis_stueck_eur — Kalkulationsgrößen für die Plansumme, KEINE
+  // Handelspreise (Echinacea purpurea 8,00 € in der DB gegen 5,10 € bei Gaißmayer). Auf den
+  // Pflanzenseiten heißt derselbe Wert deshalb längst „💶 Richtpreis · ca. …". Hier stand
+  // bis 08/2026 ein blanker Eurobetrag unmittelbar über dem Button „Bei Gaißmayer ansehen",
+  // was sich unweigerlich als Preis des verlinkten Angebots liest. Die Zahlen bleiben — für
+  // die Budgetplanung sind sie der Sinn der Seite —, aber sie sagen jetzt, was sie sind.
+  // gesamtkosten_geschaetzt kommt je nach Aufrufer in zwei Formaten, und BEIDE müssen stimmen:
+  //   /plan/:id   → rohe JS-Zahl aus dem Browser-reduce, oft mit Fließkomma-Rest
+  //                 (474.59999999999997 liegt dreimal echt in geteilte_plaene)
+  //   /beispiel/… → eingefrorener Modell-String, mal mit, mal ohne Euro-Zeichen
+  //                 ("179.50€" gegen "406.5")
+  // Der frühere Code hatte nur den Zahl-Zweig und zeigte deshalb auf fünf von acht
+  // Beispielseiten live "179.50€ €". Eine reine String-Auswertung wäre der umgekehrte Fehler:
+  // aus 474.59999999999997 würde "47460000000000000 €", weil die 14 Nachkommastellen wie
+  // Tausendergruppen aussehen. Also erst der Typ, dann die Zeichenkette.
+  const kostenWert = plan.gesamtkosten_geschaetzt;
+  let kostenZahl;
+  if (typeof kostenWert === 'number') {
+    kostenZahl = kostenWert;
+  } else {
+    // Trennzeichen am Rand stammen aus Wörtern, nicht aus der Zahl: "ca. 180" hinterlässt
+    // beim Filtern ".180" und würde sonst als 0,18 gelesen. Ebenso "180,-" → "180,".
+    const roh = String(kostenWert ?? '').replace(/[^\d.,]/g, '').replace(/^[.,]+/, '').replace(/[.,]+$/, '');
+    if (/^\d{1,3}(?:[.,]\d{3})+$/.test(roh)) {
+      // Nur Tausendergruppen, keine Nachkommastelle: "1.234" → 1234
+      kostenZahl = Number(roh.replace(/[.,]/g, ''));
+    } else {
+      // Letztes Trennzeichen ist die Dezimalstelle, davor stehende sind Tausendertrenner:
+      // "179.50" → 179.5, "1.234,50" → 1234.5
+      const i = Math.max(roh.lastIndexOf('.'), roh.lastIndexOf(','));
+      kostenZahl = Number(i < 0 ? roh : roh.slice(0, i).replace(/[.,]/g, '') + '.' + roh.slice(i + 1));
+    }
+  }
+  const kostenText = Number.isFinite(kostenZahl) && kostenZahl > 0 ? `${Math.round(kostenZahl)} €` : '–';
   const meta = `<div class="em-bar">
     <div class="em-item"><strong>${pflanzen.length}</strong> Pflanzenarten</div>
     <div class="em-item"><strong>${gesamt}</strong> Pflanzen gesamt</div>
-    <div class="em-item"><strong>${escHtml(String(typeof plan.gesamtkosten_geschaetzt === 'number' ? Math.round(plan.gesamtkosten_geschaetzt) : (plan.gesamtkosten_geschaetzt || '–')))} €</strong> Gesamtkosten ca.</div>
-  </div>`;
+    <div class="em-item"><strong>${escHtml(kostenText)}</strong> Richtpreis gesamt</div>
+  </div>
+  <p style="font-size:.78rem;color:#888;line-height:1.5;margin:-16px 0 20px">Alle Beträge sind Richtwerte zur Budgetplanung — nicht die Preise der verlinkten Gärtnerei.</p>`;
 
   const cards = pflanzen.map((p, i) => {
     const c = bloomColorSSR(p.farbe);
@@ -5678,7 +5723,7 @@ function renderBeispielPlanSSR(plan, flaeche, grafikOpts, quelle = '') {
         </div>
         <div class="pflanze-preis">
           <span>Pflege: <span class="pflege-sterne">${stars}</span></span>
-          <strong>${preis} €</strong>
+          <span>Richtpreis <strong>ca. ${preis} €</strong></span>
         </div>
         <a class="btn-kaufen" href="${escHtml(kaufHref)}" target="_blank" rel="noopener nofollow" data-kauf="${escHtml(p.name_botanisch || p.name_deutsch || '')}" data-quelle="${escHtml(quelle)}">Bei Gaißmayer ansehen ↗</a>
         <div style="text-align:center;font-size:.7rem;color:#999;margin-top:4px;line-height:1.4">Staudengärtnerei Gaißmayer · öffnet in neuem Tab</div>
@@ -5836,7 +5881,7 @@ app.get('/beispiel/:slug', (req, res) => {
       </div>
     </div>`;
 
-  const breadcrumb = JSON.stringify({
+  const breadcrumb = escJsonLd({
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
     "itemListElement": [
