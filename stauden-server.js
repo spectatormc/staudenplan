@@ -2783,7 +2783,14 @@ app.get(`/${INDEXNOW_KEY}.txt`, (req, res) => {
 app.get('/robots.txt', (req, res) => {
   const base = process.env.SITE_URL || `${req.protocol}://${req.hostname}`;
   res.type('text/plain');
-  res.send(`User-agent: *\nAllow: /\nDisallow: /go/\nSitemap: ${base}/sitemap.xml\n`);
+  // Kein Disallow für /go/ — bewusst. Gesperrte URLs kann Google nicht abrufen und deshalb
+  // auch nicht sauber verwerfen: Sie standen dauerhaft als "Durch robots.txt blockiert" im
+  // Indexierungsbericht (Stand 14.08.2026: 262 von 445 Meldungen) und verdeckten die echten
+  // Probleme. Die Route selbst sendet X-Robots-Tag: noindex, nofollow und die Links tragen
+  // rel="nofollow" — Google darf den Redirect also abrufen, sieht das noindex und wirft die
+  // URLs endgültig raus. Die Crawls zählen nicht als Nachfrage mit: istBotKlick wertet sie
+  // über fehlenden Referer und Googlebot-UA als maschinell.
+  res.send(`User-agent: *\nAllow: /\nSitemap: ${base}/sitemap.xml\n`);
 });
 
 // ─── Sitemap.xml ──────────────────────────────────────────────────────────────
@@ -3817,6 +3824,25 @@ const SLUG_ALIASE = Object.assign(Object.create(null), {
   'sonnenhut':                'rudbeckia-fulgida',    // deutscher Name in Botanik-Slug-Pfad
   'tradescantia':             'tradescantia-andersoniana',
   'typha':                    'typha-minima',
+  // Zweite Runde, aus den nginx-Logs vom 08.–17.08.2026: Slugs, die durch das
+  // Namensaudit vom 06.08. weggefallen sind. Der Eintrag existiert weiter, nur unter
+  // dem heute gültigen botanischen Namen — deshalb 301 und nicht 404.
+  'aster-novae-angliae':      'symphyotrichum-novae-angliae', // Aster novae-angliae = Symphyotrichum novae-angliae
+  // Der Eintrag „Glattblattaster" heißt seit dem Audit Symphyotrichum laeve. Botanisch ist
+  // Aster novi-belgii aber S. novi-belgii, nicht S. laeve — die Weiterleitung folgt der
+  // Zeile, die die URL bediente. Ob das Audit hier richtig lag, ist eine Datenfrage.
+  'aster-novi-belgii':        'symphyotrichum-laeve',
+  'aster-novi-belgii-glattblattaster': 'symphyotrichum-laeve',
+  'chrysanthemum-indicum':    'chrysanthemum-x-hortorum', // Gartenchrysanthemen stehen als C. x hortorum in der DB
+  'cimicifuga-simplex':       'actaea-simplex',       // wie cimicifuga-ramosa: Cimicifuga ist Synonym von Actaea
+  'delosperma':               'delosperma-cooperi',
+  'dicentra-spectabilis':     'lamprocapnos-spectabilis', // Tränendes Herz steht heute in Lamprocapnos
+  'geranium-rozanne':         'geranium-x-rozanne',   // dieselbe Sorte, nur der Slug änderte sich
+  'helenium-hybride':         'helenium-autumnale',   // Sammeleintrag der Sonnenbraut-Hybriden
+  'hosta':                    'hosta-sieboldiana',    // wie hosta-spp
+  'lycopus':                  'lycopus-europaeus',
+  'sagittaria':               'sagittaria-sagittifolia',
+  'sedum-telephium':          'hylotelephium-telephium', // Sedum telephium steht heute in Hylotelephium
 });
 
 // Ratgeber-Slugs, die beim Titel-Audit umbenannt oder beim Zusammenführen doppelter
