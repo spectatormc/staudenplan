@@ -4,7 +4,7 @@
  *
  *   node scripts/pins-erzeugen.js                 alles, vorhandene Dateien bleiben stehen
  *   node scripts/pins-erzeugen.js --neu           vorhandene überschreiben
- *   node scripts/pins-erzeugen.js --nur pflanze   nur eine Sorte (pflanze|beetplan|saison|kombi)
+ *   node scripts/pins-erzeugen.js --nur pflanze   nur eine Sorte (pflanze|beetplan|saison|kombi|ratgeber)
  *   node scripts/pins-erzeugen.js --limit 5       höchstens N je Sorte, für Probeläufe
  *
  * WARUM DATEIEN UND NICHT AUF ZURUF: Pinterest lädt das Bild selbst von einer öffentlichen
@@ -47,10 +47,11 @@ const bildModul = require('./pin-bild');
 const beetModul = require('./pin-beetplan');
 const kombiModul = require('./pin-kombination');
 const saisonModul = require('./pin-saison');
+const ratgeberModul = require('./pin-ratgeber');
 
 fs.mkdirSync(ZIEL, { recursive: true });
 const vorher = fs.existsSync(LISTE) ? JSON.parse(fs.readFileSync(LISTE, 'utf8')) : [];
-const zeitstempel = Object.fromEntries(vorher.map(e => [e.guid, e.pubDate]));
+const frueher = Object.fromEntries(vorher.map(e => [e.guid, e]));
 
 const liste = [];
 let erzeugt = 0, vorhanden = 0, fehler = 0;
@@ -90,7 +91,10 @@ async function bauen({ guid, datei, typ, machen, text }) {
     alt: t.alt,
     board: t.board,
     bytes: fs.statSync(pfad).size,
-    pubDate: zeitstempel[guid] || new Date().toUTCString(),
+    pubDate: frueher[guid]?.pubDate || new Date().toUTCString(),
+    // Einmal vergebener Termin bleibt. Ein Neulauf der Bilder darf einen Pin nicht
+    // umterminieren — und schon veroeffentlichte schon gar nicht.
+    ...(frueher[guid]?.geplant_am ? { geplant_am: frueher[guid].geplant_am } : {}),
   });
 }
 
@@ -174,6 +178,33 @@ async function bauen({ guid, datei, typ, machen, text }) {
         text: () => txt.textKombination(k, giftigkeit),
       });
     }
+  }
+
+  // ── Ratgeber ───────────────────────────────────────────────────────────────
+  // Trägt November bis Februar: Der Blühbeginn der 278 pinnbaren Stauden ballt sich im Juni,
+  // im Winter gäbe es aus der Pflanzentabelle fast nichts zu zeigen.
+  if (!NUR || NUR === 'ratgeber') {
+    let artikel = ratgeberModul.ladeArtikel(db);
+    if (LIMIT) artikel = artikel.slice(0, LIMIT);
+    console.log(`Ratgeber: ${artikel.length}`);
+    for (const a of artikel) {
+      const slug = txt.slugify(a.titel);
+      const teaser = ratgeberModul.ersterSatz(a.inhalt, 60, 480);
+      await bauen({
+        guid: `ratgeber-${slug}`, datei: `ratgeber-${slug}.jpg`, typ: 'ratgeber',
+        machen: z => ratgeberModul.ratgeberPin(a, z),
+        text: () => txt.textRatgeber(a, teaser),
+      });
+    }
+  }
+
+  /* Bei --nur <sorte> nur DIESE Sorte neu aufbauen und die uebrigen aus der alten Liste
+   * uebernehmen. Ohne das loescht ein "--nur ratgeber" die 306 anderen Eintraege aus der
+   * Liste — der Feed liefert dann nichts mehr, obwohl alle Bilder noch da liegen. */
+  if (NUR) {
+    const behalten = vorher.filter(e => e.typ !== NUR && fs.existsSync(path.join(ZIEL, e.datei)));
+    console.log(`--nur ${NUR}: ${behalten.length} Eintraege anderer Sorten uebernommen`);
+    liste.push(...behalten);
   }
 
   liste.sort((a, b) => a.guid.localeCompare(b.guid));

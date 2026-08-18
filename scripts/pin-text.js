@@ -154,6 +154,30 @@ function textBeetplan(b, arten, gift) {
   });
 }
 
+/* ── Ratgeber ────────────────────────────────────────────────────────────────── */
+/*
+ * Der Ratgeber-Pin ist die einzige Sorte ohne Pflanze — er trägt die Monate, in denen nichts
+ * blüht. Deshalb auch kein KI-Hinweis: Die Karte ist rein typografisch, es gibt kein erzeugtes
+ * Bild, über das aufzuklären wäre.
+ *
+ * Beschreibung = erster VOLLSTÄNDIGER Satz des Artikels plus Aufruf. Keine Zusammenfassung:
+ * Was im Pin steht, steht wortgleich auf der Seite.
+ */
+function textRatgeber(artikel, teaser) {
+  const teile = [
+    teaser || `${artikel.titel} — der ganze Ratgeber auf staudenplan.de.`,
+    'Kostenlos lesen, ohne Anmeldung.',
+    'Passenden Beetplan gleich dazu erstellen: staudenplan.de.',
+  ];
+  return fertig({
+    titel: artikel.titel,
+    beschreibung: teile.join(' '),
+    pfad: `/ratgeber/${slugify(artikel.titel)}`,
+    alt: `${artikel.titel} — Ratgeber von Staudenplan.de, Kategorie ${artikel.kategorie}`,
+    board: 'Staudenwissen',
+  });
+}
+
 /* ── Kombination ─────────────────────────────────────────────────────────────── */
 function textKombination(k, giftigkeit) {
   const d = k.pflanzen;
@@ -293,4 +317,4 @@ if (require.main === module) {
   })().catch(e => { console.error('Fehler:', e.message); process.exit(1); });
 }
 
-module.exports = { textPflanze, textBeetplan, textKombination, textSaison, kuerzen, slugify };
+module.exports = { textPflanze, textBeetplan, textKombination, textSaison, textRatgeber, kuerzen, slugify };

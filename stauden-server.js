@@ -2868,7 +2868,15 @@ function pinsLesen() {
     // Nur Einträge, deren Bild wirklich liegt. Ein Feed-Eintrag ohne abrufbares Bild wird von
     // Pinterest stillschweigend übergangen — der Pin fehlt dann, ohne dass etwas protokolliert
     // wird. Lieber gar nicht ausliefern als unbemerkt verschlucken lassen.
-    return roh.filter(e => e && e.datei && fs.existsSync(path.join(__dirname, 'public', 'pins', e.datei)));
+    const heute = new Date().toISOString().slice(0, 10);
+    return roh.filter(e => {
+      if (!e || !e.datei) return false;
+      // Nur Faelliges. OHNE Termin wird NICHT ausgeliefert: Ein frisch erzeugter Pin soll nicht
+      // sofort rausgehen, nur weil scripts/pin-termine.js noch nicht gelaufen ist. Die sichere
+      // Richtung ist "nichts veroeffentlichen", nicht "alles auf einmal".
+      if (!e.geplant_am || e.geplant_am > heute) return false;
+      return fs.existsSync(path.join(__dirname, 'public', 'pins', e.datei));
+    });
   } catch { return []; }
 }
 
