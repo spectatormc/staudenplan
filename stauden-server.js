@@ -2827,6 +2827,124 @@ app.get('/sitemap.xml', (req, res) => {
   res.send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join('\n')}\n</urlset>`);
 });
 
+// ─── Pinterest-Feeds ──────────────────────────────────────────────────────────
+// Pinterest kann einen RSS-Feed selbst abholen und daraus Pins veröffentlichen: bis zu 200
+// am Tag, ohne API, ohne App-Freigabe, ohne Token, der nach 30 Tagen abläuft. Das ist der
+// einzige Weg, der ohne Standard Access öffentlich sichtbare Pins erzeugt — unter Trial
+// Access sind erzeugte Pins nur für den Ersteller sichtbar.
+//
+// Ein Feed je Pinnwand, so verlangt es Pinterest beim Einrichten. Die Zuordnung steht schon
+// in pin-text.js; hier wird nur nach ihr gruppiert.
+//
+// Der Inhalt kommt aus public/pins/liste.json, die scripts/pins-erzeugen.js im selben Lauf
+// wie die Bilder schreibt. Dadurch können Bild und Text nicht auseinanderlaufen.
+const PIN_LISTE = path.join(__dirname, 'public', 'pins', 'liste.json');
+
+function pinsLesen() {
+  try {
+    const roh = JSON.parse(fs.readFileSync(PIN_LISTE, 'utf8'));
+    // Nur Einträge, deren Bild wirklich liegt. Ein Feed-Eintrag ohne abrufbares Bild wird von
+    // Pinterest stillschweigend übergangen — der Pin fehlt dann, ohne dass etwas protokolliert
+    // wird. Lieber gar nicht ausliefern als unbemerkt verschlucken lassen.
+    return roh.filter(e => e && e.datei && fs.existsSync(path.join(__dirname, 'public', 'pins', e.datei)));
+  } catch { return []; }
+}
+
+const pinBrettSlug = b => slugify(String(b || ''));
+
+function rssBauen({ titel, beschreibung, eintraege }) {
+  // Älteste zuerst: Pinterest arbeitet den Feed in dieser Richtung ab. Die Datei in derselben
+  // Reihenfolge auszuliefern macht nachvollziehbar, was als Nächstes erscheint.
+  const sortiert = [...eintraege].sort((a, b) =>
+    (Date.parse(a.pubDate) || 0) - (Date.parse(b.pubDate) || 0) || String(a.guid).localeCompare(String(b.guid)));
+
+  const items = sortiert.map(e => `  <item>
+    <title>${escHtml(e.titel)}</title>
+    <link>${escHtml(e.link)}</link>
+    <description>${escHtml(e.beschreibung)}</description>
+    <guid isPermaLink="false">${escHtml(e.guid)}</guid>
+    <pubDate>${escHtml(e.pubDate)}</pubDate>
+    <enclosure url="${escHtml(e.bild)}" type="image/jpeg" length="${Number(e.bytes) || 0}"/>
+    <media:content url="${escHtml(e.bild)}" medium="image" type="image/jpeg"/>
+  </item>`).join('\n');
+
+  // RSS 2.0, kein Atom — Atom unterstützt Pinterest ausdrücklich nicht. Das Bild steht doppelt
+  // als enclosure UND media:content: Pinterest liest beide, und welches der Feed-Leser nimmt,
+  // ist nicht dokumentiert.
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/">
+<channel>
+  <title>${escHtml(titel)}</title>
+  <link>https://www.staudenplan.de/</link>
+  <description>${escHtml(beschreibung)}</description>
+  <language>de-de</language>
+${items}
+</channel>
+</rss>`;
+}
+
+// Übersicht mit den Feed-Adressen zum Kopieren. Pinterest verlangt beim Einrichten eine URL
+// je Pinnwand; die hier stehen zu haben erspart das Zusammensuchen.
+app.get('/pinterest', (req, res) => {
+  const alle = pinsLesen();
+  const jeBrett = {};
+  for (const e of alle) (jeBrett[e.board] = jeBrett[e.board] || []).push(e);
+  const zeilen = Object.entries(jeBrett).sort((a, b) => b[1].length - a[1].length).map(([b, l]) =>
+    `<tr><td>${escHtml(b)}</td><td style="text-align:right">${l.length}</td>
+     <td><a href="/pinterest/${pinBrettSlug(b)}.xml">/pinterest/${pinBrettSlug(b)}.xml</a></td></tr>`).join('');
+  res.set('X-Robots-Tag', 'noindex');
+  res.send(`<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
+<title>Pinterest-Feeds</title><style>
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#f8f4ef;color:#1a1a1a;padding:32px;line-height:1.6}
+table{border-collapse:collapse;margin:18px 0;background:#fff;border-radius:8px;overflow:hidden}
+td,th{padding:9px 14px;border-bottom:1px solid #e0d9cf;font-size:.9rem}
+th{background:#1b4332;color:#fff;text-align:left}a{color:#2d6a4f}
+.hinweis{background:#fff;border-left:4px solid #2d6a4f;padding:14px 18px;border-radius:0 8px 8px 0;max-width:70ch}
+</style></head><body>
+<h1>Pinterest-Feeds</h1>
+<p>${alle.length} Pins bereit. Beim Einrichten in Pinterest je Pinnwand einen Feed verbinden.</p>
+<table><tr><th>Pinnwand</th><th>Pins</th><th>Feed</th></tr>${zeilen}</table>
+<div class="hinweis"><strong>Zuerst der Probelauf:</strong>
+<a href="/pinterest/probe.xml">/pinterest/probe.xml</a> liefert fünf gemischte Pins.
+Den auf die geheime Testpinnwand legen und 24 Stunden abwarten — erst danach die echten Feeds
+verbinden. Ein falsch angeschlossener Feed produziert hunderte Pins, die einzeln gelöscht
+werden müssen.</div>
+</body></html>`);
+});
+
+app.get('/pinterest/:datei', (req, res) => {
+  const name = String(req.params.datei || '').replace(/\.xml$/i, '');
+  const alle = pinsLesen();
+  if (!alle.length) {
+    return res.status(503).type('text/plain').send('Noch keine Pins erzeugt — scripts/pins-erzeugen.js laufen lassen.');
+  }
+
+  if (name === 'probe') {
+    // Fünf Stück, bewusst je Sorte eines: Der Probelauf soll alle vier Bauarten einmal durch
+    // Pinterest schicken, nicht fünfmal dieselbe.
+    const jeTyp = {};
+    for (const e of alle) if (!jeTyp[e.typ]) jeTyp[e.typ] = e;
+    const auswahl = Object.values(jeTyp).slice(0, 5);
+    res.type('application/rss+xml; charset=utf-8');
+    return res.send(rssBauen({
+      titel: 'Staudenplan.de — Probelauf',
+      beschreibung: 'Fünf Pins zum Prüfen, bevor die echten Feeds verbunden werden.',
+      eintraege: auswahl,
+    }));
+  }
+
+  const auswahl = alle.filter(e => pinBrettSlug(e.board) === name);
+  if (!auswahl.length) return res.status(404).type('text/plain').send('Kein Feed unter diesem Namen.');
+
+  res.type('application/rss+xml; charset=utf-8');
+  res.send(rssBauen({
+    titel: `Staudenplan.de — ${auswahl[0].board}`,
+    beschreibung: `${auswahl[0].board}: Stauden, Beetpläne und Kombinationen von staudenplan.de.`,
+    eintraege: auswahl,
+  }));
+});
+
 // ─── Pflanzen-API (für Client-Suche) ─────────────────────────────────────────
 app.get('/api/pflanzen', pflanzenLimiter, (req, res) => {
   const q = (req.query.q || '').toLowerCase();
