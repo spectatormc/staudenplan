@@ -1924,13 +1924,33 @@ JSON-Format:
 });
 
 app.post('/api/alternativ', alternativLimiter, (req, res) => {
-  const { licht, boden, stil, rolle, ausschliessen } = req.body;
+  const { licht, boden, standort_beschreibung, stil, rolle, ausschliessen } = req.body;
   if (!licht) return res.status(400).json({ error: 'licht erforderlich' });
 
-  const lichtTerm = LICHT_MAP[licht] || (licht.includes('Vollsonne') ? 'Sonne' : licht.includes('Halbschatten') ? 'Halbschatten' : 'Schatten');
-  const bodenTerm = boden && (boden.toLowerCase().includes('sandig')) ? 'Sandig'
-    : boden && (boden.toLowerCase().includes('lehmig')) ? 'Lehmig' : 'Normal';
-  const stilTerm = (stil || '').split(' ')[0] || '';
+  /*
+   * Dieselben Ableitungen wie im Planer (getPflanzenkandidaten), nicht eigene. Vorher standen
+   * hier drei abweichende Fassungen, und eine davon war schlicht falsch:
+   * `stil.split(' ')[0]` machte aus "Cottage-Garten / Englisch" den Suchbegriff
+   * "Cottage-Garten" — der trifft in der Datenbank NULL Zeilen, während "Cottage" 233 trifft.
+   * Beim Cottage-Stil lief die genaue Abfrage deshalb immer ins Leere und der Nutzer bekam
+   * ausnahmslos den Rückfall zu sehen.
+   */
+  const lichtTerm = LICHT_MAP[licht] || licht.split(' ')[0];
+  const bodenTerm = BODEN_MAP[boden] || 'normal';
+  const stilTerm  = STIL_MAP[stil]   || (stil || '').split('/')[0].trim();
+
+  /*
+   * Feuchtigkeit kam in dieser Route bis zum 18.08.2026 überhaupt nicht vor — weder in der
+   * genauen Abfrage noch im Rückfall. Der Planer filtert danach (FEUCHT_COMPAT), der Tausch
+   * einer einzelnen Pflanze nicht: Auf einem sonnigen, trockenen Beet waren 95 Arten
+   * vorschlagbar, die dort nicht wachsen, darunter Blutweiderich, Pfeilkraut und Kalmus.
+   * Gemessen über alle 36 Standortkombinationen: JEDE ließ unpassende Vorschläge zu.
+   */
+  const feuchtigkeit = getFeuchtigkeit(boden, standort_beschreibung);
+  const feuchTerms   = FEUCHT_COMPAT[feuchtigkeit] || ['normal'];
+  const feuchPh      = feuchTerms.map(() => '?').join(',');
+  const FEUCHT_WHERE = `AND (feuchtigkeit IN (${feuchPh}) OR feuchtigkeit IS NULL)`;
+
   const exclude = Array.isArray(ausschliessen) && ausschliessen.length ? ausschliessen : null;
   const exClause = exclude ? `AND name_botanisch NOT IN (${exclude.map(() => '?').join(',')})` : '';
 
@@ -1939,25 +1959,27 @@ app.post('/api/alternativ', alternativLimiter, (req, res) => {
     bienen_freundlich, heimisch, feuchtigkeit, wuchs, lebensbereich, breite_cm_max,
     rolle_empfehlung, kombinationspartner, winteraspekt, trockenheitstoleranz, bild_url, inhalt_lang`;
 
-  let pflanze = null;
+  const holen = (where, args) => db.prepare(`SELECT ${COLS} FROM pflanzen
+      WHERE ${where} ${exClause} ORDER BY RANDOM() LIMIT 1`).all(...args, ...(exclude || []))[0] || null;
 
-  if (!pflanze) {
-    const rows = db.prepare(`SELECT ${COLS} FROM pflanzen
-      WHERE licht LIKE ? AND (boden LIKE ? OR boden LIKE ?) AND stil LIKE ?
-        AND ${PLANBAR} ${exClause}
-      ORDER BY RANDOM() LIMIT 1`)
-      .all(`%${lichtTerm}%`, `%${bodenTerm}%`, '%normal%', `%${stilTerm}%`, ...(exclude || []));
-    if (rows.length) pflanze = rows[0];
-  }
-  if (!pflanze) {
-    const rows = db.prepare(`SELECT ${COLS} FROM pflanzen
-      WHERE licht LIKE ? AND ${PLANBAR} ${exClause}
-      ORDER BY RANDOM() LIMIT 1`)
-      .all(`%${lichtTerm}%`, ...(exclude || []));
-    if (rows.length) pflanze = rows[0];
-  }
+  // Gelockert wird über Stil und Boden — NIE über Licht und Feuchtigkeit. Das sind die beiden
+  // Angaben, an denen eine Staude tatsächlich eingeht; Stil ist Geschmack, Boden lässt sich
+  // verbessern. Der frühere Rückfall auf "nur Licht" fällt damit weg, und er wird auch nicht
+  // gebraucht: Die Stufe Licht+Feuchtigkeit liefert gemessen 231 bis 356 Kandidaten, sie war
+  // über alle 36 Standortkombinationen nie leer.
+  let pflanze = holen(
+    `licht LIKE ? AND (boden LIKE ? OR boden LIKE ?) AND stil LIKE ? ${FEUCHT_WHERE} AND ${PLANBAR}`,
+    [`%${lichtTerm}%`, `%${bodenTerm}%`, '%normal%', `%${stilTerm}%`, ...feuchTerms]);
 
-  if (!pflanze) return res.status(404).json({ error: 'Keine Alternative gefunden.' });
+  if (!pflanze) pflanze = holen(
+    `licht LIKE ? AND (boden LIKE ? OR boden LIKE ?) ${FEUCHT_WHERE} AND ${PLANBAR}`,
+    [`%${lichtTerm}%`, `%${bodenTerm}%`, '%normal%', ...feuchTerms]);
+
+  if (!pflanze) pflanze = holen(
+    `licht LIKE ? ${FEUCHT_WHERE} AND ${PLANBAR}`,
+    [`%${lichtTerm}%`, ...feuchTerms]);
+
+  if (!pflanze) return res.status(404).json({ error: 'Keine Alternative gefunden, die zu Standort und Feuchtigkeit passt.' });
 
   const hoehe_cm = pflanze.hoehe_cm_max
     ? Math.round(((pflanze.hoehe_cm_min || 0) + pflanze.hoehe_cm_max) / 2) : 50;

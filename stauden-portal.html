@@ -4428,6 +4428,11 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           licht: formData.licht, boden: formData.boden, stil: formData.stil,
+          // Muss mit: Der Server leitet daraus die Feuchtigkeit ab (getFeuchtigkeit). Ohne
+          // die Beschreibung kaeme bei "Teichrand" oder "sehr trocken" ein anderer Wert
+          // heraus als beim Planen — und der Tausch schlueg Pflanzen fuer einen Standort vor,
+          // den der Nutzer gar nicht hat.
+          standort_beschreibung: formData.standort_beschreibung || null,
           rolle: p.rolle,
           ausschliessen: currentPlan.pflanzen.map(pp => pp.name_botanisch)
         })
