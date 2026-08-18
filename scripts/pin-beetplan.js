@@ -16,7 +16,6 @@
  * seinen internen Renderer, der weder die Farbverläufe noch die Beschneidungspfade auflöst —
  * das Beet kam schwarz und ohne Pflanzen heraus (nachgeprüft am 08.08.2026).
  */
-const { Resvg } = require('@resvg/resvg-js');
 const { execFileSync } = require('child_process');
 const http = require('http');
 const path = require('path');
@@ -103,6 +102,9 @@ function umbrechen(text, max) {
 }
 
 async function beetPin(beispiel, ziel) {
+  // Erst hier laden: Ohne diese native Abhängigkeit bleibt das Modul trotzdem nutzbar für
+  // holeSeite() und ausSeiteLesen(), die pin-text.js für die Vorschau braucht.
+  const { Resvg } = require('@resvg/resvg-js');
   const html = await holeSeite('/beispiel/' + beispiel.slug);
   const { svg, namen, intro, gift } = ausSeiteLesen(html);
 

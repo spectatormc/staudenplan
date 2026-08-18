@@ -108,8 +108,27 @@ function textPflanze(p, giftigkeit) {
   });
 }
 
+/* Derselbe Befund wie in giftSatz(), aber aus den Gruppen, die pin-beetplan.js aus der Seite
+ * liest. Der Beetplan kennt nur deutsche Namen — die Legende der Beispielseite führt keine
+ * botanischen —, deshalb kann giftigkeit() hier nicht angewandt werden. Die Einstufung hat die
+ * Seite bereits vorgenommen; hier wird sie nur noch in einen Satz gegossen.
+ */
+function giftSatzAusGruppen(gift) {
+  if (!gift || !gift.length) return '';
+  const sortiert = [...gift].sort((a, b) => (L.GIFT_RANG[a.stufe] ?? 9) - (L.GIFT_RANG[b.stufe] ?? 9));
+  const stark = sortiert.filter(g => g.stufe === 'stark');
+  const rest = sortiert.filter(g => g.stufe !== 'stark');
+  // Einzelfall wie in giftSatz() ausformuliert: "Eisenhut ist stark giftig" liest sich als
+  // Warnung, "Stark giftig: Eisenhut" eher wie eine Rubrik.
+  if (stark.length === 1 && !rest.length && !stark[0].namen.includes(',')) {
+    return `Achtung: ${stark[0].namen} ist stark giftig — in Gärten mit kleinen Kindern besser weglassen.`;
+  }
+  return ((stark.length ? `Achtung, stark giftig: ${stark.map(g => g.namen).join(', ')}. ` : '')
+       + rest.map(g => `${g.beschriftung}: ${g.namen}.`).join(' ')).trim();
+}
+
 /* ── Beetplan ────────────────────────────────────────────────────────────────── */
-function textBeetplan(b, arten) {
+function textBeetplan(b, arten, gift) {
   const titel = wahl([
     `${b.h1 || b.title}`,
     `${b.title}: fertiger Bepflanzungsplan mit ${arten} Stauden`,
@@ -122,8 +141,12 @@ function textBeetplan(b, arten) {
     'Den kompletten Plan mit Skizze gibt es kostenlos auf staudenplan.de.',
   ];
 
+  // Bis zum 18.08.2026 war der Beetplan die einzige der vier Textsorten ohne Giftsatz — die
+  // Signatur bekam nur eine ANZAHL statt der Pflanzen, es gab schlicht nichts zu prüfen.
+  const teileMitGift = vornAnstellen(teile, giftSatzAusGruppen(gift));
+
   return fertig({
-    titel, beschreibung: teile.join(' '),
+    titel, beschreibung: teileMitGift.join(' '),
     pfad: `/beispiel/${b.slug}`,
     alt: `Bepflanzungsplan ${b.title} mit ${arten} Stauden — Skizze mit nummerierten Pflanzen`,
     board: 'Bepflanzungspläne',
@@ -218,22 +241,45 @@ if (require.main === module) {
 
   const kombiModul = require('./pin-kombination');
   const saisonModul = require('./pin-saison');
+  const beetModul = require('./pin-beetplan');
 
-  const p = db.prepare("SELECT * FROM pflanzen WHERE name_botanisch = 'Aconitum napellus'").get()
-         || db.prepare('SELECT * FROM pflanzen WHERE bild_ki = 1 LIMIT 1').get();
-  zeig('Einzelpflanze', textPflanze(p, giftigkeit));
+  (async () => {
+    const p = db.prepare("SELECT * FROM pflanzen WHERE name_botanisch = 'Aconitum napellus'").get()
+           || db.prepare('SELECT * FROM pflanzen WHERE bild_ki = 1 LIMIT 1').get();
+    zeig('Einzelpflanze', textPflanze(p, giftigkeit));
 
-  zeig('Beetplan', textBeetplan({ slug: 'schattenbeet', title: 'Schattenbeet',
-    h1: 'Schattenbeet bepflanzen: Beispiel mit Pflanznamen', flaeche: '8', licht: 'Schatten' }, 7));
+    // Der Beetplan-Text wird aus der LAUFENDEN SEITE gebaut, nicht aus Beispielwerten. Bis zum
+    // 18.08.2026 standen hier feste Zahlen (8 m², Schatten) — das echte Schattenbeet hat 6 m²
+    // und Halbschatten. Die Vorschau widersprach also dem Bild, das daneben erzeugt wurde.
+    // Eine Vorschau, die etwas anderes zeigt als die Veröffentlichung, ist keine.
+    try {
+      const html = await beetModul.holeSeite('/beispiel/schattenbeet');
+      const { namen, gift } = beetModul.ausSeiteLesen(html);
+      const beispiel = {
+        slug: 'schattenbeet',
+        h1: (html.match(/<h1[^>]*>([^<]+)/) || [])[1],
+        title: (html.match(/<title>([^<|]+)/) || [])[1] || '',
+        flaeche: (html.match(/Fläche<\/div>\s*<div[^>]*>([\d.,]+) m²/) || [])[1],
+        licht: (html.match(/Licht<\/div>\s*<div[^>]*>([^<]+)/) || [])[1],
+      };
+      beispiel.title = beispiel.title.trim();
+      zeig('Beetplan', textBeetplan(beispiel, namen.length, gift));
+    } catch (e) {
+      console.log('\n── Beetplan ──');
+      console.log('  übersprungen: ' + e.message);
+      console.log('  (braucht den laufenden Server — PIN_PORT setzen, wenn er nicht auf 3003 läuft.');
+      console.log('   Feste Beispielwerte gibt es hier bewusst nicht mehr: Sie widersprachen dem Pin.)');
+    }
 
-  const k = kombiModul.findeKombinationen(kombiModul.ladePflanzen(db), { anzahl: 1 })[0];
-  if (k) zeig('Kombination', textKombination(k, giftigkeit));
+    const k = kombiModul.findeKombinationen(kombiModul.ladePflanzen(db), { anzahl: 1 })[0];
+    if (k) zeig('Kombination', textKombination(k, giftigkeit));
 
-  const sp = saisonModul.ladePflanzen(db);
-  [8, 12].forEach(m => {
-    const s = saisonModul.saisonAuswahl(sp, { monat: m });
-    if (s) zeig(`Saison (${L.MON_NAME[m - 1]})`, textSaison(s, giftigkeit));
-  });
+    const sp = saisonModul.ladePflanzen(db);
+    for (const m of [8, 12]) {
+      const s = saisonModul.saisonAuswahl(sp, { monat: m });
+      if (s) zeig(`Saison (${L.MON_NAME[m - 1]})`, textSaison(s, giftigkeit));
+    }
+  })().catch(e => { console.error('Fehler:', e.message); process.exit(1); });
 }
 
 module.exports = { textPflanze, textBeetplan, textKombination, textSaison, kuerzen, slugify };
