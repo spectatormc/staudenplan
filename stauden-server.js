@@ -3110,7 +3110,22 @@ app.get('/pinterest/:datei', (req, res) => {
     }));
   }
 
-  const auswahl = alle.filter(e => pinBrettSlug(e.board) === name);
+  /*
+   * Der Feed fuehrt die zuletzt faellig gewordenen Eintraege MIT, statt nur das Neueste zu
+   * zeigen. Zwei Gruende:
+   *
+   * 1. Pinterest prueft beim Verbinden und lehnt mit "Dieser RSS-Feed weist keine Elemente auf"
+   *    ab. Ein Feed, der an den meisten Tagen leer ist, laesst sich gar nicht erst anschliessen.
+   * 2. So funktioniert RSS ohnehin: Der Leser haelt ueber die guid fest, was er kennt.
+   *
+   * Dass Pinterest das tut, ist gemessen und nicht vermutet: Beim Probelauf am 18.08. hat der
+   * Bot probe.xml NEUNMAL abgeholt und trotzdem nur vier Pins veroeffentlicht — jede Kennung
+   * genau einmal. Die stabile guid aus pins-erzeugen.js ist die Voraussetzung dafuer.
+   *
+   * Begrenzt auf 25, damit der Feed nicht auf 187 Eintraege waechst.
+   */
+  const FEED_MAX = 25;
+  const auswahl = alle.filter(e => pinBrettSlug(e.board) === name).slice(-FEED_MAX);
   const brett = (gesamt.find(e => pinBrettSlug(e.board) === name) || {}).board;
   if (!brett) return res.status(404).type('text/plain').send('Kein Feed unter diesem Namen.');
 

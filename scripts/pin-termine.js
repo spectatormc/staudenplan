@@ -6,6 +6,7 @@
  *   node scripts/pin-termine.js --pro-tag 3            Pins pro Tag (Vorgabe 3)
  *   node scripts/pin-termine.js --ab 2026-08-19        Startdatum (Vorgabe: morgen)
  *   node scripts/pin-termine.js --neu                  auch bereits vergebene Termine neu setzen
+ *   node scripts/pin-termine.js --startschub 3         je Pinnwand N Pins auf den Starttag ziehen
  *
  * ── WARUM ÜBERHAUPT EIN TERMINPLAN ───────────────────────────────────────────
  * Pinterests RSS-Anschluss veröffentlicht bis zu 200 Pins am Tag, älteste zuerst. Ein Feed mit
@@ -196,6 +197,28 @@ for (const e of ohneWunsch) {
   e.geplant_am = t;
   belegt.set(t, (belegt.get(t) || 0) + 1);
   vergeben.push(e);
+}
+
+/*
+ * Startschub: Jede Pinnwand braucht am ersten Tag Inhalt, sonst laesst sich ihr Feed gar nicht
+ * anschliessen — Pinterest prueft beim Verbinden und lehnt mit "Dieser RSS-Feed weist keine
+ * Elemente auf" ab. Danach laeuft der normale Takt weiter.
+ *
+ * Genommen wird je Pinnwand das, was ohnehin als Naechstes drankaeme. Der Terminplan wird damit
+ * nicht durcheinandergebracht, nur sein Anfang zusammengezogen.
+ */
+const SCHUB = Number(wert('startschub')) || 3;
+if (SCHUB > 0) {
+  const jeBrett = {};
+  for (const e of liste) (jeBrett[e.board] = jeBrett[e.board] || []).push(e);
+  let vorgezogen = 0;
+  for (const eintraege of Object.values(jeBrett)) {
+    eintraege.sort((a, b) => String(a.geplant_am).localeCompare(String(b.geplant_am)));
+    for (const e of eintraege.slice(0, SCHUB)) {
+      if (e.geplant_am > tag(START)) { e.geplant_am = tag(START); vorgezogen++; }
+    }
+  }
+  if (vorgezogen) console.log(`Startschub: ${vorgezogen} Pins auf ${tag(START)} vorgezogen (${SCHUB} je Pinnwand)`);
 }
 
 // ── Ausgabe ─────────────────────────────────────────────────────────────────
