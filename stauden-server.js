@@ -5302,11 +5302,26 @@ function loadBeispielPlan(slug) {
      * längst "Warley-Elfenblume \'Ellen Willmott\'" heißt. Der botanische Name ist der
      * Schlüssel und bleibt unangetastet — nur die Anzeige folgt der Datenbank, damit die
      * acht Pläne bei der nächsten Umbenennung nicht wieder auseinanderlaufen. */
+    /* Umbenennungen an EINER Stelle sammeln und dann überall anwenden. Der Pflanzkalender
+     * führt dieselben Pflanzen noch einmal als reine Namensliste — im Schattenbeet stand dort
+     * weiter "Rote Elfenblume", nachdem die Karte darüber schon "Warley-Elfenblume" zeigte.
+     * Verglichen wird auf Gleichheit, nicht auf Teilstrings: "Margerite" steckt in
+     * "Herbst-Margerite", eine Ersetzung per Textsuche würde daraus Unsinn machen. */
+    const umbenannt = new Map();
     for (const pf of (plan.pflanzen || [])) {
       try {
         const akt = db.prepare('SELECT name_deutsch FROM pflanzen WHERE name_botanisch = ?').get(pf.name_botanisch);
-        if (akt && akt.name_deutsch) pf.name_deutsch = akt.name_deutsch;
+        if (akt && akt.name_deutsch && akt.name_deutsch !== pf.name_deutsch) {
+          umbenannt.set(pf.name_deutsch, akt.name_deutsch);
+          pf.name_deutsch = akt.name_deutsch;
+        }
       } catch { /* Anzeige ist kein Grund, die Seite scheitern zu lassen */ }
+    }
+    if (umbenannt.size && plan.pflanzkalender) {
+      for (const jahreszeit of Object.keys(plan.pflanzkalender)) {
+        const liste = plan.pflanzkalender[jahreszeit];
+        if (Array.isArray(liste)) plan.pflanzkalender[jahreszeit] = liste.map(n => umbenannt.get(n) || n);
+      }
     }
     return plan;
   } catch { return null; }
