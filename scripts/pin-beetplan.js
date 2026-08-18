@@ -28,6 +28,16 @@ const FONT_B = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
 const GRUEN = '#1b4332';
 const PORT = process.env.PIN_PORT || 3003;
 
+// Die Seite beschriftet die Giftstufen mit Emoji davor (GIFT_LABEL in stauden-server.js).
+// Hier steht die Rückabbildung auf die Stufe — daran hängt nur noch die Farbe der Leiste.
+const STUFE_AUS_LABEL = {
+  'Stark giftig': 'stark',
+  'Giftig': 'giftig',
+  'Für Katzen lebensgefährlich': 'katzen',
+  'Für Haustiere giftig': 'haustiere',
+  'Hautreizend': 'reizend',
+};
+
 function holeSeite(pfad) {
   return new Promise((ok, fehler) => {
     http.get({ host: '127.0.0.1', port: PORT, path: pfad, headers: { 'User-Agent': 'pin-generator' } }, r => {
@@ -53,7 +63,35 @@ function ausSeiteLesen(html) {
     return { nr, name, bluehzeit };
   }).filter(x => x.nr && x.name).sort((a, b) => a.nr - b.nr);
   const intro = ((html.match(/<p[^>]*>([^<]{60,300})<\/p>/) || [])[1] || '').trim();
-  return { svg, namen, intro };
+
+  // Die Giftwarnung wird NICHT neu berechnet, sondern aus der Seite gelesen — wie das SVG und
+  // die Legende. Die Alternative wäre, die Pflanzen erneut zu laden und giftigkeit() ein zweites
+  // Mal anzuwenden; genau solche Zweitlogik läuft irgendwann auseinander. Die Seite hatte den
+  // Befund die ganze Zeit korrekt, der Pin hat ihn bis zum 18.08.2026 weggeworfen: Der
+  // Schattenbeet-Pin zeigte vier als giftig geführte Arten ohne ein Wort dazu.
+  // Bewusst ohne regulären Ausdruck zerlegt: Der Block ist flach, und eine Kette aus split()
+  // ist hier leichter zu prüfen als ein Muster mit mehreren Maskierungsebenen.
+  const rohBlock = html.split('background:#fef2f2')[1];
+  const block = rohBlock ? rohBlock.split('</div>')[0] : '';
+  const gift = block.split('<strong>').slice(1).map(teil => {
+    const trenn = teil.indexOf(':</strong>');
+    if (trenn < 0) return null;
+    // Die Seite stellt jeder Stufe ein Emoji voran ("⚠️ Giftig"). Der Pin nutzt DejaVu, die
+    // keine Emoji zeichnet — also abtrennen. Fällt die Zuordnung durch, bleibt der volle Text.
+    const roh = teil.slice(0, trenn).trim();
+    const ohneEmoji = roh.split(' ').slice(1).join(' ').trim();
+    const beschriftung = STUFE_AUS_LABEL[ohneEmoji] ? ohneEmoji : roh;
+    const namen = teil.slice(trenn + 10).split('.')[0].trim();
+    return namen ? { stufe: STUFE_AUS_LABEL[beschriftung] || 'giftig', beschriftung, namen } : null;
+  }).filter(Boolean);
+  // Laut scheitern statt stumm ohne Warnung pinnen: Wenn die Seite einen Giftblock hat, ihn aber
+  // niemand mehr lesen kann, ist das Markup gewandert. Ein Pin ist nicht zurückholbar — deshalb
+  // bricht der Lauf ab, statt ein Bild ohne die Warnung zu erzeugen.
+  if (block && !gift.length) {
+    throw new Error('Giftblock gefunden, aber nicht lesbar — Markup geändert? Abbruch, damit kein ungewarnter Pin entsteht.');
+  }
+
+  return { svg, namen, intro, gift };
 }
 
 function umbrechen(text, max) {
@@ -66,7 +104,7 @@ function umbrechen(text, max) {
 
 async function beetPin(beispiel, ziel) {
   const html = await holeSeite('/beispiel/' + beispiel.slug);
-  const { svg, namen, intro } = ausSeiteLesen(html);
+  const { svg, namen, intro, gift } = ausSeiteLesen(html);
 
   const titelZeilen = umbrechen(beispiel.h1 || beispiel.title || beispiel.slug, 26);
   const fakten = [beispiel.flaeche ? beispiel.flaeche + ' m²' : null, beispiel.licht, beispiel.feuchtigkeit]
@@ -78,7 +116,10 @@ async function beetPin(beispiel, ziel) {
   // Liste und Fußzeile übrig ist, und wird notfalls über die Höhe eingepasst.
   const kopfH = 70 + titelZeilen.length * (titelZeilen.length > 1 ? 64 : 72) + (fakten ? 62 : 0);
   const listeH = 46 + Math.min(namen.length, 12) * 40 + 30;
-  const frei = H - kopfH - listeH - 90 - 60;                 // 90 Fußzeile, 60 Abstände
+  // Die Giftleiste bekommt ihren Platz VOR der Grafik zugeteilt, nicht was hinterher übrig ist.
+  // Sonst wäre sie das Erste, was bei einem vollen Beet unter den Tisch fällt.
+  const giftH = gift.length ? 26 + gift.reduce((n, g) => n + umbrechen(g.beschriftung + ': ' + g.namen, 52).length, 0) * 36 : 0;
+  const frei = H - kopfH - listeH - giftH - 90 - 60;         // 90 Fußzeile, 60 Abstände
   const maxBreite = B - 80;
 
   let png = new Resvg(svg, { fitTo: { mode: 'width', value: maxBreite }, font: { loadSystemFonts: true } }).render();
@@ -134,12 +175,31 @@ async function beetPin(beispiel, ziel) {
     y += 40;
   }
 
+  // Giftleiste direkt unter der Pflanzenliste — dort, wo die Namen stehen, auf die sie sich
+  // bezieht. Am Fuß unter dem Aufruf wäre sie nicht mehr zuzuordnen. Kein Emoji: Die Schrift
+  // im Pin ist DejaVu, die zeichnet keine Emoji und setzte an ihrer Stelle leere Kästen.
+  if (gift.length) {
+    y += 14;
+    for (const g of gift) {
+      const stark = g.stufe === 'stark';
+      args.push('-font', FONT_B, '-pointsize', '27', '-fill', stark ? '#ff9b8a' : '#ffd166');
+      for (const z of umbrechen('! ' + g.beschriftung + ': ' + g.namen, 52)) {
+        args.push('-annotate', `+60+${y}`, z);
+        y += 36;
+      }
+    }
+    y += 8;
+  }
+
   // Bleibt danach noch Platz, füllt ihn der Einleitungssatz der Beispielseite. Ohne ihn
   // stand bei flachen Beeten mit wenigen Arten das untere Drittel des Pins leer.
   // NUR VOLLSTÄNDIGE SÄTZE: Der Teasertext der Seite ist selbst schon mit „…" gekürzt,
   // ein mitten im Wort abbrechender Satz auf einem Pin sieht nach Fehler aus.
   const saetze = String(intro).replace(/\s*[……].*$/, '').trim();
-  const ganzeSaetze = (saetze.match(/^.*[.!?](?=\s|$)/s) || [saetze])[0].trim();
+  // Ohne Satzzeichen KEIN Rückfall auf den Rohtext: Die Seitenlese kappt bei 300 Zeichen, oft
+  // mitten im Wort ("und wenig W" auf dem Nordseite-Pin). Lieber gar kein Satz als ein halber —
+  // der Platz bleibt dann leer, was niemandem auffällt, während ein Wortbruch nach Fehler aussieht.
+  const ganzeSaetze = (saetze.match(/^.*[.!?](?=\s|$)/s) || [''])[0].trim();
   if (ganzeSaetze.length > 30 && H - 90 - y > 120) {
     args.push('-font', FONT, '-pointsize', '29', '-fill', '#b7e4c7');
     let iy = y + 30;
@@ -163,7 +223,7 @@ async function beetPin(beispiel, ziel) {
   args.push('-quality', '88', ziel);
   execFileSync('convert', args, { stdio: 'pipe' });
   try { fs.unlinkSync(grafikDatei); } catch {}
-  return { ziel, arten: namen.length, grafikH };
+  return { ziel, arten: namen.length, grafikH, gift };
 }
 
 if (require.main === module) {
@@ -177,7 +237,8 @@ if (require.main === module) {
     beispiel.flaeche = (html.match(/Fläche<\/div>\s*<div[^>]*>([\d.,]+) m²/) || [])[1];
     beispiel.licht = (html.match(/Licht<\/div>\s*<div[^>]*>([^<]+)/) || [])[1];
     return beetPin(beispiel, process.argv[3] || `/tmp/pin-beet-${slug}.jpg`);
-  }).then(r => console.log('erzeugt:', r.ziel, '·', r.arten, 'Arten · Grafikhöhe', r.grafikH))
+  }).then(r => console.log('erzeugt:', r.ziel, '·', r.arten, 'Arten · Grafikhöhe', r.grafikH
+      + (r.gift.length ? ' · Giftwarnung: ' + r.gift.map(g => g.beschriftung + ' (' + g.namen + ')').join(' / ') : ' · keine Giftpflanze')))
     .catch(e => { console.error('Fehler:', e.message); process.exit(1); });
 }
 
