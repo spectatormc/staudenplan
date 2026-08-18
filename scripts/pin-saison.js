@@ -152,7 +152,7 @@ function saisonPin(s, ziel) {
     const sx = (i % 2) * SPALTE, sy = KOPF + Math.floor(i / 2) * ZEILE;
     const quelle = path.join(WURZEL, 'public', x.p.bild_url.replace(/^\//, ''));
     const datei = `/tmp/pin-saison-${x.p.id}-${i}.png`;
-    execFileSync('convert', [quelle, '-resize', `${SPALTE}x${ZEILE}^`, '-gravity', 'center',
+    execFileSync(L.MAGICK, [quelle, '-resize', `${SPALTE}x${ZEILE}^`, '-gravity', 'center',
                              '-extent', `${SPALTE}x${ZEILE}`, datei], { stdio: 'pipe' });
     tmp.push(datei);
     args.push('-draw', `image over ${sx},${sy} 0,0 "${datei}"`);
@@ -200,7 +200,7 @@ function saisonPin(s, ziel) {
   args.push('-annotate', `+60+${H - 40}`, 'staudenplan.de   ·   Illustrationen');
 
   args.push('-quality', '88', ziel);
-  execFileSync('convert', args, { stdio: 'pipe' });
+  execFileSync(L.MAGICK, args, { stdio: 'pipe' });
   tmp.forEach(f => { try { fs.unlinkSync(f); } catch {} });
   return ziel;
 }

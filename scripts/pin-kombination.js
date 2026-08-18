@@ -131,7 +131,7 @@ function kombiPin(kombi, ziel) {
   const kacheln = d.map((p, i) => {
     const quelle = path.join(WURZEL, 'public', p.bild_url.replace(/^\//, ''));
     const datei = `/tmp/pin-kombi-${p.id}-${i}.png`;
-    execFileSync('convert', [quelle, '-resize', `${breiten[i]}x${BILD_H}^`, '-gravity', 'center',
+    execFileSync(L.MAGICK, [quelle, '-resize', `${breiten[i]}x${BILD_H}^`, '-gravity', 'center',
                              '-extent', `${breiten[i]}x${BILD_H}`, datei], { stdio: 'pipe' });
     tmp.push(datei);
     const eintrag = { datei, x, breite: breiten[i] };
@@ -231,7 +231,7 @@ function kombiPin(kombi, ziel) {
   args.push('-annotate', `+60+${H - 40}`, 'staudenplan.de   ·   Illustrationen');
 
   args.push('-quality', '88', ziel);
-  execFileSync('convert', args, { stdio: 'pipe' });
+  execFileSync(L.MAGICK, args, { stdio: 'pipe' });
   tmp.forEach(f => { try { fs.unlinkSync(f); } catch {} });
   return ziel;
 }

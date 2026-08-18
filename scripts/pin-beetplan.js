@@ -20,10 +20,11 @@ const { execFileSync } = require('child_process');
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
+// Werkzeug und Schriften kommen aus dem geteilten Modul, damit ein Wechsel von
+// ImageMagick 6 auf 7 nur an EINER Stelle nachgezogen werden muss.
+const { MAGICK, FONT, FONT_B } = require('./pin-layout');
 
 const B = 1000, H = 1500;
-const FONT = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf';
-const FONT_B = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
 const GRUEN = '#1b4332';
 const PORT = process.env.PIN_PORT || 3003;
 
@@ -223,7 +224,7 @@ async function beetPin(beispiel, ziel) {
   args.push('-annotate', `+60+${H - 40}`, 'staudenplan.de   ·   kostenloser Beetplaner');
 
   args.push('-quality', '88', ziel);
-  execFileSync('convert', args, { stdio: 'pipe' });
+  execFileSync(MAGICK, args, { stdio: 'pipe' });
   try { fs.unlinkSync(grafikDatei); } catch {}
   return { ziel, arten: namen.length, grafikH, gift };
 }

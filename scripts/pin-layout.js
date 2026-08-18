@@ -6,10 +6,58 @@
  * ändert es für alle Pin-Sorten — das ist der Zweck.
  */
 const { execFileSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
+/*
+ * Werkzeug und Schriften werden GESUCHT, nicht angenommen.
+ *
+ * Der Server läuft auf ImageMagick 6, wo das Programm "convert" heißt. In Version 7 heißt es
+ * "magick"; die Debian-Pakete für 7 legen "convert" nicht mehr an. Ein einziges apt upgrade
+ * hätte damit alle fünf Pin-Sorten und die Ratgeber-Vorschaubilder gleichzeitig stillgelegt —
+ * und zwar in einem Stapellauf, wo es niemandem sofort auffällt. Dasselbe gilt für die
+ * Schriftpfade: /usr/share/fonts/truetype/dejavu ist Debian-Konvention, kein Standard.
+ *
+ * Beim Import wird BEWUSST NICHT geworfen, nur gewarnt: pin-text.js lädt dieses Modul auch
+ * für die reine Textvorschau, die weder ImageMagick noch Schriften braucht. Ein harter Abbruch
+ * hier würde die Vorschau auf jedem Rechner ohne ImageMagick unbenutzbar machen. Fehlt das
+ * Werkzeug wirklich, scheitert der Aufruf später — dann aber mit dieser Warnung davor.
+ */
+function findeWerkzeug() {
+  if (process.env.PIN_MAGICK) return process.env.PIN_MAGICK;
+  for (const kandidat of ['magick', 'convert']) {          // 7 vor 6: magick ist die Zukunft
+    try { execFileSync(kandidat, ['-version'], { stdio: 'ignore' }); return kandidat; } catch { /* weiter */ }
+  }
+  console.warn('WARNUNG: Weder "magick" noch "convert" aufrufbar — ImageMagick fehlt. '
+    + 'Bildbefehle werden scheitern. Pfad notfalls über PIN_MAGICK vorgeben.');
+  return 'convert';
+}
+
+const SCHRIFT_ORDNER = [
+  '/usr/share/fonts/truetype/dejavu',   // Debian, Ubuntu
+  '/usr/share/fonts/dejavu',            // Fedora, RHEL
+  '/usr/share/fonts/TTF',               // Arch
+  '/usr/local/share/fonts/dejavu',
+  '/opt/homebrew/share/fonts',
+];
+function findeSchrift(umgebungsname, ...dateinamen) {
+  if (process.env[umgebungsname]) return process.env[umgebungsname];
+  for (const ordner of SCHRIFT_ORDNER) {
+    for (const name of dateinamen) {
+      const p = path.join(ordner, name);
+      try { if (fs.existsSync(p)) return p; } catch { /* weiter */ }
+    }
+  }
+  console.warn(`WARNUNG: Schrift ${dateinamen[0]} in keinem bekannten Ordner gefunden. `
+    + `Notfalls über ${umgebungsname} einen Pfad vorgeben.`);
+  return path.join(SCHRIFT_ORDNER[0], dateinamen[0]);   // Debian-Pfad als letzte Annahme
+}
+
+const MAGICK = findeWerkzeug();
 
 const B = 1000, H = 1500;                       // Pinterest: hochkant 2:3
-const FONT = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf';
-const FONT_B = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
+const FONT = findeSchrift('PIN_FONT', 'DejaVuSans.ttf');
+const FONT_B = findeSchrift('PIN_FONT_BOLD', 'DejaVuSans-Bold.ttf');
 const GRUEN = '#1b4332';
 
 const MONATE = { Januar:1, Februar:2, 'März':3, April:4, Mai:5, Juni:6,
@@ -114,7 +162,7 @@ const istGras = p => {
  * Pflanzennamen sind zu unterschiedlich lang für eine Faustregel.
  */
 function textBreite(text, font, size) {
-  const out = execFileSync('convert', ['-font', font, '-pointsize', String(size),
+  const out = execFileSync(MAGICK, ['-font', font, '-pointsize', String(size),
                                        `label:${text}`, '-format', '%w', 'info:'], { encoding: 'utf8' });
   return Number(String(out).trim()) || 0;
 }
@@ -145,7 +193,7 @@ function umbrechenBreit(text, font, size, maxBreite) {
   return umbrechen(text, zeichenProZeile(text, font, size, maxBreite));
 }
 
-module.exports = { B, H, FONT, FONT_B, GRUEN, MONATE, MON_KURZ, MON_NAME, FARBTON,
+module.exports = { B, H, MAGICK, FONT, FONT_B, GRUEN, MONATE, MON_KURZ, MON_NAME, FARBTON,
                    GIFT_LABEL, GIFT_RANG, spanne, bluehtIm, farbeVon, mengeAus, schnitt,
                    hatDeutschenNamen, istBeetpflanze, istGras, istWinterhartHier, textBreite, passendeGroesse,
                    zeichenProZeile, umbrechen, umbrechenBreit };

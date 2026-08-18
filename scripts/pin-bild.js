@@ -21,13 +21,14 @@ const path = require('path');
 const fs = require('fs');
 const { giftigkeit } = require('./pflanzen-giftigkeit');
 const L = require('./pin-layout');
+// Werkzeug und Schriften kommen aus dem geteilten Modul, damit ein Wechsel von
+// ImageMagick 6 auf 7 nur an EINER Stelle nachgezogen werden muss.
+const { MAGICK, FONT, FONT_B } = L;
 
 const WURZEL = path.join(__dirname, '..');
 const db = new Database(process.env.DB_PFAD || path.join(WURZEL, 'stauden.db'), { readonly: true });
 
 const B = 1000, H = 1500, BILD_H = 1000;      // Bildfläche oben, Textfläche unten
-const FONT = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf';
-const FONT_B = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
 const GRUEN = '#1b4332';
 
 // Umbruch von Hand: ImageMagick bricht 'label:' zwar selbst um, dann lässt sich die Höhe
@@ -90,7 +91,7 @@ function pinBild(p, ziel) {
   args.push('-annotate', `+60+${H - 40}`, 'staudenplan.de   ·   Illustration');
 
   args.push('-quality', '88', ziel);
-  execFileSync('convert', args, { stdio: 'pipe' });
+  execFileSync(MAGICK, args, { stdio: 'pipe' });
   return ziel;
 }
 

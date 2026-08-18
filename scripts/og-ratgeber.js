@@ -23,12 +23,13 @@ const Database = require('better-sqlite3');
 const { execFileSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+// Werkzeug und Schriften kommen aus dem geteilten Modul, damit ein Wechsel von
+// ImageMagick 6 auf 7 nur an EINER Stelle nachgezogen werden muss.
+const { MAGICK, FONT, FONT_B } = require('./pin-layout');
 
 const WURZEL = path.join(__dirname, '..');
 const ZIEL = path.join(WURZEL, 'public', 'og');
 const B = 1200, H = 630;
-const FONT = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf';
-const FONT_B = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
 
 const argv = process.argv.slice(2);
 const NEU = argv.includes('--neu');
@@ -59,7 +60,7 @@ const slugify = s => String(s).toLowerCase()
  * sie fast nur aus der Überschrift besteht.
  */
 function textBreite(text, font, groesse) {
-  const out = execFileSync('convert', ['-font', font, '-pointsize', String(groesse),
+  const out = execFileSync(MAGICK, ['-font', font, '-pointsize', String(groesse),
     'label:' + text, '-format', '%w', 'info:'], { encoding: 'utf8' });
   return parseInt(out, 10) || 0;
 }
@@ -115,7 +116,7 @@ function ogKarte(artikel, ziel) {
   args.push('-annotate', `+80+${H - 68}`, 'staudenplan.de   ·   Ratgeber');
 
   args.push('-quality', '88', ziel);
-  execFileSync('convert', args, { stdio: 'pipe' });
+  execFileSync(MAGICK, args, { stdio: 'pipe' });
 }
 
 const db = new Database(process.env.DB_PFAD || path.join(WURZEL, 'stauden.db'), { readonly: true });

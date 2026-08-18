@@ -4086,7 +4086,16 @@ app.get('/pflanze/:slug', (req, res) => {
     pflanze.feuchtigkeit && { "@type": "PropertyValue", "name": "Feuchtigkeit","value": mehrwert(pflanze.feuchtigkeit) },
     pflanze.boden      && { "@type": "PropertyValue", "name": "Boden",         "value": mehrwert(pflanze.boden) },
     hoehe !== '— cm'   && { "@type": "PropertyValue", "name": "Wuchshöhe",     "value": hoehe },
-    pflanze.winterhart_zone && { "@type": "PropertyValue", "name": "Winterhärte", "value": `Zone ${pflanze.winterhart_zone}` },
+    /* Die Winterhärtezone steht BEWUSST NICHT in den strukturierten Daten. Sie ist zu 74 %
+     * (526 von 711 Zeilen) exakt "5" und damit am kalten Ende ein Vorgabewert, kein Messwert:
+     * Maiglöckchen, Schafgarbe, Akelei und Fetthenne stehen alle auf 5, sind real aber bis
+     * Zone 2-3 winterhart. Als Zahl in maschinenlesbaren Daten ist das eine Falschaussage auf
+     * rund 500 Seiten — im sichtbaren Text steht dagegen nur die qualitative Aussage
+     * ("ist winterhart"), und die trifft zu.
+     *
+     * Am warmen Ende ist das Feld belastbar, und dort schneidet auch die PLANBAR-Regel
+     * (>= Zone 8 fliegt raus) — als FILTER bleibt es also in Gebrauch. Zurück in die
+     * strukturierten Daten gehört es erst, wenn die übrigen rund 690 Zonen geprüft sind. */
     pflanze.farbe      && { "@type": "PropertyValue", "name": "Blütenfarbe",   "value": mehrwert(pflanze.farbe) },
   ].filter(Boolean);
 
