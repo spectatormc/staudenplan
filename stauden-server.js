@@ -3075,10 +3075,20 @@ werden müssen.</div>
 
 app.get('/pinterest/:datei', (req, res) => {
   const name = String(req.params.datei || '').replace(/\.xml$/i, '');
-  const alle = pinsLesen();
-  if (!alle.length) {
-    return res.status(503).type('text/plain').send('Noch keine Pins erzeugt — scripts/pins-erzeugen.js laufen lassen.');
-  }
+  const alle = pinsLesen();                       // nur das heute Fällige
+
+  /*
+   * Ein Feed ohne fälligen Eintrag ist LEER, nicht kaputt. Vorher antwortete er mit 503 bzw. 404 —
+   * und das trifft jede Pinnwand an jedem Tag, an dem für sie nichts ansteht: Winterbeet hat vier
+   * Pins im Jahr, liefert also an über 360 Tagen nichts. Ein Feed, der wiederholt Fehler liefert,
+   * wird von Pinterest als defekt behandelt und im Zweifel abgehängt. Ein gültiges RSS ohne <item>
+   * ist die richtige Antwort auf "heute nichts Neues".
+   *
+   * Ein wirklich unbekannter Name bleibt 404 — dafür wird gegen den GESAMTBESTAND geprüft, nicht
+   * gegen das Fällige.
+   */
+  let gesamt = [];
+  try { gesamt = JSON.parse(fs.readFileSync(PIN_LISTE, 'utf8')); } catch {}
 
   if (name === 'probe') {
     // Fünf Stück, bewusst je Sorte eines: Der Probelauf soll alle vier Bauarten einmal durch
@@ -3101,12 +3111,13 @@ app.get('/pinterest/:datei', (req, res) => {
   }
 
   const auswahl = alle.filter(e => pinBrettSlug(e.board) === name);
-  if (!auswahl.length) return res.status(404).type('text/plain').send('Kein Feed unter diesem Namen.');
+  const brett = (gesamt.find(e => pinBrettSlug(e.board) === name) || {}).board;
+  if (!brett) return res.status(404).type('text/plain').send('Kein Feed unter diesem Namen.');
 
   res.type('application/rss+xml; charset=utf-8');
   res.send(rssBauen({
-    titel: `Staudenplan.de — ${auswahl[0].board}`,
-    beschreibung: `${auswahl[0].board}: Stauden, Beetpläne und Kombinationen von staudenplan.de.`,
+    titel: `Staudenplan.de — ${brett}`,
+    beschreibung: `${brett}: Stauden, Beetpläne und Kombinationen von staudenplan.de.`,
     eintraege: auswahl,
   }));
 });
