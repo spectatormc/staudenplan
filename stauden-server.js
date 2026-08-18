@@ -2916,11 +2916,23 @@ ${items}
 // Übersicht mit den Feed-Adressen zum Kopieren. Pinterest verlangt beim Einrichten eine URL
 // je Pinnwand; die hier stehen zu haben erspart das Zusammensuchen.
 app.get('/pinterest', (req, res) => {
-  const alle = pinsLesen();
+  const alle = pinsLesen();                       // nur das heute Fällige
+  let gesamt = [];
+  try { gesamt = JSON.parse(fs.readFileSync(PIN_LISTE, 'utf8')); } catch {}
+  const heute = new Date().toISOString().slice(0, 10);
+  const kommend = gesamt.filter(e => e.geplant_am && e.geplant_am > heute);
+  const naechster = kommend.map(e => e.geplant_am).sort()[0] || null;
+  const ohneTermin = gesamt.filter(e => !e.geplant_am).length;
+
+  // Nach Pinnwand gruppieren — über den GESAMTBESTAND, nicht nur das Fällige. Sonst
+  // verschwindet eine Pinnwand aus der Liste, sobald sie gerade nichts ausliefert.
   const jeBrett = {};
-  for (const e of alle) (jeBrett[e.board] = jeBrett[e.board] || []).push(e);
+  for (const e of gesamt) (jeBrett[e.board] = jeBrett[e.board] || []).push(e);
+  const faelligJeBrett = {};
+  for (const e of alle) faelligJeBrett[e.board] = (faelligJeBrett[e.board] || 0) + 1;
   const zeilen = Object.entries(jeBrett).sort((a, b) => b[1].length - a[1].length).map(([b, l]) =>
     `<tr><td>${escHtml(b)}</td><td style="text-align:right">${l.length}</td>
+     <td style="text-align:right">${faelligJeBrett[b] || 0}</td>
      <td><a href="/pinterest/${pinBrettSlug(b)}.xml">/pinterest/${pinBrettSlug(b)}.xml</a></td></tr>`).join('');
   res.set('X-Robots-Tag', 'noindex');
   res.send(`<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8">
@@ -2933,8 +2945,15 @@ th{background:#1b4332;color:#fff;text-align:left}a{color:#2d6a4f}
 .hinweis{background:#fff;border-left:4px solid #2d6a4f;padding:14px 18px;border-radius:0 8px 8px 0;max-width:70ch}
 </style></head><body>
 <h1>Pinterest-Feeds</h1>
-<p>${alle.length} Pins bereit. Beim Einrichten in Pinterest je Pinnwand einen Feed verbinden.</p>
-<table><tr><th>Pinnwand</th><th>Pins</th><th>Feed</th></tr>${zeilen}</table>
+<p><strong>${gesamt.length} Pins terminiert</strong> · davon <strong>${alle.length}</strong> heute im Feed ·
+${kommend.length} noch vor uns${naechster ? `, der nächste am ${escHtml(naechster)}` : ''}.
+${ohneTermin ? `<br><span style="color:#b45309">${ohneTermin} ohne Termin — die gehen NICHT raus. <code>node scripts/pin-termine.js</code> laufen lassen.</span>` : ''}</p>
+<p style="max-width:70ch;color:#555;font-size:.9rem">Die Feeds liefern absichtlich nur, was fällig ist.
+Pinterest würde sonst bis zu 200 Pins am Tag veröffentlichen und wäre in zwei Tagen durch — ohne
+Frische-Signal und mit dem Muster, das die Spam-Richtlinie als „wiederholte Inhalte in großen
+Mengen" benennt. Die Termine folgen dem Gartenjahr: <code>node scripts/pin-termine.js --dry-run</code>
+zeigt den Kalender.</p>
+<table><tr><th>Pinnwand</th><th>terminiert</th><th>heute im Feed</th><th>Feed</th></tr>${zeilen}</table>
 <div class="hinweis"><strong>Zuerst der Probelauf:</strong>
 <a href="/pinterest/probe.xml">/pinterest/probe.xml</a> liefert fünf gemischte Pins.
 Den auf die geheime Testpinnwand legen und 24 Stunden abwarten — erst danach die echten Feeds
