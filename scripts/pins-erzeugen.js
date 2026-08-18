@@ -49,6 +49,13 @@ const kombiModul = require('./pin-kombination');
 const saisonModul = require('./pin-saison');
 const ratgeberModul = require('./pin-ratgeber');
 
+// Dieselbe Regel wie PLANBAR in stauden-server.js. Doppelt formuliert, weil der Stapellauf
+// den Server nicht laedt — bei einer Aenderung dort muss sie hier nachgezogen werden.
+const PLANBAR_SQL = `(wuchs IS NULL OR wuchs != 'invasiv')
+  AND (status IS NULL OR status = 'live')
+  AND (winterhart_zone IS NULL OR winterhart_zone <= 7)
+  AND (lebensdauer IS NULL OR lebensdauer != 'einjaehrig')`;
+
 fs.mkdirSync(ZIEL, { recursive: true });
 const vorher = fs.existsSync(LISTE) ? JSON.parse(fs.readFileSync(LISTE, 'utf8')) : [];
 const frueher = Object.fromEntries(vorher.map(e => [e.guid, e]));
@@ -178,6 +185,39 @@ async function bauen({ guid, datei, typ, machen, text }) {
         text: () => txt.textKombination(k, giftigkeit),
       });
     }
+  }
+
+  // ── Pflegethemen ───────────────────────────────────────────────────────────
+  // Eine Auswertung über den ganzen Bestand, kein Einzelinhalt: "Zu viel Wasser trifft 270 von
+  // 692 Stauden" ist eine Zahl, die sonst nirgends steht. Das ist der stärkste Pinterest-Haken,
+  // den die Pflegedaten hergeben — und er funktioniert ganzjährig.
+  if (!NUR || NUR === 'pflege') {
+    const { themenMitPflanzen } = require('./pflege-themen');
+    const kandidaten = db.prepare(`SELECT name_deutsch, name_botanisch, inhalt_lang FROM pflanzen
+      WHERE inhalt_lang IS NOT NULL AND ${PLANBAR_SQL}`).all();
+    const { themen } = themenMitPflanzen(kandidaten);
+    const erstes = themen[0];
+    console.log('Pflege: 1');
+    const seite = {
+      titel: 'Die häufigsten Pflegefehler bei Stauden',
+      kategorie: 'Pflege',
+      hinweis: '7 Fehler · 692 Stauden ausgewertet',
+      fuss: 'Pflegewissen',
+      inhalt: `${erstes.titel} trifft ${erstes.pflanzen.length} von ${kandidaten.length} winterharten Stauden `
+            + `und ist damit der häufigste Pflegefehler überhaupt. Sieben Fehler, ausgewertet über den `
+            + `ganzen Bestand — mit den Arten, bei denen du besonders darauf achten musst.`,
+    };
+    await bauen({
+      guid: 'pflege-haeufige-fehler', datei: 'pflege-haeufige-fehler.jpg', typ: 'pflege',
+      machen: z => ratgeberModul.ratgeberPin(seite, z),
+      text: () => ({
+        titel: seite.titel,
+        beschreibung: seite.inhalt + ' Kostenlos lesen auf staudenplan.de.',
+        link: 'https://www.staudenplan.de/pflege/haeufige-fehler?utm_source=pinterest&utm_medium=pin',
+        alt: 'Die häufigsten Pflegefehler bei Stauden — Auswertung über den ganzen Bestand',
+        board: 'Staudenwissen',
+      }),
+    });
   }
 
   // ── Ratgeber ───────────────────────────────────────────────────────────────

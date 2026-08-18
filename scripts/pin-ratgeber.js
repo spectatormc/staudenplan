@@ -108,13 +108,15 @@ function ratgeberPin(artikel, ziel) {
 
   // Lesezeit als kleine Einordnung — auf Pinterest ein wirksamer Klickgrund bei Textinhalten.
   args.push('-font', FONT, '-pointsize', '27', '-fill', '#74c69d');
-  args.push('-annotate', `+60+${H - 190}`, `${lesezeit(artikel.inhalt)} Min. Lesezeit`);
+  /* Lesezeit und Fusszeile ueberschreibbar: Die Pflegeseite ist eine Auswertung ueber den
+   * ganzen Bestand, ihr Teaser aber kurz — '1 Min. Lesezeit' waere eine Falschangabe. */
+  args.push('-annotate', `+60+${H - 190}`, artikel.hinweis || `${lesezeit(artikel.inhalt)} Min. Lesezeit`);
 
   args.push('-font', FONT_B, '-pointsize', '31', '-fill', '#95d5b2');
   args.push('-annotate', `+60+${H - 128}`, 'Ganzen Ratgeber lesen — kostenlos');
 
   args.push('-font', FONT, '-pointsize', '25', '-fill', '#74c69d');
-  args.push('-annotate', `+60+${H - 48}`, 'staudenplan.de   ·   Ratgeber');
+  args.push('-annotate', `+60+${H - 48}`, `staudenplan.de   ·   ${artikel.fuss || 'Ratgeber'}`);
 
   args.push('-quality', '88', ziel);
   execFileSync(MAGICK, args, { stdio: 'pipe' });
