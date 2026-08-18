@@ -2840,6 +2840,7 @@ app.get('/sitemap.xml', (req, res) => {
     `<url><loc>${base}/stauden-kombinieren</loc><changefreq>monthly</changefreq><priority>0.85</priority></url>`,
     `<url><loc>${base}/beispiele</loc><changefreq>monthly</changefreq><priority>0.9</priority></url>`,
     `<url><loc>${base}/quiz</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>`,
+    `<url><loc>${base}/pflege/haeufige-fehler</loc><changefreq>monthly</changefreq><priority>0.85</priority></url>`,
     ...BEISPIELE.map(b => `<url><loc>${base}/beispiel/${b.slug}</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>`),
     ...pflanzen.map(p => `<url><loc>${base}/pflanze/${slugify(p.name_botanisch)}</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>`),
     ...wissens.map(w => `<url><loc>${base}/ratgeber/${slugify(w.titel)}</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>`),
@@ -2847,6 +2848,116 @@ app.get('/sitemap.xml', (req, res) => {
 
   res.type('application/xml');
   res.send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join('\n')}\n</urlset>`);
+});
+
+// ─── Pflegefehler: eine Seite aus den Pflegedaten ────────────────────────────
+// Die Pflanzentabelle führt 2090 Fehler-Nennungen. Einzeln stehen sie auf den Pflanzenseiten;
+// gebündelt ergeben sie eine Aussage, die dort niemand sieht — „zu viel Wasser" betrifft 270
+// der planbaren Stauden und ist damit der häufigste Fehler überhaupt.
+//
+// Die Bündelung steht in scripts/pflege-themen.js und vergleicht WÖRTLICH. Ein früherer Anlauf
+// hat Pflegetexte über Schlagwörter sortiert und dabei falsch einsortiert; eine falsch
+// zugeordnete Pflegeanweisung ist eine Falschauskunft. Was nicht wörtlich passt, bleibt auf
+// der Pflanzenseite und taucht hier nicht auf.
+const { themenMitPflanzen } = require('./scripts/pflege-themen');
+
+app.get('/pflege/haeufige-fehler', (req, res) => {
+  const pflanzen = db.prepare(`SELECT name_deutsch, name_botanisch, inhalt_lang FROM pflanzen
+    WHERE inhalt_lang IS NOT NULL AND ${PLANBAR}`).all();
+  const { themen, genannt, zugeordnet } = themenMitPflanzen(pflanzen);
+  const gesamt = pflanzen.length;
+
+  const abschnitte = themen.filter(t => t.pflanzen.length).map((t, i) => {
+    const anteil = Math.round(t.pflanzen.length / gesamt * 100);
+    const liste = t.pflanzen.map(p =>
+      `<a href="/pflanze/${pflanzeToSlug(p.name_botanisch)}">${escHtml(p.name_deutsch)}</a>`).join(', ');
+    return `
+  <section class="thema" id="${escHtml(t.id)}">
+    <div class="kopf">
+      <span class="rang">${i + 1}</span>
+      <div>
+        <h2>${escHtml(t.titel)}</h2>
+        <p class="kurz">${escHtml(t.kurz)}</p>
+      </div>
+      <div class="zahl"><strong>${t.pflanzen.length}</strong><span>von ${gesamt} Stauden<br>betroffen (${anteil} %)</span></div>
+    </div>
+    <p class="erklaerung">${escHtml(t.erklaerung)}</p>
+    <details>
+      <summary>Welche Stauden das betrifft (${t.pflanzen.length})</summary>
+      <p class="pflanzenliste">${liste}</p>
+    </details>
+  </section>`;
+  }).join('');
+
+  const schema = escJsonLd({
+    '@context': 'https://schema.org',
+    '@type': 'Article',
+    headline: 'Die häufigsten Pflegefehler bei Stauden',
+    description: `Ausgewertet über ${gesamt} winterharte Stauden: welche Pflegefehler wie oft vorkommen und welche Arten sie betreffen.`,
+    author: { '@type': 'Organization', name: 'Staudenplan.de' },
+    publisher: { '@type': 'Organization', name: 'Staudenplan.de', url: 'https://www.staudenplan.de' },
+    mainEntityOfPage: 'https://www.staudenplan.de/pflege/haeufige-fehler',
+  });
+
+  res.send(`<!DOCTYPE html><html lang="de"><head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Die häufigsten Pflegefehler bei Stauden | Staudenplan.de</title>
+  <meta name="description" content="Über ${gesamt} winterharte Stauden ausgewertet: Zu viel Wasser trifft ${themen[0].pflanzen.length} Arten und ist der häufigste Fehler. Mit den betroffenen Stauden je Fehler.">
+  <link rel="canonical" href="https://www.staudenplan.de/pflege/haeufige-fehler">
+  <meta property="og:title" content="Die häufigsten Pflegefehler bei Stauden">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Staudenplan.de">
+  <meta property="og:description" content="Über ${gesamt} Stauden ausgewertet — welcher Pflegefehler wie oft vorkommt.">
+  <meta property="og:image" content="https://www.staudenplan.de/images/og-default.jpg">
+  <meta property="og:url" content="https://www.staudenplan.de/pflege/haeufige-fehler">
+  <script type="application/ld+json">${schema}</script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Segoe UI',system-ui,sans-serif;background:#f8f4ef;color:#1a1a1a;line-height:1.65}
+    .wrap{max-width:860px;margin:0 auto;padding:38px 20px 80px}
+    h1{font-size:2.05rem;color:#1b4332;line-height:1.2;margin-bottom:14px}
+    .vorspann{font-size:1.06rem;color:#444;max-width:66ch;margin-bottom:10px}
+    .quelle{font-size:.86rem;color:#777;max-width:66ch;margin-bottom:34px}
+    .thema{background:#fff;border-radius:14px;padding:24px;margin-bottom:18px;box-shadow:0 2px 10px rgba(0,0,0,.06)}
+    .kopf{display:flex;gap:16px;align-items:flex-start;margin-bottom:14px}
+    .rang{background:#1b4332;color:#fff;border-radius:50%;width:34px;height:34px;flex-shrink:0;
+          display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.95rem}
+    .kopf h2{font-size:1.22rem;color:#1b4332;line-height:1.3}
+    .kurz{font-size:.92rem;color:#666;margin-top:3px}
+    .zahl{margin-left:auto;text-align:right;flex-shrink:0;padding-left:14px}
+    .zahl strong{display:block;font-size:1.75rem;color:#2d6a4f;line-height:1;font-variant-numeric:tabular-nums}
+    .zahl span{font-size:.74rem;color:#888}
+    .erklaerung{font-size:.97rem;color:#333;margin-bottom:14px}
+    details{border-top:1px solid #eee;padding-top:12px}
+    summary{cursor:pointer;font-size:.9rem;color:#2d6a4f;font-weight:600}
+    .pflanzenliste{font-size:.88rem;line-height:1.9;margin-top:10px;color:#555}
+    .pflanzenliste a{color:#2d6a4f;text-decoration:none;border-bottom:1px solid #d8f3dc}
+    .pflanzenliste a:hover{border-bottom-color:#2d6a4f}
+    .cta{background:#1b4332;color:#fff;border-radius:14px;padding:26px;margin-top:26px;text-align:center}
+    .cta a{display:inline-block;margin-top:12px;background:#95d5b2;color:#1b4332;padding:12px 26px;
+           border-radius:50px;text-decoration:none;font-weight:700}
+    @media(max-width:560px){.zahl{margin-left:0;text-align:left;padding-left:0}.kopf{flex-wrap:wrap}}
+  </style></head><body>
+  ${NAV_LINKS}
+  <div class="wrap">
+    <h1>Die häufigsten Pflegefehler bei Stauden</h1>
+    <p class="vorspann">Die meisten Stauden gehen nicht an Frost oder Schädlingen ein, sondern an
+    einer Handvoll immer gleicher Fehler. Diese Auswertung zeigt, welche das sind und wie viele
+    Arten sie jeweils betreffen — und bei welcher Staude du besonders darauf achten musst.</p>
+    <p class="quelle">Ausgewertet über ${gesamt} winterharte Stauden aus dem Lexikon,
+    ${genannt} Fehlerangaben insgesamt. Aufgenommen sind nur Fehler, die wörtlich übereinstimmend
+    bei mehreren Arten genannt werden (${zugeordnet} Angaben); alles Artspezifische steht auf der
+    jeweiligen Pflanzenseite.</p>
+    ${abschnitte}
+    <div class="cta">
+      <p style="font-size:1.05rem;font-weight:600">Die meisten dieser Fehler entstehen schon bei der Planung.</p>
+      <p style="font-size:.92rem;opacity:.85;margin-top:6px">Der Beetplaner rechnet Pflanzabstand und
+      Stückzahl aus der Endbreite und wählt nur Stauden, die zu Licht und Boden deines Standorts passen.</p>
+      <a href="/">Beetplan erstellen — kostenlos</a>
+    </div>
+  </div>
+  ${SITE_FOOTER}
+  </body></html>`);
 });
 
 // ─── Pinterest-Feeds ──────────────────────────────────────────────────────────
