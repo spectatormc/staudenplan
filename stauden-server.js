@@ -2948,11 +2948,17 @@ app.get('/pinterest/:datei', (req, res) => {
     const jeTyp = {};
     for (const e of alle) if (!jeTyp[e.typ]) jeTyp[e.typ] = e;
     const auswahl = Object.values(jeTyp).slice(0, 5);
+    /* Eigene Kennungen fuer den Probelauf. Ob Pinterest eine schon veroeffentlichte guid im
+     * naechsten Feed ueberspringt, ist nicht dokumentiert — die Frage steht in Pinterests
+     * eigener Community unbeantwortet. Ohne Praefix koennten die Testpins spaeter auf den
+     * echten Pinnwaenden fehlen, ohne dass irgendwo ein Fehler auftaucht. Der Link bleibt
+     * unveraendert, nur die Kennung unterscheidet sich.  */
+    const probe = auswahl.map(e => ({ ...e, guid: `probe-${e.guid}` }));
     res.type('application/rss+xml; charset=utf-8');
     return res.send(rssBauen({
       titel: 'Staudenplan.de — Probelauf',
       beschreibung: 'Fünf Pins zum Prüfen, bevor die echten Feeds verbunden werden.',
-      eintraege: auswahl,
+      eintraege: probe,
     }));
   }
 
