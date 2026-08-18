@@ -105,6 +105,7 @@ function textPflanze(p, giftigkeit) {
     pfad: `/pflanze/${slugify(p.name_botanisch)}`,
     alt: `${p.name_deutsch}, ${p.name_botanisch} — Illustration`,
     board: brett(licht),
+    kiBild: true,
   });
 }
 
@@ -178,6 +179,7 @@ function textKombination(k, giftigkeit) {
     pfad: '/stauden-kombinieren',
     alt: `Staudenkombination ${d.map(p => p.name_deutsch).join(', ')} mit Blühkalender von ${von} bis ${bis}`,
     board: brett(k.licht),
+    kiBild: true,
   });
 }
 
@@ -209,16 +211,25 @@ function textSaison(s, giftigkeit) {
     pfad: s.standort ? LICHT_SEITE[s.standort] : (s.winter ? '/staudenbeet-planen' : '/staudenbeet-planen'),
     alt: s.winter ? 'Sechs Stauden mit Winterstruktur' : `Sechs Stauden, die im ${monat} blühen`,
     board: s.winter ? 'Winterbeet' : `Was blüht wann`,
+    kiBild: true,
   });
 }
 
 const brett = licht => ({ sonne: 'Stauden für sonnige Beete', halbschatten: 'Stauden für den Halbschatten',
                           schatten: 'Stauden für den Schatten' })[licht] || 'Staudenbeet planen';
 
-function fertig({ titel, beschreibung, pfad, alt, board }) {
+/* Der KI-Hinweis wird VOR dem Kuerzen vom Budget abgezogen, nicht hinterher angehaengt.
+ * Sonst faellt genau die Kennzeichnung als Erstes weg, wenn eine Beschreibung ans Limit
+ * stoesst — und zwar unbemerkt, weil kuerzen() still arbeitet. Betroffen sind die drei
+ * Sorten mit erzeugtem Pflanzenbild; der Beetplan-Pin zeigt eine gezeichnete Beetskizze
+ * und keine Illustration, dort waere der Satz schlicht falsch. */
+const KI_HINWEIS = ' Bild: KI-erzeugte Illustration.';
+
+function fertig({ titel, beschreibung, pfad, alt, board, kiBild }) {
+  const hinweis = kiBild ? KI_HINWEIS : '';
   return {
     titel: kuerzen(titel, TITEL_MAX),
-    beschreibung: kuerzen(beschreibung, BESCHREIBUNG_MAX),
+    beschreibung: kuerzen(beschreibung, BESCHREIBUNG_MAX - hinweis.length) + hinweis,
     link: BASIS + pfad + HERKUNFT,
     alt: kuerzen(alt, 500),
     board,
