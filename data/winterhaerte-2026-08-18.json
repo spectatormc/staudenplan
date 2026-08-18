@@ -1,0 +1,34 @@
+[
+ {
+  "art": "Zone",
+  "bot": "Artemisia arborescens",
+  "name": "Strauch-Beifuß",
+  "von": 6,
+  "nach": 9,
+  "warum": "Immergrüner Halbstrauch des Mittelmeerraums, verträgt etwa −5 bis −10 °C und wird in Deutschland als Kübelpflanze gehandelt. Stand auf Zone 6 (−23 °C) und war damit im Planer. Zum Vergleich in derselben Gattung: die Hybride \"Powis Castle\" ist mit Zone 6 deutlich härter, der heimische Wermut steht zu Recht auf 5."
+ },
+ {
+  "art": "Beschreibung",
+  "bot": "Agapanthus africanus",
+  "name": "Schmucklilie",
+  "von": "Winterharte Sorte mit großen, kugelförmigen Blütenständen. I…",
+  "nach": "Nicht winterharte Art mit großen, kugelförmigen Blütenstände…",
+  "warum": "behauptete Winterhärte für eine Art, die das Feld zu Recht ausschließt"
+ },
+ {
+  "art": "ueberwinterung",
+  "bot": "Agapanthus africanus",
+  "name": "Schmucklilie",
+  "von": "Diese Sorte ist winterhart, aber ein leichter Winterschutz m…",
+  "nach": "Die immergrüne Schmucklilie ist nicht winterhart und muss fr…",
+  "warum": "sagte \"Diese Sorte ist winterhart\" und empfahl Mulch statt frostfreier Überwinterung"
+ },
+ {
+  "art": "ueberwinterung",
+  "bot": "Artemisia arborescens",
+  "name": "Strauch-Beifuß",
+  "von": "In Winterhärtezone 6 ist der Strauch winterhart, ein Winters…",
+  "nach": "Der Strauch-Beifuß ist hier nicht winterhart und überwintert…",
+  "warum": "sagte \"In Winterhärtezone 6 ist der Strauch winterhart\" — der Text zitierte den Feldwert, den er belegen sollte, und beide waren falsch"
+ }
+]
