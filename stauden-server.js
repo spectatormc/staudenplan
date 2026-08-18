@@ -4586,8 +4586,18 @@ function kategorieSeitenHTML({ titel, metaDesc, h1, intro, pflanzen, artikelLink
   </body></html>`;
 }
 
+/*
+ * Die vier Empfehlungsseiten filtern seit dem 18.08.2026 über PLANBAR. Vorher listeten sie
+ * jede Zeile der Tabelle — und versprachen im selben Atemzug "winterharte Stauden": Auf
+ * /stauden-fuer-sonne standen 13 Arten der Zonen 8 und 9 (Ananas-Salbei, Kapmargerite) und
+ * fünf Einjährige, die per Definition gar keine Stauden sind (Bischofskraut, Büschelschön).
+ * Die Zahl im Vorspann kommt aus pflanzen.length und stimmt damit automatisch wieder.
+ *
+ * Das Lexikon unter /pflanzen zeigt weiterhin alle 711: Es ist ein Nachschlagewerk und
+ * behauptet nichts über Winterhärte — diese vier Seiten sind dagegen Empfehlungen.
+ */
 app.get('/stauden-fuer-schatten', (req, res) => {
-  const pflanzen = db.prepare(`SELECT name_deutsch, name_botanisch, bild_url, bluehzeit, licht FROM pflanzen WHERE licht LIKE '%Schatten%' ORDER BY name_deutsch`).all();
+  const pflanzen = db.prepare(`SELECT name_deutsch, name_botanisch, bild_url, bluehzeit, licht FROM pflanzen WHERE licht LIKE '%Schatten%' AND ${PLANBAR} ORDER BY name_deutsch`).all();
   let artikel = [];
   try { artikel = db.prepare(`SELECT titel FROM wissen WHERE titel LIKE '%Schatten%' OR inhalt LIKE '%Schattenbeet%' LIMIT 4`).all(); } catch {}
   res.send(kategorieSeitenHTML({
@@ -4602,7 +4612,7 @@ app.get('/stauden-fuer-schatten', (req, res) => {
 });
 
 app.get('/stauden-fuer-sonne', (req, res) => {
-  const pflanzen = db.prepare(`SELECT name_deutsch, name_botanisch, bild_url, bluehzeit, licht FROM pflanzen WHERE licht LIKE '%Sonne%' ORDER BY name_deutsch`).all();
+  const pflanzen = db.prepare(`SELECT name_deutsch, name_botanisch, bild_url, bluehzeit, licht FROM pflanzen WHERE licht LIKE '%Sonne%' AND ${PLANBAR} ORDER BY name_deutsch`).all();
   let artikel = [];
   try { artikel = db.prepare(`SELECT titel FROM wissen WHERE titel LIKE '%sonn%' OR titel LIKE '%Kiesgarten%' OR titel LIKE '%trocken%' LIMIT 4`).all(); } catch {}
   res.send(kategorieSeitenHTML({
@@ -4617,7 +4627,7 @@ app.get('/stauden-fuer-sonne', (req, res) => {
 });
 
 app.get('/pflegeleichte-stauden', (req, res) => {
-  const pflanzen = db.prepare(`SELECT name_deutsch, name_botanisch, bild_url, bluehzeit, licht, pflege_sterne FROM pflanzen WHERE pflege_sterne = 1 ORDER BY name_deutsch`).all();
+  const pflanzen = db.prepare(`SELECT name_deutsch, name_botanisch, bild_url, bluehzeit, licht, pflege_sterne FROM pflanzen WHERE pflege_sterne = 1 AND ${PLANBAR} ORDER BY name_deutsch`).all();
   let artikel = [];
   try { artikel = db.prepare(`SELECT titel FROM wissen WHERE titel LIKE '%pflegeleicht%' OR inhalt LIKE '%pflegeleicht%' LIMIT 4`).all(); } catch {}
   res.send(kategorieSeitenHTML({
@@ -4632,7 +4642,7 @@ app.get('/pflegeleichte-stauden', (req, res) => {
 });
 
 app.get('/bienenfreundliche-stauden', (req, res) => {
-  const pflanzen = db.prepare(`SELECT name_deutsch, name_botanisch, bild_url, bluehzeit, licht FROM pflanzen WHERE bienen_freundlich = 1 ORDER BY name_deutsch`).all();
+  const pflanzen = db.prepare(`SELECT name_deutsch, name_botanisch, bild_url, bluehzeit, licht FROM pflanzen WHERE bienen_freundlich = 1 AND ${PLANBAR} ORDER BY name_deutsch`).all();
   let artikel = [];
   try { artikel = db.prepare(`SELECT titel FROM wissen WHERE titel LIKE '%Bien%' OR titel LIKE '%Insekt%' OR inhalt LIKE '%Trachtpflanze%' LIMIT 4`).all(); } catch {}
   res.send(kategorieSeitenHTML({
@@ -5284,7 +5294,21 @@ function loadBeispielPlan(slug) {
     const p = path.join(dir, `beispiel-plan-${slug}.json`);
     // Belt-and-suspenders: aufgelöster Pfad muss im scripts/-Verzeichnis bleiben.
     if (path.dirname(path.resolve(p)) !== path.resolve(dir)) return null;
-    return JSON.parse(fs.readFileSync(p, 'utf8'));
+    const plan = JSON.parse(fs.readFileSync(p, 'utf8'));
+
+    /* Deutsche Namen beim Laden aus der Datenbank nachziehen, statt dem Stand zu vertrauen,
+     * der beim Erzeugen des Plans galt. Der Namensaudit vom 06.08.2026 hat 114 Namen
+     * korrigiert; im Schattenbeet stand danach weiter "Rote Elfenblume", während die Art
+     * längst "Warley-Elfenblume \'Ellen Willmott\'" heißt. Der botanische Name ist der
+     * Schlüssel und bleibt unangetastet — nur die Anzeige folgt der Datenbank, damit die
+     * acht Pläne bei der nächsten Umbenennung nicht wieder auseinanderlaufen. */
+    for (const pf of (plan.pflanzen || [])) {
+      try {
+        const akt = db.prepare('SELECT name_deutsch FROM pflanzen WHERE name_botanisch = ?').get(pf.name_botanisch);
+        if (akt && akt.name_deutsch) pf.name_deutsch = akt.name_deutsch;
+      } catch { /* Anzeige ist kein Grund, die Seite scheitern zu lassen */ }
+    }
+    return plan;
   } catch { return null; }
 }
 
