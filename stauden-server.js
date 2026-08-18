@@ -4961,6 +4961,15 @@ app.get('/ratgeber/:slug', (req, res) => {
   const cfg = katCfg(artikel.kategorie);
   const lesezeit = readingTime(artikel.inhalt);
 
+  // Eigenes Vorschaubild je Artikel (scripts/og-ratgeber.js). Bis zum 18.08.2026 teilten sich
+  // alle 78 Artikel og-default.jpg — wer sie teilte oder pinnte, erzeugte 78 bildgleiche
+  // Vorschauen; Pinterest fasst optisch identische Pins zusammen und wertet das als Wiederholung.
+  // Mit Rueckfall: Fehlt die Datei, steht wieder das Standardbild da statt eines toten Verweises.
+  const ogDatei = path.join(__dirname, 'public', 'og', `ratgeber-${slug}.jpg`);
+  const ogBild = fs.existsSync(ogDatei)
+    ? `https://www.staudenplan.de/og/ratgeber-${slug}.jpg`
+    : 'https://www.staudenplan.de/images/og-default.jpg';
+
   const passendePflanzen = db.prepare('SELECT name_deutsch, name_botanisch, bild_url, bluehzeit, licht FROM pflanzen ORDER BY RANDOM()').all()
     .filter(p => artikelWoerter.includes(p.name_deutsch.toLowerCase()) || artikelWoerter.includes((p.name_botanisch || '').split(' ')[0].toLowerCase()))
     .slice(0, 4);
@@ -5039,8 +5048,11 @@ app.get('/ratgeber/:slug', (req, res) => {
   <meta property="og:title" content="${escHtml(artikel.titel)}">
   <meta property="og:type" content="article">
   <meta property="og:description" content="${escHtml(artikel.inhalt.substring(0, 155))}">
-  <meta property="og:image" content="https://www.staudenplan.de/images/og-default.jpg">
+  <meta property="og:image" content="${ogBild}">
   <meta property="og:url" content="https://www.staudenplan.de/ratgeber/${slug}">
+  <meta property="og:site_name" content="Staudenplan.de">
+  <meta property="article:published_time" content="${escHtml(artikel.datum || '')}">
+  <meta property="article:section" content="${escHtml(artikel.kategorie)}">
   <script type="application/ld+json">${articleSchema}</script>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}

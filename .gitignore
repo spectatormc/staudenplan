@@ -14,3 +14,7 @@ stauden.db-shm
 # Erzeugte Pinterest-Pins (rund 70 MB). Entstehen aus DB und Skripten neu:
 #   node scripts/pins-erzeugen.js
 public/pins/
+
+# Erzeugte Vorschaubilder der Ratgeber. Entstehen neu:
+#   node scripts/og-ratgeber.js
+public/og/
