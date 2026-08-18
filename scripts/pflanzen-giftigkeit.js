@@ -98,6 +98,21 @@ const STUFEN = {
   Nuphar:      'giftig',
   Nymphaea:    'giftig',
 
+
+  // Nachtrag 18.08.2026. Anlass: eine Prüfung des AUSGABEPFADS, nicht der Liste — auf den
+  // erzeugten Pinterest-Pins standen Arten, deren Gattung hier fehlte, obwohl die jeweils
+  // stoffgleiche Verwandtschaft längst gelistet war. Jede Zeile unten hat einen solchen
+  // Nachbarn in der Liste; das war das Auswahlkriterium, nicht ein allgemeiner Verdacht.
+  Baptisia:    'giftig',  // Chinolizidinalkaloide wie Lupinus und Laburnum
+  Thermopsis:  'giftig',  // Cytisin, dieselbe Klasse
+  Meconopsis:  'giftig',  // Mohngewächs wie Papaver, Chelidonium, Corydalis
+  Ligularia:   'giftig',  // Pyrrolizidinalkaloide wie Senecio, Petasites, Symphytum
+  Packera:     'giftig',  // Abspaltung von Senecio (P. aurea = S. aureus)
+  Teucrium:    'giftig',  // Teucrin A, dokumentierte Leberschäden
+  Dryopteris:  'giftig',  // Filicin und Thiaminase — der klassische Giftfarn
+  Erysimum:    'giftig',  // herzwirksame Glykoside (Erysimosid)
+  Saponaria:   'giftig',  // Saponine, Verzehr reizt Magen und Darm
+  Veronicastrum:'giftig', // Wurzel stark brechreizend und abführend
   // — Haut- und Schleimhautkontakt —
   Angelica:    'reizend', // Furocumarine, phototoxisch wie Heracleum
   Ferula:      'reizend', // Doldenblütler, phototoxisch
@@ -112,6 +127,8 @@ const STUFEN = {
   Tanacetum:   'reizend',
   Artemisia:   'reizend',
   Alstroemeria:'reizend',
+  Leucanthemum:'reizend',   // Sesquiterpenlactone wie Tanacetum und Helenium
+  Leucanthemella:'reizend', // dieselbe Verwandtschaft
 };
 
 // Zusätze, wo die Gattungsaussage allein zu wenig sagt.
@@ -127,7 +144,11 @@ const ZUSAETZE = {
 };
 
 // Für Haustiere gesondert relevant (auch wenn für Menschen weniger kritisch).
-const HAUSTIERE = new Set(['Allium', 'Tulipa', 'Narcissus', 'Hyacinthus', 'Convallaria', 'Colchicum', 'Cyclamen']);
+// Hosta kam am 18.08.2026 dazu: Saponine, für Hund und Katze giftig — mit 10 Arten im
+// Bestand die häufigste Schattenstaude überhaupt. Nectaroscordum und Ipheion sind
+// Allium-Abspaltungen und erben dessen Einstufung.
+const HAUSTIERE = new Set(['Allium', 'Tulipa', 'Narcissus', 'Hyacinthus', 'Convallaria', 'Colchicum', 'Cyclamen',
+                           'Hosta', 'Nectaroscordum', 'Ipheion']);
 
 // Katzengift eigener Klasse: Echte Lilien und Taglilien lösen bei Katzen akutes Nierenversagen
 // aus, und zwar schon über Pollen am Fell oder Vasenwasser. Der allgemeine Haustier-Baustein
@@ -155,6 +176,8 @@ const VERLETZUNG = {
   Gunnera:    'stachelige Blattstiele',
   Berberis:   'Dornen',
   Onopordum:  'Stacheln',
+  Dipsacus:   'stechende Hüllblätter und Stängel',  // steht im Naturgarten-Beispielbeet
+  Cortaderia: 'schneidende Blattränder',
 };
 
 /*

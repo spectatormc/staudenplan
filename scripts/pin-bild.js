@@ -20,6 +20,7 @@ const { execFileSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const { giftigkeit } = require('./pflanzen-giftigkeit');
+const L = require('./pin-layout');
 
 const WURZEL = path.join(__dirname, '..');
 const db = new Database(process.env.DB_PFAD || path.join(WURZEL, 'stauden.db'), { readonly: true });
@@ -95,13 +96,34 @@ function pinBild(p, ziel) {
 
 if (require.main === module) {
   const arg = process.argv[2];
-  if (!arg) { console.error('Aufruf: node scripts/pin-bild.js <id|botanischer Name> [ziel.jpg]'); process.exit(1); }
+  if (!arg) { console.error('Aufruf: node scripts/pin-bild.js <id|botanischer Name> [ziel.jpg] [--trotzdem]'); process.exit(1); }
+  const trotzdem = process.argv.includes('--trotzdem');
   const p = /^\d+$/.test(arg)
     ? db.prepare('SELECT * FROM pflanzen WHERE id = ?').get(Number(arg))
     : db.prepare('SELECT * FROM pflanzen WHERE name_botanisch = ?').get(arg);
   if (!p) { console.error('Pflanze nicht gefunden: ' + arg); process.exit(1); }
   if (!p.bild_ki) { console.error('Kein selbst erzeugtes Bild — für Pinterest nicht verwendbar: ' + p.name_botanisch); process.exit(1); }
-  const ziel = process.argv[3] || `/tmp/pin-${p.id}.jpg`;
+  if (!p.bild_url) { console.error('bild_ki gesetzt, aber kein Bildpfad hinterlegt: ' + p.name_botanisch); process.exit(1); }
+
+  /* Dieselbe Auswahlkette wie in pin-saison.js und pin-kombination.js. Sie fehlte hier als
+   * einziger der vier Pin-Sorten: pin-bild.js prüfte nur, ob ein eigenes Bild da ist, und
+   * erzeugte auf Zuruf einen Pin für den Ananas-Salbei (Zone 9) — unter einem Absender, der
+   * an sieben Stellen winterharte Stauden zusagt. Weil dieses Skript im Gegensatz zu den
+   * anderen mit einer benannten Pflanze aufgerufen wird, ist der Verstoß hier keine
+   * Auswahlpanne, sondern eine bewusste Eingabe: Deshalb nennt die Meldung den Grund und
+   * --trotzdem lässt ihn zu. Im unbeaufsichtigten Betrieb wird der Schalter nie gesetzt. */
+  const gruende = [];
+  if (!L.hatDeutschenNamen(p)) gruende.push('kein eigener deutscher Name, nur die Gattung');
+  if (!L.istBeetpflanze(p))    gruende.push('keine Beetstaude (Wasser-, Kübel- oder Sonderfall)');
+  if (!L.istWinterhartHier(p)) gruende.push(`hier nicht winterhart (Zone ${p.winterhart_zone})`);
+  if (gruende.length) {
+    console.error('Für einen Pin nicht geeignet: ' + p.name_botanisch);
+    for (const g of gruende) console.error('  · ' + g);
+    if (!trotzdem) { console.error('  (mit --trotzdem trotzdem erzeugen)'); process.exit(1); }
+    console.error('  --trotzdem gesetzt, wird erzeugt.');
+  }
+
+  const ziel = process.argv[3] && !process.argv[3].startsWith('--') ? process.argv[3] : `/tmp/pin-${p.id}.jpg`;
   pinBild(p, ziel);
   console.log('erzeugt:', ziel);
 }
