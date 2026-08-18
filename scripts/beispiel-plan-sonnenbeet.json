@@ -1,0 +1,170 @@
+{
+  "pflanzen": [
+    {
+      "name_deutsch": "Brandkraut",
+      "name_botanisch": "Phlomis russeliana",
+      "beschreibung": "Das Brandkraut besticht durch seine gelben Blüten und dekorativen Samenstände im Winter. Es ist eine robuste und pflegeleichte Leitstaude.",
+      "standort": "Hintergrund",
+      "bluehzeit": "Juni - August",
+      "farbe": "Gelb",
+      "hoehe_cm": 100,
+      "pflege_sterne": 1,
+      "rolle": "Leitstaude",
+      "stueckzahl": 3,
+      "preis_stueck_eur": 7,
+      "kauflink": "https://www.amazon.de/s?k=Phlomis+russeliana&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/brandkraut-12.jpg",
+      "pflanzabstand_cm": null,
+      "fehler": [
+        "Zu dichter Pflanzabstand, was zu schlechter Luftzirkulation führt",
+        "Übermäßiges Gießen, das Wurzelfäule verursachen kann",
+        "Nicht rechtzeitiges Zurückschneiden der Blütenstände, was zu unkontrollierter Selbstaussaat führt"
+      ]
+    },
+    {
+      "name_deutsch": "Japanische Anemone",
+      "name_botanisch": "Anemone hupehensis var. japonica",
+      "beschreibung": "Diese Anemone bringt im Spätsommer und Herbst weiße Blüten und sorgt für einen sanften Übergang zur Herbstfärbung.",
+      "standort": "Hintergrund",
+      "bluehzeit": "August - Oktober",
+      "farbe": "Weiß",
+      "hoehe_cm": 120,
+      "pflege_sterne": 2,
+      "rolle": "Leitstaude",
+      "stueckzahl": 3,
+      "preis_stueck_eur": 5.99,
+      "kauflink": "https://www.amazon.de/s?k=Anemone+hupehensis+var.+japonica&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/ki-grosses-windroeschen-67.jpg",
+      "pflanzabstand_cm": null,
+      "fehler": [
+        "Zu dichter Boden verursacht Wurzelfäule.",
+        "Zu viel Sonne führt zu verbrannten Blättern.",
+        "Unzureichender Pflanzabstand fördert Schimmelbildung."
+      ]
+    },
+    {
+      "name_deutsch": "Moschusmalve",
+      "name_botanisch": "Malva moschata",
+      "beschreibung": "Die Moschusmalve ist eine farbenfrohe Begleitstaude mit langanhaltender Blüte im Sommer.",
+      "standort": "Mitte",
+      "bluehzeit": "Juni - August",
+      "farbe": "Rosa",
+      "hoehe_cm": 70,
+      "pflege_sterne": 1,
+      "rolle": "Begleitstaude",
+      "stueckzahl": 5,
+      "preis_stueck_eur": 6,
+      "kauflink": "https://www.amazon.de/s?k=Malva+moschata&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/moschusmalve-133.jpg",
+      "pflanzabstand_cm": 35,
+      "fehler": [
+        "Zu dichter Pflanzabstand führt zu schlechter Luftzirkulation und erhöhtem Krankheitsrisiko.",
+        "Übermäßiges Gießen kann zu Wurzelfäule führen.",
+        "Zu viel Dünger fördert das Blattwachstum auf Kosten der Blütenbildung."
+      ]
+    },
+    {
+      "name_deutsch": "Katzenminze",
+      "name_botanisch": "Nepeta faassenii",
+      "beschreibung": "Die Katzenminze ist eine pflegeleichte und langblühende Begleitstaude mit aromatischem Duft.",
+      "standort": "Mitte",
+      "bluehzeit": "Mai - September",
+      "farbe": "Blau",
+      "hoehe_cm": 50,
+      "pflege_sterne": 1,
+      "rolle": "Begleitstaude",
+      "stueckzahl": 5,
+      "preis_stueck_eur": 6,
+      "kauflink": "https://www.amazon.de/s?k=Nepeta+faassenii&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/katzenminze-45.jpg",
+      "pflanzabstand_cm": null,
+      "fehler": [
+        "Zu dichter Pflanzabstand, der zu schlechter Luftzirkulation führt",
+        "Übermäßiges Gießen, das zu Wurzelfäule führen kann",
+        "Zu viel Dünger, was das Wachstum übermäßig anregt und die Blütenbildung hemmt"
+      ]
+    },
+    {
+      "name_deutsch": "Teppich-Phlox Candy Stripe",
+      "name_botanisch": "Phlox subulata 'Candy Stripe'",
+      "beschreibung": "Dieser Teppich-Phlox ist ein ausläuferbildender Bodendecker mit rosa Blüten, der im Frühjahr blüht.",
+      "standort": "Vordergrund",
+      "bluehzeit": "April - Mai",
+      "farbe": "Rosa",
+      "hoehe_cm": 15,
+      "pflege_sterne": 2,
+      "rolle": "Füllstaude",
+      "stueckzahl": 7,
+      "preis_stueck_eur": 3.5,
+      "kauflink": "https://www.amazon.de/s?k=Phlox+subulata+'Candy+Stripe'&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/polster-phlox-42.jpg",
+      "pflanzabstand_cm": 23,
+      "fehler": [
+        "Zu dichter Pflanzabstand, der Luftzirkulation verhindert",
+        "Übermäßiges Gießen führt zu Wurzelfäule",
+        "Vernachlässigung des Rückschnitts nach der Blüte"
+      ]
+    },
+    {
+      "name_deutsch": "Schleifenblume",
+      "name_botanisch": "Iberis sempervirens",
+      "beschreibung": "Die Schleifenblume ist eine immergrüne Füllstaude mit weißen Blüten im Frühling.",
+      "standort": "Vordergrund",
+      "bluehzeit": "April - Juni",
+      "farbe": "Weiß",
+      "hoehe_cm": 30,
+      "pflege_sterne": 2,
+      "rolle": "Füllstaude",
+      "stueckzahl": 5,
+      "preis_stueck_eur": 4.5,
+      "kauflink": "https://www.amazon.de/s?k=Iberis+sempervirens&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/schleifenblume-407.jpg",
+      "pflanzabstand_cm": null,
+      "fehler": null
+    },
+    {
+      "name_deutsch": "Purpur-Fetthenne",
+      "name_botanisch": "Hylotelephium telephium",
+      "beschreibung": "Die Purpur-Fetthenne ist eine trockenheitsresistente Füllstaude mit dekorativen Samenständen im Winter.",
+      "standort": "Vordergrund",
+      "bluehzeit": "August - Oktober",
+      "farbe": "Purpur",
+      "hoehe_cm": 60,
+      "pflege_sterne": 1,
+      "rolle": "Füllstaude",
+      "stueckzahl": 4,
+      "preis_stueck_eur": 5.5,
+      "kauflink": "https://www.amazon.de/s?k=Hylotelephium+telephium&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/purpur-fetthenne-399.jpg",
+      "pflanzabstand_cm": null,
+      "fehler": null
+    }
+  ],
+  "beetbeschreibung": "Dieses moderne Staudenbeet kombiniert robuste, pflegeleichte Pflanzen mit einem harmonischen Farbspiel aus Gelb, Rosa, Blau und Weiß. Durch die ganzjährige Blütenfolge entsteht eine lebendige und ansprechende Atmosphäre, die von Frühjahr bis Herbst für farbenfrohe Akzente sorgt. Im Winter bieten die dekorativen Samenstände und wintergrünen Blätter einen zusätzlichen Zierwert.",
+  "gesamtkosten_geschaetzt": "204.47€",
+  "pflanzabstand_hinweis": "Beachten Sie beim Pflanzen die unterschiedlichen Ausbreitungen der Stauden, um einen dichten, aber harmonischen Pflanzenbestand zu gewährleisten.",
+  "pflanzkalender": {
+    "Frühling": [
+      "Teppich-Phlox Candy Stripe",
+      "Schleifenblume"
+    ],
+    "Sommer": [
+      "Brandkraut",
+      "Moschusmalve",
+      "Katzenminze"
+    ],
+    "Herbst": [
+      "Japanische Anemone",
+      "Purpur-Fetthenne"
+    ],
+    "Winter": [
+      "Brandkraut",
+      "Purpur-Fetthenne",
+      "Schleifenblume"
+    ]
+  },
+  "tipps": [
+    "Achten Sie darauf, den Teppich-Phlox nicht unkontrolliert ausbreiten zu lassen.",
+    "Die Purpur-Fetthenne bietet auch im Winter einen dekorativen Anblick, lassen Sie die Samenstände stehen."
+  ]
+}

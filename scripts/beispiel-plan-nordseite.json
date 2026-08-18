@@ -1,0 +1,134 @@
+{
+  "pflanzen": [
+    {
+      "name_deutsch": "Eisenhut",
+      "name_botanisch": "Aconitum napellus",
+      "beschreibung": "Eine beeindruckende Leitstaude mit tiefblauen Blüten, ideal für den Hintergrund des Beetes.",
+      "standort": "Hintergrund",
+      "bluehzeit": "Juli - August",
+      "farbe": "Blau",
+      "hoehe_cm": 120,
+      "pflege_sterne": 2,
+      "rolle": "Leitstaude",
+      "stueckzahl": 3,
+      "preis_stueck_eur": 9.5,
+      "kauflink": "https://www.amazon.de/s?k=Aconitum+napellus&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/ki-eisenhut-98.jpg",
+      "pflanzabstand_cm": null,
+      "fehler": [
+        "Zu dichter Stand, der die Luftzirkulation einschränkt",
+        "Unzureichende Bewässerung in Trockenperioden",
+        "Pflanzung an vollsonnigen Standorten, die zu Verbrennungen führen kann"
+      ]
+    },
+    {
+      "name_deutsch": "Schildfarn",
+      "name_botanisch": "Polystichum setiferum",
+      "beschreibung": "Ein dekorativer Farn, der das Beet mit seinen grünen Blättern strukturiert.",
+      "standort": "Mitte",
+      "bluehzeit": "Keine Blüte",
+      "farbe": "Grün",
+      "hoehe_cm": 70,
+      "pflege_sterne": 1,
+      "rolle": "Begleitstaude",
+      "stueckzahl": 4,
+      "preis_stueck_eur": 9,
+      "kauflink": "https://www.amazon.de/s?k=Polystichum+setiferum&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/ki-schildfarn-107.jpg",
+      "pflanzabstand_cm": null,
+      "fehler": [
+        "Zu dichter Pflanzabstand, der zu schlechter Luftzirkulation führt",
+        "Unzureichende Bewässerung während Trockenperioden",
+        "Überdüngung, die zu Wurzelverbrennungen führen kann"
+      ]
+    },
+    {
+      "name_deutsch": "Silber-Glöckchen",
+      "name_botanisch": "Heuchera 'Silver Scrolls'",
+      "beschreibung": "Diese Füllstaude sorgt mit ihren attraktiven Blättern für interessante Kontraste.",
+      "standort": "Vordergrund",
+      "bluehzeit": "Juni - Juli",
+      "farbe": "Rosa",
+      "hoehe_cm": 35,
+      "pflege_sterne": 2,
+      "rolle": "Füllstaude",
+      "stueckzahl": 5,
+      "preis_stueck_eur": 5,
+      "kauflink": "https://www.amazon.de/s?k=Heuchera+Silver+Scrolls&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/ki-purpurgloeckchen-91.jpg",
+      "pflanzabstand_cm": null,
+      "fehler": [
+        "Zu dichter Boden, der Staunässe verursacht",
+        "Zu viel Schatten, was die Blütenbildung reduziert",
+        "Übermäßiges Düngen, das zu weichem Wachstum führt"
+      ]
+    },
+    {
+      "name_deutsch": "Weißrand-Funkie",
+      "name_botanisch": "Hosta 'Francee'",
+      "beschreibung": "Diese Funkie bietet im Sommer lila Blüten und ganzjährig schöne Blätter.",
+      "standort": "Mitte",
+      "bluehzeit": "Juni - Juli",
+      "farbe": "Lila",
+      "hoehe_cm": 50,
+      "pflege_sterne": 2,
+      "rolle": "Begleitstaude",
+      "stueckzahl": 4,
+      "preis_stueck_eur": 5,
+      "kauflink": "https://www.amazon.de/s?k=Hosta+Francee&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/funkie-58.jpg",
+      "pflanzabstand_cm": null,
+      "fehler": [
+        "Zu tiefe Pflanzung, was zu Wurzelfäule führen kann",
+        "Unzureichende Bewässerung in Trockenperioden",
+        "Überdüngung, die zu weichem Wachstum und Schädlingsbefall führen kann"
+      ]
+    },
+    {
+      "name_deutsch": "Immergrüne Gold-Segge",
+      "name_botanisch": "Carex oshimensis 'Evergold'",
+      "beschreibung": "Ein bodendeckendes Gras, das ganzjährig Struktur bietet.",
+      "standort": "Vordergrund",
+      "bluehzeit": "Mai - Juni",
+      "farbe": "Gelb",
+      "hoehe_cm": 25,
+      "pflege_sterne": 2,
+      "rolle": "Füllstaude",
+      "stueckzahl": 4,
+      "preis_stueck_eur": 7.5,
+      "kauflink": "https://www.amazon.de/s?k=Carex+oshimensis+Evergold&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/haenge-segge-113.jpg",
+      "pflanzabstand_cm": null,
+      "fehler": [
+        "Zu trockener Standort",
+        "Zu dichter Pflanzabstand",
+        "Unzureichende Wasserversorgung"
+      ]
+    }
+  ],
+  "beetbeschreibung": "Das Beet besticht durch seine harmonische Mischung aus Blüten und Blattschmuckpflanzen, die das ganze Jahr über für Interesse sorgen. Der Eisenhut im Hintergrund bildet einen majestätischen Blickfang, während Funkien und Farne die mittlere Schicht beleben. Am Boden sorgen Gräser und Silber-Glöckchen für eine dichte, strukturierte Abdeckung.",
+  "gesamtkosten_geschaetzt": "137.5€",
+  "pflanzabstand_hinweis": "Achten Sie auf einen Abstand, der den angegebenen Durchmessern der Pflanzen entspricht, um eine gute Flächenabdeckung zu gewährleisten.",
+  "pflanzkalender": {
+    "Frühling": [
+      "Immergrüne Gold-Segge",
+      "Silber-Glöckchen"
+    ],
+    "Sommer": [
+      "Eisenhut",
+      "Weißrand-Funkie",
+      "Silber-Glöckchen"
+    ],
+    "Herbst": [
+      "Immergrüne Gold-Segge"
+    ],
+    "Winter": [
+      "Immergrüne Gold-Segge",
+      "Silber-Glöckchen"
+    ]
+  },
+  "tipps": [
+    "Für eine optimale Wirkung sollten Sie darauf achten, dass die Pflanzen ausreichend Platz zur Entfaltung haben.",
+    "Die immergrünen Pflanzen sorgen auch im Winter für Struktur im Beet."
+  ]
+}

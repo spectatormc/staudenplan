@@ -1,0 +1,152 @@
+{
+  "pflanzen": [
+    {
+      "name_deutsch": "Weißer Rittersporn",
+      "name_botanisch": "Delphinium elatum 'Galahad'",
+      "beschreibung": "Hohe, elegante Staude mit prächtigen weißen Blütenkerzen, ideal als struktureller Hintergrund.",
+      "standort": "Hintergrund",
+      "bluehzeit": "Juni - Juli",
+      "farbe": "Weiß",
+      "hoehe_cm": 150,
+      "pflege_sterne": 2,
+      "rolle": "Leitstaude",
+      "stueckzahl": 3,
+      "preis_stueck_eur": 8,
+      "kauflink": "https://www.amazon.de/s?k=Delphinium+elatum+Galahad&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/ki-rittersporn-162.jpg",
+      "pflanzabstand_cm": null,
+      "fehler": [
+        "Zu dichter Pflanzabstand, der zu Pilzkrankheiten führt",
+        "Unzureichende Bewässerung während der Blütezeit",
+        "Nicht ausreichender Schutz vor Schnecken"
+      ]
+    },
+    {
+      "name_deutsch": "Riesen-Glockenblume",
+      "name_botanisch": "Campanula lactiflora",
+      "beschreibung": "Hohe Staude mit leuchtend blauen Blüten, die einen schönen Kontrast zu weißen Blüten bildet.",
+      "standort": "Hintergrund",
+      "bluehzeit": "Juni - August",
+      "farbe": "Blau",
+      "hoehe_cm": 100,
+      "pflege_sterne": 2,
+      "rolle": "Leitstaude",
+      "stueckzahl": 3,
+      "preis_stueck_eur": 5,
+      "kauflink": "https://www.amazon.de/s?k=Campanula+lactiflora&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/breitblaettrige-glockenblume-76.jpg",
+      "pflanzabstand_cm": null,
+      "fehler": [
+        "Zu dichter Stand, der die Luftzirkulation behindert",
+        "Übermäßiges Gießen, das zu Wurzelfäule führen kann",
+        "Nicht ausreichendes Zurückschneiden nach der Blüte"
+      ]
+    },
+    {
+      "name_deutsch": "Lungenkraut",
+      "name_botanisch": "Pulmonaria officinalis",
+      "beschreibung": "Frühblühende Staude mit attraktiven, gefleckten Blättern und rosa-blauen Blüten.",
+      "standort": "Mitte",
+      "bluehzeit": "März - Mai",
+      "farbe": "Rosa|Blau",
+      "hoehe_cm": 25,
+      "pflege_sterne": 1,
+      "rolle": "Begleitstaude",
+      "stueckzahl": 5,
+      "preis_stueck_eur": 5,
+      "kauflink": "https://www.amazon.de/s?k=Pulmonaria+officinalis&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/lungenkraut-70.jpg",
+      "pflanzabstand_cm": null,
+      "fehler": [
+        "Zu dichter Pflanzabstand, der zu Pilzbefall führen kann",
+        "Übermäßiges Gießen, das Wurzelfäule verursacht",
+        "Unzureichender Rückschnitt nach der Blüte"
+      ]
+    },
+    {
+      "name_deutsch": "Kleines Pfeifengras",
+      "name_botanisch": "Molinia caerulea",
+      "beschreibung": "Dekoratives Gras mit feiner Textur und gelben Blütenrispen, das Struktur und Bewegung bringt.",
+      "standort": "Mitte",
+      "bluehzeit": "Juli - September",
+      "farbe": "Gelb",
+      "hoehe_cm": 60,
+      "pflege_sterne": 2,
+      "rolle": "Begleitstaude",
+      "stueckzahl": 5,
+      "preis_stueck_eur": 5.5,
+      "kauflink": "https://www.amazon.de/s?k=Molinia+caerulea&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/ki-hohes-pfeifengras-234.jpg",
+      "pflanzabstand_cm": null,
+      "fehler": null
+    },
+    {
+      "name_deutsch": "Purpur-Glöckchen",
+      "name_botanisch": "Heuchera 'Palace Purple'",
+      "beschreibung": "Immergrüne Füllstaude mit dekorativem, purpurfarbenem Laub und zarten Blüten.",
+      "standort": "Vordergrund",
+      "bluehzeit": "Mai - Juni",
+      "farbe": "Purpur",
+      "hoehe_cm": 40,
+      "pflege_sterne": 2,
+      "rolle": "Füllstaude",
+      "stueckzahl": 4,
+      "preis_stueck_eur": 5,
+      "kauflink": "https://www.amazon.de/s?k=Heuchera+Palace+Purple&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/ki-purpurgloeckchen-91.jpg",
+      "pflanzabstand_cm": null,
+      "fehler": [
+        "Zu dichter Boden, der Staunässe verursacht",
+        "Zu viel Schatten, was die Blütenbildung reduziert",
+        "Übermäßiges Düngen, das zu weichem Wachstum führt"
+      ]
+    },
+    {
+      "name_deutsch": "Gefleckte Taubnessel 'White Nancy'",
+      "name_botanisch": "Lamium maculatum 'White Nancy'",
+      "beschreibung": "Immergrüner Bodendecker mit weißen Blüten, der schnell Flächen bedeckt.",
+      "standort": "Vordergrund",
+      "bluehzeit": "Mai - Juli",
+      "farbe": "Weiß",
+      "hoehe_cm": 15,
+      "pflege_sterne": 2,
+      "rolle": "Füllstaude",
+      "stueckzahl": 6,
+      "preis_stueck_eur": 3.5,
+      "kauflink": "https://www.amazon.de/s?k=Lamium+maculatum+White+Nancy&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/goldnessel-88.jpg",
+      "pflanzabstand_cm": null,
+      "fehler": [
+        "Zu dichter Pflanzabstand, der zu Konkurrenz um Nährstoffe führt.",
+        "Zu viel direkte Sonneneinstrahlung, die die Blätter verbrennen kann.",
+        "Übermäßiges Gießen, das zu Wurzelfäule führt."
+      ]
+    }
+  ],
+  "beetbeschreibung": "Das Beet präsentiert sich als harmonische Kombination aus hohen, mittleren und niedrigen Stauden, die das ganze Jahr über ein ansprechendes Bild bieten. Die weißen und blauen Blüten der Leitstauden setzen starke Akzente, während die immergrünen Füllstauden für Struktur und Ordnung sorgen. Besonders im Frühjahr und Sommer entfaltet sich eine farbenfrohe Blütenpracht.",
+  "gesamtkosten_geschaetzt": "151.50€",
+  "pflanzabstand_hinweis": "Achten Sie darauf, dass die Pflanzen ausreichend Platz zum Wachsen haben. Halten Sie die empfohlenen Pflanzabstände ein, um eine gesunde Entwicklung zu gewährleisten.",
+  "pflanzkalender": {
+    "Frühling": [
+      "Pulmonaria officinalis",
+      "Heuchera 'Palace Purple'",
+      "Lamium maculatum 'White Nancy'"
+    ],
+    "Sommer": [
+      "Delphinium elatum 'Galahad'",
+      "Campanula lactiflora",
+      "Molinia caerulea"
+    ],
+    "Herbst": [
+      "Molinia caerulea"
+    ],
+    "Winter": [
+      "Heuchera 'Palace Purple'",
+      "Lamium maculatum 'White Nancy'"
+    ]
+  },
+  "tipps": [
+    "Regelmäßiges Zurückschneiden der Stauden fördert eine dichte Wuchsform und verlängert die Blütezeit.",
+    "Achten Sie darauf, dass die immergrünen Pflanzen im Winter gut mit Wasser versorgt sind, da sie auch in der kalten Jahreszeit verdunsten."
+  ]
+}

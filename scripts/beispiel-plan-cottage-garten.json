@@ -1,0 +1,153 @@
+{
+  "pflanzen": [
+    {
+      "name_deutsch": "Scheinmohn",
+      "name_botanisch": "Meconopsis betonicifolia",
+      "beschreibung": "Blauer Scheinmohn mit auffälligen Blüten, ideal für romantische Gärten.",
+      "standort": "Hintergrund",
+      "bluehzeit": "Mai - Juni",
+      "farbe": "Blau",
+      "hoehe_cm": 80,
+      "pflege_sterne": 3,
+      "rolle": "Leitstaude",
+      "stueckzahl": 3,
+      "preis_stueck_eur": 18.9,
+      "kauflink": "https://www.amazon.de/s?k=Meconopsis+betonicifolia&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/ki-scheinmohn-101.jpg",
+      "pflanzabstand_cm": null,
+      "fehler": [
+        "Pflanzung in voller Sonne",
+        "Zu trockener Boden",
+        "Überdüngung"
+      ]
+    },
+    {
+      "name_deutsch": "Belladonna-Rittersporn",
+      "name_botanisch": "Delphinium x belladonna",
+      "beschreibung": "Majestätischer Rittersporn mit blauen Blüten für die Beetmitte.",
+      "standort": "Hintergrund",
+      "bluehzeit": "Juni - August",
+      "farbe": "Blau",
+      "hoehe_cm": 120,
+      "pflege_sterne": 2,
+      "rolle": "Leitstaude",
+      "stueckzahl": 3,
+      "preis_stueck_eur": 7.5,
+      "kauflink": "https://www.amazon.de/s?k=Delphinium+x+belladonna&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/ki-rittersporn-162.jpg",
+      "pflanzabstand_cm": null,
+      "fehler": [
+        "Zu dichter Pflanzabstand, der zu Pilzkrankheiten führt",
+        "Unzureichende Bewässerung während der Blütezeit",
+        "Nicht ausreichender Schutz vor Schnecken"
+      ]
+    },
+    {
+      "name_deutsch": "Wald-Phlox",
+      "name_botanisch": "Phlox divaricata",
+      "beschreibung": "Duftender Wald-Phlox mit violetten Blüten, ideal als Begleitstaude.",
+      "standort": "Mitte",
+      "bluehzeit": "Mai - Juni",
+      "farbe": "Blau|Violett",
+      "hoehe_cm": 40,
+      "pflege_sterne": 1,
+      "rolle": "Begleitstaude",
+      "stueckzahl": 5,
+      "preis_stueck_eur": 6.5,
+      "kauflink": "https://www.amazon.de/s?k=Phlox+divaricata&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/polster-phlox-42.jpg",
+      "pflanzabstand_cm": 23,
+      "fehler": [
+        "Zu dichter Pflanzabstand, der Luftzirkulation verhindert",
+        "Übermäßiges Gießen führt zu Wurzelfäule",
+        "Vernachlässigung des Rückschnitts nach der Blüte"
+      ]
+    },
+    {
+      "name_deutsch": "Ballonblume",
+      "name_botanisch": "Platycodon grandiflorus",
+      "beschreibung": "Charmante Ballonblume mit blau-weißen Blüten, ein Hingucker in der Mitte.",
+      "standort": "Mitte",
+      "bluehzeit": "Juli - August",
+      "farbe": "Blau|Weiß",
+      "hoehe_cm": 50,
+      "pflege_sterne": 1,
+      "rolle": "Begleitstaude",
+      "stueckzahl": 5,
+      "preis_stueck_eur": 6.5,
+      "kauflink": "https://www.amazon.de/s?k=Platycodon+grandiflorus&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/ki-ballonblume-196.jpg",
+      "pflanzabstand_cm": null,
+      "fehler": [
+        "Zu dichter Boden, der Staunässe verursacht",
+        "Zu wenig Sonnenlicht",
+        "Zu enger Pflanzabstand"
+      ]
+    },
+    {
+      "name_deutsch": "Frauenmantel",
+      "name_botanisch": "Alchemilla mollis",
+      "beschreibung": "Selbstsäender Frauenmantel mit gelbgrünen Blüten, ideal als Füllstaude.",
+      "standort": "Vordergrund",
+      "bluehzeit": "Juni - August",
+      "farbe": "Gelbgrün",
+      "hoehe_cm": 40,
+      "pflege_sterne": 1,
+      "rolle": "Füllstaude",
+      "stueckzahl": 6,
+      "preis_stueck_eur": 4.5,
+      "kauflink": "https://www.amazon.de/s?k=Alchemilla+mollis&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/frauenmantel-87.jpg",
+      "pflanzabstand_cm": 35,
+      "fehler": [
+        "Zu dichter Pflanzabstand, der zu Pilzkrankheiten führen kann",
+        "Unzureichende Bewässerung während Trockenperioden",
+        "Versäumnis, verblühte Blüten zu entfernen, was die Pflanze unordentlich erscheinen lässt"
+      ]
+    },
+    {
+      "name_deutsch": "Schaumblüte",
+      "name_botanisch": "Tiarella cordifolia",
+      "beschreibung": "Zarte Schaumblüte mit weißen Blüten, ideal als Bodendecker.",
+      "standort": "Vordergrund",
+      "bluehzeit": "April - Juni",
+      "farbe": "Weiß",
+      "hoehe_cm": 30,
+      "pflege_sterne": 1,
+      "rolle": "Füllstaude",
+      "stueckzahl": 10,
+      "preis_stueck_eur": 5.5,
+      "kauflink": "https://www.amazon.de/s?k=Tiarella+cordifolia&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/ki-schaumbluete-90.jpg",
+      "pflanzabstand_cm": null,
+      "fehler": [
+        "Zu dichter Pflanzabstand",
+        "Staunässe durch unzureichende Drainage",
+        "Unzureichende Bewässerung während Trockenperioden"
+      ]
+    }
+  ],
+  "beetbeschreibung": "Dieses romantische Cottage-Beet besticht durch seine üppige Bepflanzung in zarten Pastelltönen von Blau, Violett und Weiß. Duftende Stauden wie der Scheinmohn und der Wald-Phlox verleihen dem Garten eine einladende Atmosphäre. Die abwechslungsreiche Blütenfolge sorgt für ein harmonisches Farbspiel über die gesamte Saison hinweg.",
+  "gesamtkosten_geschaetzt": "306.7€",
+  "pflanzabstand_hinweis": "Die Pflanzen sollten so gesetzt werden, dass sie sich leicht berühren, um eine geschlossene Pflanzendecke zu erreichen. Die genaue Stückzahl ergibt sich aus der Wuchsbreite der jeweiligen Pflanze.",
+  "pflanzkalender": {
+    "Frühling": [
+      "Schaumblüte",
+      "Frauenmantel"
+    ],
+    "Sommer": [
+      "Ballonblume",
+      "Wald-Phlox",
+      "Belladonna-Rittersporn"
+    ],
+    "Herbst": [],
+    "Winter": [
+      "Schaumblüte",
+      "Frauenmantel"
+    ]
+  },
+  "tipps": [
+    "Achten Sie darauf, dass der Frauenmantel sich nicht unkontrolliert ausbreitet. Eine regelmäßige Kontrolle und ggf. Rhizomsperre hilft.",
+    "Für eine besonders üppige Blüte empfiehlt es sich, die Stauden regelmäßig zu düngen und verblühte Teile zu entfernen."
+  ]
+}

@@ -1,0 +1,131 @@
+{
+  "pflanzen": [
+    {
+      "name_deutsch": "Sumpf-Schwertlilie",
+      "name_botanisch": "Iris pseudacorus",
+      "beschreibung": "Eine auffällige, gelb blühende Staude, die perfekt für den Teichrand geeignet ist. Sie bringt Struktur und Farbe ins Beet.",
+      "standort": "Hintergrund",
+      "bluehzeit": "Mai - Juni",
+      "farbe": "Gelb",
+      "hoehe_cm": 100,
+      "pflege_sterne": 1,
+      "rolle": "Leitstaude",
+      "stueckzahl": 3,
+      "preis_stueck_eur": 8.5,
+      "kauflink": "https://www.amazon.de/s?k=Iris+pseudacorus&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/ki-hohe-bart-iris-38.jpg",
+      "pflanzabstand_cm": null,
+      "fehler": [
+        "Zu tiefes Pflanzen der Rhizome",
+        "Übermäßiges Gießen",
+        "Zu dichter Pflanzabstand"
+      ]
+    },
+    {
+      "name_deutsch": "Trollblume Kultursorten",
+      "name_botanisch": "Trollius x cultorum",
+      "beschreibung": "Diese Staude mit ihren leuchtend gelben bis orangefarbenen Blüten bringt im Frühsommer Farbe ins Beet.",
+      "standort": "Mitte",
+      "bluehzeit": "Mai - Juni",
+      "farbe": "Gelb, Orange",
+      "hoehe_cm": 70,
+      "pflege_sterne": 2,
+      "rolle": "Begleitstaude",
+      "stueckzahl": 3,
+      "preis_stueck_eur": 7.5,
+      "kauflink": "https://www.amazon.de/s?k=Trollius+x+cultorum&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/trollblume-77.jpg",
+      "pflanzabstand_cm": 35,
+      "fehler": [
+        "Zu trockener Standort",
+        "Unzureichender Pflanzabstand",
+        "Falscher Boden-pH-Wert"
+      ]
+    },
+    {
+      "name_deutsch": "Sumpfdotterblume",
+      "name_botanisch": "Caltha palustris",
+      "beschreibung": "Heimische Pflanze mit leuchtend gelben Blüten, ideal für den Vordergrund des Beetes.",
+      "standort": "Vordergrund",
+      "bluehzeit": "April - Juni",
+      "farbe": "Gelb",
+      "hoehe_cm": 40,
+      "pflege_sterne": 1,
+      "rolle": "Begleitstaude",
+      "stueckzahl": 3,
+      "preis_stueck_eur": 5.5,
+      "kauflink": "https://www.amazon.de/s?k=Caltha+palustris&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/sumpfdotterblume-144.jpg",
+      "pflanzabstand_cm": null,
+      "fehler": [
+        "Zu trockener Standort",
+        "Zu dichter Pflanzabstand",
+        "Unzureichende Wasserversorgung"
+      ]
+    },
+    {
+      "name_deutsch": "Glatte Schwertlilie",
+      "name_botanisch": "Iris laevigata",
+      "beschreibung": "Diese Staude blüht im Sommer in einem schönen Blauton und passt gut in das mittlere Beet.",
+      "standort": "Mitte",
+      "bluehzeit": "Juni - Juli",
+      "farbe": "Blau",
+      "hoehe_cm": 70,
+      "pflege_sterne": 2,
+      "rolle": "Leitstaude",
+      "stueckzahl": 3,
+      "preis_stueck_eur": 7.5,
+      "kauflink": "https://www.amazon.de/s?k=Iris+laevigata&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/ki-hohe-bart-iris-38.jpg",
+      "pflanzabstand_cm": null,
+      "fehler": [
+        "Zu tiefes Pflanzen der Rhizome",
+        "Übermäßiges Gießen",
+        "Zu dichter Pflanzabstand"
+      ]
+    },
+    {
+      "name_deutsch": "Gold-Segge Bowles",
+      "name_botanisch": "Carex elata 'Aurea'",
+      "beschreibung": "Ein dekoratives Gras, das dem Beet Struktur verleiht und auch im Winter Zierwert hat.",
+      "standort": "Vordergrund",
+      "bluehzeit": "kein Blüteschmuck",
+      "farbe": "Grün",
+      "hoehe_cm": 40,
+      "pflege_sterne": 2,
+      "rolle": "Füllstaude",
+      "stueckzahl": 4,
+      "preis_stueck_eur": 5.99,
+      "kauflink": "https://www.amazon.de/s?k=Carex+elata+'Aurea'&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/haenge-segge-113.jpg",
+      "pflanzabstand_cm": null,
+      "fehler": [
+        "Zu trockener Standort",
+        "Zu dichter Pflanzabstand",
+        "Unzureichende Wasserversorgung"
+      ]
+    }
+  ],
+  "beetbeschreibung": "Dieses naturnahe Sumpfbeet am Teichrand besticht durch seine harmonische Mischung aus gelben, blauen und grünen Tönen. Die abwechslungsreiche Blütenfolge von Frühjahr bis Sommer sorgt für ein lebendiges Ambiente, während die Gräser auch im Winter Struktur bieten.",
+  "gesamtkosten_geschaetzt": "127.96",
+  "pflanzabstand_hinweis": "Achten Sie auf ausreichende Abstände zwischen den Pflanzen, um ein gesundes Wachstum zu gewährleisten. Leitstauden benötigen mehr Platz, während Füllstauden Lücken füllen.",
+  "pflanzkalender": {
+    "Frühling": [
+      "Sumpfdotterblume",
+      "Gold-Segge Bowles"
+    ],
+    "Sommer": [
+      "Sumpf-Schwertlilie",
+      "Trollblume Kultursorten",
+      "Glatte Schwertlilie"
+    ],
+    "Herbst": [],
+    "Winter": [
+      "Gold-Segge Bowles"
+    ]
+  },
+  "tipps": [
+    "Verwenden Sie eine Rhizomsperre, wenn Sie Pflanzen mit ausläuferbildendem Wuchs einsetzen.",
+    "Achten Sie darauf, die Bodenfeuchtigkeit konstant zu halten, um das Wachstum der Sumpfpflanzen zu unterstützen."
+  ]
+}

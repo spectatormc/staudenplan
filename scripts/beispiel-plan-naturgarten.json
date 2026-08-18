@@ -1,0 +1,174 @@
+{
+  "pflanzen": [
+    {
+      "name_deutsch": "Wilde Karde",
+      "name_botanisch": "Dipsacus fullonum",
+      "beschreibung": "Die Wilde Karde ist eine beeindruckende Leitstaude, die mit ihren hohen, stacheligen Blütenständen Struktur und Höhe in den Garten bringt. Sie zieht viele Insekten an und bietet Winterzierwert.",
+      "standort": "Hintergrund",
+      "bluehzeit": "Juli - September",
+      "farbe": "Lila",
+      "hoehe_cm": 150,
+      "pflege_sterne": 2,
+      "rolle": "Leitstaude",
+      "stueckzahl": 4,
+      "preis_stueck_eur": 6.5,
+      "kauflink": "https://www.amazon.de/s?k=Dipsacus+fullonum&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/wilde-karde-187.jpg",
+      "pflanzabstand_cm": null,
+      "fehler": [
+        "Zu dichter Stand führt zu Pilzkrankheiten.",
+        "Unkontrolliertes Aussamen kann zu unerwünschter Ausbreitung führen.",
+        "Zu viel Dünger führt zu übermäßigem Blattwachstum und weniger Blüten."
+      ]
+    },
+    {
+      "name_deutsch": "Schmalblättriger Sonnenhut",
+      "name_botanisch": "Echinacea angustifolia",
+      "beschreibung": "Der Schmalblättrige Sonnenhut ist eine beliebte Leitstaude mit auffälligen purpurnen Blüten, die im Sommer viele Bestäuber anzieht. Auch im Winter bietet er durch seine Samenstände Zierwert.",
+      "standort": "Hintergrund",
+      "bluehzeit": "Juli - September",
+      "farbe": "Purpur",
+      "hoehe_cm": 90,
+      "pflege_sterne": 2,
+      "rolle": "Leitstaude",
+      "stueckzahl": 5,
+      "preis_stueck_eur": 7.5,
+      "kauflink": "https://www.amazon.de/s?k=Echinacea+angustifolia&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/sonnenhut-3.jpg",
+      "pflanzabstand_cm": 45,
+      "fehler": [
+        "Zu dichter Pflanzabstand, der zu schlechter Luftzirkulation führt",
+        "Übermäßiges Gießen, das Wurzelfäule verursachen kann",
+        "Nicht regelmäßiges Entfernen verblühter Blüten, was die Blütezeit verkürzt"
+      ]
+    },
+    {
+      "name_deutsch": "Kronen-Lichtnelke",
+      "name_botanisch": "Lychnis coronaria",
+      "beschreibung": "Die Kronen-Lichtnelke ist eine pflegeleichte Begleitstaude mit leuchtend rosa Blüten, die von Juni bis August blüht und dem Beet Farbe und Textur verleiht.",
+      "standort": "Mitte",
+      "bluehzeit": "Juni - August",
+      "farbe": "Rosa",
+      "hoehe_cm": 70,
+      "pflege_sterne": 1,
+      "rolle": "Begleitstaude",
+      "stueckzahl": 8,
+      "preis_stueck_eur": 4.5,
+      "kauflink": "https://www.amazon.de/s?k=Lychnis+coronaria&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/pechnelke-140.jpg",
+      "pflanzabstand_cm": null,
+      "fehler": [
+        "Zu dichter Stand, der zu Pilzkrankheiten führen kann",
+        "Übermäßiges Gießen, das Wurzelfäule verursacht",
+        "Zu schattiger Standort, der zu schwachem Wuchs führt"
+      ]
+    },
+    {
+      "name_deutsch": "Großblumiges Mädchenauge",
+      "name_botanisch": "Coreopsis grandiflora",
+      "beschreibung": "Dieses Mädchenauge bringt mit seinen leuchtend gelben Blüten von Juni bis September Farbe in den Garten. Es ist eine ausgezeichnete Begleitstaude für sonnige Standorte.",
+      "standort": "Mitte",
+      "bluehzeit": "Juni - September",
+      "farbe": "Gelb",
+      "hoehe_cm": 50,
+      "pflege_sterne": 1,
+      "rolle": "Begleitstaude",
+      "stueckzahl": 8,
+      "preis_stueck_eur": 5.5,
+      "kauflink": "https://www.amazon.de/s?k=Coreopsis+grandiflora&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/maedchenauge-173.jpg",
+      "pflanzabstand_cm": 35,
+      "fehler": [
+        "Zu dichter Stand, der zu Pilzbefall führen kann",
+        "Übermäßiges Gießen, das Wurzelfäule verursacht",
+        "Unzureichender Rückschnitt, der die Blüte reduziert"
+      ]
+    },
+    {
+      "name_deutsch": "Kriech-Phlox",
+      "name_botanisch": "Phlox stolonifera",
+      "beschreibung": "Der Kriech-Phlox ist ein bodendeckender Füllstaude, der im Frühjahr mit rosa, lila und weißen Blüten einen attraktiven Teppich bildet.",
+      "standort": "Vordergrund",
+      "bluehzeit": "Mai - Juni",
+      "farbe": "Rosa, Lila, Weiß",
+      "hoehe_cm": 20,
+      "pflege_sterne": 1,
+      "rolle": "Füllstaude",
+      "stueckzahl": 10,
+      "preis_stueck_eur": 5.5,
+      "kauflink": "https://www.amazon.de/s?k=Phlox+stolonifera&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/polster-phlox-42.jpg",
+      "pflanzabstand_cm": 23,
+      "fehler": [
+        "Zu dichter Pflanzabstand, der Luftzirkulation verhindert",
+        "Übermäßiges Gießen führt zu Wurzelfäule",
+        "Vernachlässigung des Rückschnitts nach der Blüte"
+      ]
+    },
+    {
+      "name_deutsch": "Hauswurz",
+      "name_botanisch": "Sempervivum tectorum",
+      "beschreibung": "Die Hauswurz ist eine wintergrüne Füllstaude, die mit ihren rosettenförmigen Blättern Struktur in den Vordergrund des Beetes bringt.",
+      "standort": "Vordergrund",
+      "bluehzeit": "Juni - August",
+      "farbe": "Rot, Rosa",
+      "hoehe_cm": 10,
+      "pflege_sterne": 1,
+      "rolle": "Füllstaude",
+      "stueckzahl": 10,
+      "preis_stueck_eur": 4,
+      "kauflink": "https://www.amazon.de/s?k=Sempervivum+tectorum&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/hauswurz-36.jpg",
+      "pflanzabstand_cm": 18,
+      "fehler": [
+        "Zu viel gießen",
+        "Falscher Boden (zu lehmig)",
+        "Zu dichter Pflanzabstand"
+      ]
+    },
+    {
+      "name_deutsch": "Zittergras",
+      "name_botanisch": "Briza media",
+      "beschreibung": "Das Zittergras ist eine heimische Füllstaude, die mit ihren zarten, beweglichen Blütenständen Struktur und Bewegung in den Garten bringt.",
+      "standort": "Vordergrund",
+      "bluehzeit": "Mai - Juli",
+      "farbe": "Grün",
+      "hoehe_cm": 40,
+      "pflege_sterne": 2,
+      "rolle": "Füllstaude",
+      "stueckzahl": 8,
+      "preis_stueck_eur": 4.5,
+      "kauflink": "https://www.amazon.de/s?k=Briza+media&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/zittergras-242.jpg",
+      "pflanzabstand_cm": null,
+      "fehler": null
+    }
+  ],
+  "beetbeschreibung": "Dieses Staudenbeet im Präriecharakter vereint heimische, bienenfreundliche Stauden, die das ganze Jahr über für Biodiversität und visuelle Attraktivität sorgen. Hohe Leitstauden wie die Wilde Karde und der Schmalblättrige Sonnenhut bilden die Rückwand, während Begleitstauden wie die Kronen-Lichtnelke und das Mädchenauge in der Mitte für Farbe sorgen. Im Vordergrund füllen Füllstauden wie der Kriech-Phlox und die Hauswurz die Lücken und bieten ganzjährig Struktur.",
+  "gesamtkosten_geschaetzt": "406.5",
+  "pflanzabstand_hinweis": "Achten Sie darauf, die Pflanzen gemäß ihren Ausbreitungsmaßen zu setzen, um Überwucherung zu vermeiden und eine harmonische Bepflanzung zu gewährleisten.",
+  "pflanzkalender": {
+    "Frühling": [
+      "Kriech-Phlox",
+      "Zittergras"
+    ],
+    "Sommer": [
+      "Wilde Karde",
+      "Schmalblättriger Sonnenhut",
+      "Kronen-Lichtnelke",
+      "Großblumiges Mädchenauge",
+      "Hauswurz"
+    ],
+    "Herbst": [],
+    "Winter": [
+      "Wilde Karde",
+      "Schmalblättriger Sonnenhut",
+      "Hauswurz"
+    ]
+  },
+  "tipps": [
+    "Achten Sie darauf, regelmäßig verblühte Blüten zu entfernen, um die Blühfreudigkeit zu fördern.",
+    "Lassen Sie die Samenstände im Winter stehen, um Struktur und Nahrung für Vögel zu bieten.",
+    "Im Frühjahr den Boden mulchen, um Feuchtigkeit zu halten und Unkraut zu unterdrücken."
+  ]
+}

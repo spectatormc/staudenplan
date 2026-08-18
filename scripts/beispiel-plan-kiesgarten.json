@@ -1,0 +1,158 @@
+{
+  "pflanzen": [
+    {
+      "name_deutsch": "Patagonisches Eisenkraut",
+      "name_botanisch": "Verbena bonariensis",
+      "beschreibung": "Hohe, luftige Pflanze mit violetten Blüten, ideal für den Hintergrund.",
+      "standort": "Hintergrund",
+      "bluehzeit": "Juli - Oktober",
+      "farbe": "Violett",
+      "hoehe_cm": 150,
+      "pflege_sterne": 2,
+      "rolle": "Leitstaude",
+      "stueckzahl": 3,
+      "preis_stueck_eur": 6.5,
+      "kauflink": "https://www.amazon.de/s?k=Verbena+bonariensis&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/patagonisches-eisenkraut-26.jpg",
+      "pflanzabstand_cm": null,
+      "fehler": [
+        "Zu dichter Pflanzabstand, der zu schlechter Luftzirkulation führt.",
+        "Zu viel Wasser, was Wurzelfäule begünstigt.",
+        "Verzicht auf Rückschnitt, was die Pflanze unordentlich wirken lässt."
+      ]
+    },
+    {
+      "name_deutsch": "Duftender Sonnenhut",
+      "name_botanisch": "Rudbeckia subtomentosa",
+      "beschreibung": "Gelbe, sonnenliebende Staude mit dekorativen Samenständen.",
+      "standort": "Hintergrund",
+      "bluehzeit": "Juli - September",
+      "farbe": "Gelb",
+      "hoehe_cm": 120,
+      "pflege_sterne": 2,
+      "rolle": "Leitstaude",
+      "stueckzahl": 3,
+      "preis_stueck_eur": 7.5,
+      "kauflink": "https://www.amazon.de/s?k=Rudbeckia+subtomentosa&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/ki-roter-scheinsonnenhut-5.jpg",
+      "pflanzabstand_cm": null,
+      "fehler": [
+        "Zu dichter Pflanzabstand, der zu schlechter Luftzirkulation führt.",
+        "Übermäßiges Gießen, das zu Wurzelfäule führen kann.",
+        "Nicht regelmäßiges Entfernen verblühter Blüten, was die Blütezeit verkürzt."
+      ]
+    },
+    {
+      "name_deutsch": "Katzenminze",
+      "name_botanisch": "Nepeta faassenii",
+      "beschreibung": "Langblühende Pflanze mit blauen Blüten, zieht Bienen an.",
+      "standort": "Mitte",
+      "bluehzeit": "Mai - September",
+      "farbe": "Blau",
+      "hoehe_cm": 40,
+      "pflege_sterne": 1,
+      "rolle": "Begleitstaude",
+      "stueckzahl": 8,
+      "preis_stueck_eur": 6,
+      "kauflink": "https://www.amazon.de/s?k=Nepeta+faassenii&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/katzenminze-45.jpg",
+      "pflanzabstand_cm": null,
+      "fehler": [
+        "Zu dichter Pflanzabstand, der zu schlechter Luftzirkulation führt",
+        "Übermäßiges Gießen, das zu Wurzelfäule führen kann",
+        "Zu viel Dünger, was das Wachstum übermäßig anregt und die Blütenbildung hemmt"
+      ]
+    },
+    {
+      "name_deutsch": "Wiesen-Storchschnabel",
+      "name_botanisch": "Geranium pratense",
+      "beschreibung": "Heimische Staude mit blauen Blüten, pflegeleicht und trockenheitsresistent.",
+      "standort": "Mitte",
+      "bluehzeit": "Juni - August",
+      "farbe": "Blau",
+      "hoehe_cm": 50,
+      "pflege_sterne": 1,
+      "rolle": "Begleitstaude",
+      "stueckzahl": 8,
+      "preis_stueck_eur": 5,
+      "kauflink": "https://www.amazon.de/s?k=Geranium+pratense&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/purpur-storchschnabel-56.jpg",
+      "pflanzabstand_cm": null,
+      "fehler": [
+        "Zu dichter Pflanzabstand",
+        "Übermäßiges Gießen",
+        "Falscher Standort (zu schattig)"
+      ]
+    },
+    {
+      "name_deutsch": "Hornkraut",
+      "name_botanisch": "Cerastium tomentosum",
+      "beschreibung": "Weiß blühender Bodendecker, ideal für den Vordergrund.",
+      "standort": "Vordergrund",
+      "bluehzeit": "Mai - Juni",
+      "farbe": "Weiß",
+      "hoehe_cm": 15,
+      "pflege_sterne": 1,
+      "rolle": "Füllstaude",
+      "stueckzahl": 10,
+      "preis_stueck_eur": 4.5,
+      "kauflink": "https://www.amazon.de/s?k=Cerastium+tomentosum&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/hornkraut-52.jpg",
+      "pflanzabstand_cm": 23,
+      "fehler": [
+        "Zu dichter Pflanzabstand",
+        "Überwässerung",
+        "Nicht zurückschneiden nach der Blüte"
+      ]
+    },
+    {
+      "name_deutsch": "Fingerkraut",
+      "name_botanisch": "Potentilla neumanniana",
+      "beschreibung": "Gelb blühender Bodendecker, robust und winterhart.",
+      "standort": "Vordergrund",
+      "bluehzeit": "April - Juni",
+      "farbe": "Gelb",
+      "hoehe_cm": 15,
+      "pflege_sterne": 1,
+      "rolle": "Füllstaude",
+      "stueckzahl": 8,
+      "preis_stueck_eur": 5,
+      "kauflink": "https://www.amazon.de/s?k=Potentilla+neumanniana&tag=gartenbaukosten-21",
+      "bild_url": "/images/pflanzen/fingerkraut-134.jpg",
+      "pflanzabstand_cm": 25,
+      "fehler": [
+        "Zu dichter Pflanzabstand",
+        "Übermäßiges Gießen",
+        "Falscher Boden (zu lehmig oder nass)"
+      ]
+    }
+  ],
+  "beetbeschreibung": "Dieses Trockenstaudenbeet besticht durch seine natürliche, wilde Anmutung, ideal für einen mediterran inspirierten Gartenstil. Die Kombination aus violetten, blauen und gelben Blütenfarben sorgt für eine harmonische Farbstimmung. Die Blütezeiten sind über das ganze Jahr verteilt, um kontinuierlich Interesse zu wecken.",
+  "gesamtkosten_geschaetzt": "280.5",
+  "pflanzabstand_hinweis": "Pflanzen Sie die Stauden so, dass sie ihre natürliche Ausbreitung erreichen können. Achten Sie auf die empfohlene Pflanzdichte von 3–5 Pflanzen/m², um eine gute Flächendeckung zu gewährleisten.",
+  "pflanzkalender": {
+    "Frühling": [
+      "Cerastium tomentosum",
+      "Potentilla neumanniana"
+    ],
+    "Sommer": [
+      "Verbena bonariensis",
+      "Rudbeckia subtomentosa",
+      "Nepeta faassenii",
+      "Geranium pratense"
+    ],
+    "Herbst": [
+      "Verbena bonariensis",
+      "Rudbeckia subtomentosa"
+    ],
+    "Winter": [
+      "Rudbeckia subtomentosa",
+      "Verbena bonariensis"
+    ]
+  },
+  "tipps": [
+    "Achten Sie darauf, dass der Boden gut durchlässig bleibt, um Staunässe zu vermeiden.",
+    "Gießen Sie nur in sehr trockenen Perioden, da die Pflanzen trockenheitsresistent sind.",
+    "Vermeiden Sie Überdüngung, da dies das natürliche Wachstum stören kann."
+  ]
+}
