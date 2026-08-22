@@ -2744,6 +2744,7 @@ app.get('/admin/quiz', (req, res) => {
   <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:16px">${card('Wissenstest', 'wissen')}${card('Gartentyp-Quiz', 'gartentyp')}</div>
   <h2 style="font-size:1.05rem;color:#1b4332;margin-top:28px">Quiz-Starts pro Tag (letzte 30)</h2>
   ${proTag.length ? `<table><tr><th>Tag</th><th>Starts</th></tr>${proTag.map(r => `<tr><td>${esc(r.tag)}</td><td>${r.n}</td></tr>`).join('')}</table>` : '<p class="muted">Noch keine Quiz-Aktivität.</p>'}
+  <p class="muted" style="margin-top:22px">Hinweis zur Einordnung: Bis zum 22.08.2026 zählte das Gartentyp-Quiz jeden Aufruf der Seite als Start, weil die Frageliste beim Laden aufgebaut wird — auch bei allen, die nur den Wissenstest spielten. Seither zählt erst die erste beantwortete Frage, wie beim Wissenstest der Klick auf den Startknopf. Die 21 Starts davor sind deshalb keine echten Quizstarts und drücken die Abschlussrate des Gartentyp-Quiz dauerhaft nach unten. Aussagekräftig ist die Quote erst ab dem 22.08.2026.</p>
   </body></html>`);
 });
 
