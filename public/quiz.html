@@ -516,11 +516,16 @@ const TYPEN = {
   }
 };
 
-let pqAntworten = {}, pqAktuell = 0;
+let pqAntworten = {}, pqAktuell = 0, pqStartGezaehlt = false;
 
 function starteTypQuiz() {
-  qzTrack('start', 'gartentyp');
-  pqAntworten = {}; pqAktuell = 0;
+  // Kein qzTrack('start') an dieser Stelle: starteTypQuiz() läuft am Ende der Datei beim
+  // Laden der Seite, der Start wurde damit bei JEDEM Seitenaufruf gezählt — auch bei allen,
+  // die nur den Wissenstest im anderen Tab spielten. Auf /admin/quiz standen dadurch bis zum
+  // 22.08.2026 21 Starts gegen 1 Abschluss (5 %), während der Wissenstest, der erst beim
+  // Klick auf den Startknopf zählt, 24 von 28 abschloss (86 %). Die beiden Quoten maßen
+  // nicht dasselbe. Gezählt wird jetzt bei der ersten Antwort — siehe pqWaehle().
+  pqAntworten = {}; pqAktuell = 0; pqStartGezaehlt = false;
   document.getElementById('pq-ergebnis').classList.remove('sichtbar');
   renderPqFragen();
 }
@@ -553,6 +558,9 @@ function renderPqFragen() {
 }
 
 function pqWaehle(frageIdx, optionIdx) {
+  // Erst die erste Antwort gilt als Start — das ist das Gegenstück zum Klick auf den
+  // Startknopf des Wissenstests und macht die Abschlussquoten beider Quizze vergleichbar.
+  if (!pqStartGezaehlt) { pqStartGezaehlt = true; qzTrack('start', 'gartentyp'); }
   pqAntworten[frageIdx] = optionIdx;
 
   // Visuell markieren

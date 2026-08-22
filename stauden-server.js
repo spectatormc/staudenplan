@@ -1470,6 +1470,15 @@ app.post('/api/plan', planHartLimiter, planLimiter, async (req, res) => {
       || (plz != null && typeof plz !== 'string')) {
     return res.status(400).json({ error: 'Ungültige Eingabewerte.' });
   }
+  // Obergrenze für die Fläche. Bis zum 22.08.2026 wurde nur auf „größer als null" geprüft;
+  // an dem Tag lief ein Plan über 1.036.000.000 m² durch. Der Wert geht ungeprüft in den
+  // Prompt (Geophyten-Stückzahl = Fläche × 5) und in plan_statistik, wo er den Flächen-
+  // durchschnitt auf /admin/plaene von 10 m² Median auf 2.785.280 m² gezogen hat.
+  // 10.000 m² sind ein Hektar und damit weit jenseits jedes Staudenbeets.
+  const flaecheGeprueft = Number(gartenflaeche);
+  if (!Number.isFinite(flaecheGeprueft) || flaecheGeprueft <= 0 || flaecheGeprueft > 10000) {
+    return res.status(400).json({ error: 'Bitte eine Beetgröße zwischen 1 und 10.000 m² angeben.' });
+  }
 
   // Werte gegen das bekannte Vokabular prüfen (siehe bekannterWert). Vorher genügte es,
   // dass es Zeichenketten waren — „Mondlicht" und „Vulkanasche" lieferten einen Plan.
@@ -2752,7 +2761,15 @@ app.get('/admin/plaene', (req, res) => {
                       WHERE plz IS NOT NULL AND length(plz) >= 2 GROUP BY lr ORDER BY n DESC`);
   const proTag = q("SELECT substr(erstellt_am,1,10) tag, COUNT(*) n FROM plan_statistik GROUP BY tag ORDER BY tag DESC LIMIT 30");
   const verteilung = (spalte) => q(`SELECT ${spalte} w, COUNT(*) n FROM plan_statistik WHERE ${spalte} IS NOT NULL GROUP BY w ORDER BY n DESC LIMIT 8`);
-  const flaeche = q(`SELECT MIN(gartenflaeche) min, MAX(gartenflaeche) max, AVG(gartenflaeche) avg FROM plan_statistik WHERE gartenflaeche > 0`)[0] || {};
+  const flaeche = q(`SELECT MIN(gartenflaeche) min, MAX(gartenflaeche) max FROM plan_statistik WHERE gartenflaeche > 0`)[0] || {};
+  // Median statt Durchschnitt. Ein einzelner Plan über 1.036.000.000 m² (22.08.2026) hat den
+  // Schnitt auf 2.785.280 m² gezogen, während die Hälfte aller Beete unter 10,1 m² liegt —
+  // die Zeile behauptete damit das Gegenteil dessen, was in der Tabelle stand. Die Eingabe-
+  // grenze in /api/plan schließt solche Werte jetzt aus; der Median hält die Zahl zusätzlich
+  // gegen künftige Fehleingaben stabil, ein Durchschnitt tut das grundsätzlich nicht.
+  const flaecheMedian = (q(`SELECT gartenflaeche w FROM plan_statistik WHERE gartenflaeche > 0
+                            ORDER BY gartenflaeche
+                            LIMIT 1 OFFSET (SELECT COUNT(*) / 2 FROM plan_statistik WHERE gartenflaeche > 0)`)[0] || {}).w;
   const quelle = q("SELECT quelle w, COUNT(*) n FROM plan_statistik GROUP BY w");
   const mails = q("SELECT COUNT(*) gesamt, SUM(werbung_einwilligung) angekreuzt, SUM(bestaetigt) bestaetigt FROM email_gate")[0] || {};
 
@@ -2784,7 +2801,7 @@ app.get('/admin/plaene', (req, res) => {
     <div class="karte"><div class="big">${mails.gesamt || 0}</div><div class="muted">E-Mail-Adressen — ${mails.angekreuzt || 0} für Tipps angekreuzt, ${mails.bestaetigt || 0} bestätigt</div></div>
   </div>
   ${gesamt === 0 ? '<p class="muted" style="margin-top:24px">Die Erfassung läuft seit dem Deploy am 08.08.2026. Ältere Pläne sind nicht nachträglich rekonstruierbar.</p>' : ''}
-  ${flaeche.min != null ? `<h2>Beetgröße</h2><p class="muted">kleinste ${Number(flaeche.min).toFixed(1)} m² · größte ${Number(flaeche.max).toFixed(1)} m² · Durchschnitt ${Number(flaeche.avg).toFixed(1)} m²</p>` : ''}
+  ${flaeche.min != null ? `<h2>Beetgröße</h2><p class="muted">Median ${flaecheMedian != null ? Number(flaecheMedian).toFixed(1) + ' m²' : '–'} · kleinste ${Number(flaeche.min).toFixed(1)} m² · größte ${Number(flaeche.max).toFixed(1)} m²</p>` : ''}
   ${tab('Nach Leitregion (erste zwei PLZ-Ziffern)', regionen, 'Leitregion')}
   ${tab('Lichtverhältnisse', verteilung('licht'), 'Licht')}
   ${tab('Bodenart', verteilung('boden'), 'Boden')}
@@ -2812,21 +2829,61 @@ app.get('/robots.txt', (req, res) => {
   // rel="nofollow" — Google darf den Redirect also abrufen, sieht das noindex und wirft die
   // URLs endgültig raus. Die Crawls zählen nicht als Nachfrage mit: istBotKlick wertet sie
   // über fehlenden Referer und Googlebot-UA als maschinell.
-  res.send(`User-agent: *\nAllow: /\nSitemap: ${base}/sitemap.xml\n`);
+  //
+  // SEO-Tool- und Fremdsuchmaschinen-Crawler sind dagegen gesperrt. In der Woche vom
+  // 15.–22.08.2026 haben PetalBot (1222), SemrushBot (809), AhrefsBot (151) und MJ12bot (44)
+  // zusammen 2226 der 16.843 Anfragen gestellt — 13 % der Last, ohne einen einzigen Besucher
+  // zu liefern. Semrush, Ahrefs und MJ12 befüllen fremde Backlink-Datenbanken; Petal Search
+  // hat im deutschsprachigen Markt praktisch keine Nutzer. Alle vier halten sich an robots.txt.
+  //
+  // Die KI-Crawler stehen bewusst NICHT auf dieser Liste: aus ChatGPT, Copilot und Perplexity
+  // kamen im selben Zeitraum 10 echte Besucher. GPTBot, ClaudeBot, OAI-SearchBot und
+  // PerplexityBot zu sperren würde diesen kleinen, aber wachsenden Kanal sofort abschneiden.
+  res.send(
+    'User-agent: SemrushBot\n' +
+    'User-agent: AhrefsBot\n' +
+    'User-agent: MJ12bot\n' +
+    'User-agent: DotBot\n' +
+    'User-agent: PetalBot\n' +
+    'Disallow: /\n' +
+    '\n' +
+    `User-agent: *\nAllow: /\n\nSitemap: ${base}/sitemap.xml\n`
+  );
 });
+
+// Chrome Private Prefetch Proxy fragt diese Datei ab. Ohne sie schreibt allein der echte
+// Googlebot 40 der 42 wöchentlichen 404er ins Log und übertönt damit die wenigen echten
+// Fehler. 204 heißt „keine Vorgaben" und ist die richtige Antwort für eine Seite, die kein
+// Prefetching steuert — ein 404 wäre inhaltlich nicht falsch, nur unnötig laut.
+app.get('/.well-known/traffic-advice', (req, res) => res.status(204).end());
 
 // ─── Sitemap.xml ──────────────────────────────────────────────────────────────
 app.get('/sitemap.xml', (req, res) => {
   const base = process.env.SITE_URL || `${req.protocol}://${req.hostname}`;
-  const pflanzen = db.prepare('SELECT name_botanisch FROM pflanzen').all();
+  const pflanzen = db.prepare('SELECT name_botanisch, aktualisiert_am FROM pflanzen').all();
   let wissens = [];
-  try { wissens = db.prepare('SELECT titel FROM wissen').all(); } catch {}
+  try { wissens = db.prepare('SELECT titel, datum FROM wissen').all(); } catch {}
 
   function slugify(s) {
     return s.toLowerCase()
       .replace(/ä/g,'ae').replace(/ö/g,'oe').replace(/ü/g,'ue').replace(/ß/g,'ss')
       .replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
   }
+
+  // <lastmod> nur dort, wo ein echtes Datum in der Datenbank steht. Bis hierher hatte keine
+  // der 809 URLs eines — Google konnte nicht erkennen, welche Seiten sich geändert haben, und
+  // crawlte im Rundlauf: 206 abgeholte Seiten pro Woche gegen 746 bei Bing, das über IndexNow
+  // aktiv benachrichtigt wird (siehe unten). Das lastmod ist die einzige Freshness-Angabe,
+  // die Google bei normalen Seiten auswertet.
+  //
+  // Bewusst kein pauschales „heute" auf allen URLs: Google gleicht das lastmod gegen den
+  // tatsächlich abgerufenen Inhalt ab und ignoriert das Feld dauerhaft, wenn es dabei
+  // wiederholt lügt. Die statischen Seiten bekommen deshalb gar keins — das ist erlaubt,
+  // lastmod ist je URL optional.
+  const lastmod = (v) => {
+    const d = typeof v === 'string' ? v.slice(0, 10) : '';
+    return /^\d{4}-\d{2}-\d{2}$/.test(d) ? `<lastmod>${d}</lastmod>` : '';
+  };
 
   const urls = [
     `<url><loc>${base}/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>`,
@@ -2842,8 +2899,8 @@ app.get('/sitemap.xml', (req, res) => {
     `<url><loc>${base}/quiz</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>`,
     `<url><loc>${base}/pflege/haeufige-fehler</loc><changefreq>monthly</changefreq><priority>0.85</priority></url>`,
     ...BEISPIELE.map(b => `<url><loc>${base}/beispiel/${b.slug}</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>`),
-    ...pflanzen.map(p => `<url><loc>${base}/pflanze/${slugify(p.name_botanisch)}</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>`),
-    ...wissens.map(w => `<url><loc>${base}/ratgeber/${slugify(w.titel)}</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>`),
+    ...pflanzen.map(p => `<url><loc>${base}/pflanze/${slugify(p.name_botanisch)}</loc>${lastmod(p.aktualisiert_am)}<changefreq>monthly</changefreq><priority>0.7</priority></url>`),
+    ...wissens.map(w => `<url><loc>${base}/ratgeber/${slugify(w.titel)}</loc>${lastmod(w.datum)}<changefreq>monthly</changefreq><priority>0.8</priority></url>`),
   ];
 
   res.type('application/xml');
@@ -6452,7 +6509,14 @@ app.get('/admin/login', (req, res) => {
       e.preventDefault();
       const err=document.getElementById('err');err.textContent='';
       const r=await fetch('/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pw:document.getElementById('pw').value})});
-      if(r.ok){location.href=${JSON.stringify(next)};}else{err.textContent='Falsches Passwort.';}
+      if(r.ok){location.href=${JSON.stringify(next)};return false;}
+      // 429 vom loginLimiter (10 Versuche je 15 Minuten) sah bis hierher genauso aus wie ein
+      // falsches Passwort. Wer sich vertippt und es mehrfach probiert, bekam danach auch beim
+      // RICHTIGEN Passwort „Falsches Passwort." zu lesen und suchte den Fehler an der falschen
+      // Stelle. Die Sperre selbst bleibt — nur benannt wird sie jetzt.
+      err.textContent = r.status===429
+        ? 'Zu viele Versuche. Bitte 15 Minuten warten — bis dahin wird auch das richtige Passwort abgewiesen.'
+        : 'Falsches Passwort.';
       return false;
     }
   </script>
