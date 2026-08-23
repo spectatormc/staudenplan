@@ -2101,6 +2101,10 @@ app.get('/newsletter/abmelden', (req, res) => {
   res.send(seite('Abgemeldet', 'Du bekommst keine Gartentipps mehr von uns. Deinen Planlink kannst du weiterhin aufrufen.'));
 });
 
+// Die Anfrage geht an die Partnergärtnerei, die das Paket liefert. Über EMAIL_GAERTNEREI
+// umstellbar — lokal auf die eigene Adresse setzen, sonst läuft jeder Test bei Gaißmayer auf.
+const GAERTNEREI_EMAIL = process.env.EMAIL_GAERTNEREI || 'info@gaissmayer.de';
+
 app.post('/api/anfrage', anfrageLimiter, async (req, res) => {
   const { name, email, plz, telefon, anmerkungen, gartenparameter, ki_plan } = req.body;
 
@@ -2128,31 +2132,75 @@ app.post('/api/anfrage', anfrageLimiter, async (req, res) => {
     return res.status(500).json({ error: 'Datenbankfehler beim Speichern.' });
   }
 
+  // Ohne Preise: Unsere Schätzung ist nicht die Kalkulation der Gärtnerei. In deren Mail läse
+  // sie sich wie eine Preisvorgabe, im Kundenpostfach wie eine Zusage, die wir nicht geben
+  // können. Was das Paket kostet, sagt das Angebot der Gärtnerei — nicht der Planer.
   const pflanzenListe = Array.isArray(ki_plan?.pflanzen)
     ? ki_plan.pflanzen.map(p =>
-        `  • ${p.stueckzahl || 1}x ${p.name_deutsch} (${p.name_botanisch}) — ca. ${((p.preis_stueck_eur || 0) * (p.stueckzahl || 1)).toFixed(2)} €`
+        `  • ${p.stueckzahl || 1}x ${p.name_deutsch} (${p.name_botanisch})`
       ).join('\n')
     : '  — keine Pflanzenliste vorhanden';
 
-  // Gesamtkosten immer aus der Pflanzenliste nachrechnen statt das mitgeschickte Feld zu glauben:
-  // Der Kunde kann die Dichte verstellt haben, und die Summe soll zu den Einzelpreisen darüber
-  // passen. Gerundet und mit Währung — vorher stand hier eine rohe Fließkommazahl wie "487.4".
-  const kostenSumme = Array.isArray(ki_plan?.pflanzen)
-    ? ki_plan.pflanzen.reduce((s, p) => s + (Number(p.preis_stueck_eur) || 0) * (Number(p.stueckzahl) || 1), 0)
-    : null;
-  const kostenText = kostenSumme != null && kostenSumme > 0
-    ? `ca. ${Math.round(kostenSumme)} €`
-    : (typeof ki_plan?.gesamtkosten_geschaetzt === 'number' ? `ca. ${Math.round(ki_plan.gesamtkosten_geschaetzt)} €` : null);
+  // Ein Text, zwei Empfänger: Betreiber und Gärtnerei sollen bei einer Rückfrage dasselbe Blatt
+  // vor sich haben — die Betreiber-Kopie ist bewusst der Durchschlag dessen, was die Gärtnerei
+  // liest, Anrede eingeschlossen. Die kalkulierten Preise bleiben im ki_plan (/admin/anfragen).
+  const anfrageText = `Guten Tag,
 
-  const betreiberText = `Neue Bepflanzungsanfrage\n\nName: ${name}\nE-Mail: ${email}\nPLZ: ${plz}\nTelefon: ${telefon || '—'}\n\nGartenparameter:\n  Fläche: ${params.gartenflaeche || '—'} m²\n  Licht: ${params.licht || '—'}\n  Boden: ${params.boden || '—'}\n  Stil: ${params.stil || '—'}\n  Farbe: ${params.farbe || '—'}\n  Saison: ${params.saison || '—'}\n\nEmpfohlene Pflanzen:\n${pflanzenListe}\n\nGeschätzte Gesamtkosten: ${kostenText || '—'}\n\nAnmerkungen:\n  ${anmerkungen || '—'}`;
-  const kundenText = `Hallo ${name},\n\nvielen Dank für Ihre Anfrage! Wir haben Ihren Bepflanzungsplan erhalten und leiten ihn an unsere Gärtnerei weiter, die sich mit einem konkreten Angebot für Ihr Pflanzenpaket bei Ihnen meldet.\n\nIhr Bepflanzungsplan umfasst:\n${pflanzenListe}\n\nGeschätzte Gesamtkosten: ${kostenText || 'auf Anfrage'}\n\nFreundliche Grüße\nIhr Staudenplan-Team`;
+über den Bepflanzungsplaner auf staudenplan.de ist eine Anfrage für ein Komplettpaket eingegangen. Können Sie dafür ein Angebot erstellen und direkt auf die Kundin oder den Kunden zugehen? Kontaktdaten, Standort und die gewünschte Pflanzenliste stehen unten.
 
-  if (process.env.EMAIL_USER && process.env.EMAIL_BETREIBER) {
-    // Zwei unabhängige Sends: schlägt die Betreiber-Mail fehl, soll die Kundenbestätigung
-    // trotzdem raus (und umgekehrt). Der Lead liegt ohnehin schon in der DB (/admin/anfragen).
-    try {
-      await transporter.sendMail({ from: process.env.EMAIL_USER, to: process.env.EMAIL_BETREIBER, subject: `Neue Bepflanzungsanfrage von ${name} (PLZ ${plz})`, text: betreiberText });
-    } catch (err) { console.error('E-Mail Fehler (Betreiber):', err.message); }
+Bei Rückfragen genügt eine Antwort auf diese Mail, sie erreicht uns direkt.
+
+────────────────────────────────────────
+
+Name: ${name}
+E-Mail: ${email}
+PLZ: ${plz}
+Telefon: ${telefon || '—'}
+
+Gartenparameter:
+  Fläche: ${params.gartenflaeche || '—'} m²
+  Licht: ${params.licht || '—'}
+  Boden: ${params.boden || '—'}
+  Stil: ${params.stil || '—'}
+  Farbe: ${params.farbe || '—'}
+  Saison: ${params.saison || '—'}
+
+Gewünschte Pflanzen:
+${pflanzenListe}
+
+Anmerkungen:
+  ${anmerkungen || '—'}
+
+────────────────────────────────────────
+
+Viele Grüße
+Bastian Rohrhuber
+Staudenplan.de`;
+
+  const kundenText = `Hallo ${name},
+
+vielen Dank für Ihre Anfrage! Wir haben Ihren Bepflanzungsplan erhalten und an die Staudengärtnerei Gaißmayer weitergeleitet. Sie meldet sich mit einem verbindlichen Angebot für Ihr Pflanzenpaket bei Ihnen.
+
+Ihr Bepflanzungsplan umfasst:
+${pflanzenListe}
+
+Die Preise im Planer sind unsere Schätzung — was Ihr Paket tatsächlich kostet, steht im Angebot der Gärtnerei.
+
+Freundliche Grüße
+Ihr Staudenplan-Team`;
+
+  if (process.env.EMAIL_USER) {
+    // Zeilenumbrüche aus dem Freitext nehmen: nodemailer weist einen Header mit Umbruch ab,
+    // dann ginge gar keine Mail raus und der Lead läge nur noch in der Datenbank.
+    const betreff = `Neue Bepflanzungsanfrage von ${name} (PLZ ${plz})`.replace(/[\r\n]+/g, ' ');
+    // Jeder Empfänger einzeln: fällt die Gärtnerei-Mail aus, sollen Betreiber-Kopie und
+    // Kundenbestätigung trotzdem rausgehen (und umgekehrt).
+    for (const [rolle, ziel] of [['Betreiber', process.env.EMAIL_BETREIBER], ['Gärtnerei', GAERTNEREI_EMAIL]]) {
+      if (!ziel) continue;
+      try {
+        await transporter.sendMail({ from: process.env.EMAIL_USER, to: ziel, subject: betreff, text: anfrageText });
+      } catch (err) { console.error(`E-Mail Fehler (${rolle}):`, err.message); }
+    }
     try {
       await transporter.sendMail({ from: process.env.EMAIL_USER, to: email, subject: 'Ihr Bepflanzungsplan — wir melden uns bald!', text: kundenText });
     } catch (err) { console.error('E-Mail Fehler (Kunde):', err.message); }
@@ -3323,7 +3371,7 @@ app.get('/datenschutz', (req, res) => {
     Ortsstraße 7, 85354 Freising<br>
     E-Mail: <a href="mailto:info@gartenschmiede.de">info@gartenschmiede.de</a></p>
     <h2>3. Erhebung und Speicherung personenbezogener Daten</h2>
-    <p><strong>Bepflanzungsplan-Anfragen:</strong> Wenn Sie über unser Kontaktformular eine Anfrage senden, speichern wir Ihren Namen, Ihre E-Mail-Adresse, Ihre Postleitzahl sowie die von Ihnen eingegebenen Gartenparameter. Diese Daten werden ausschließlich zur Bearbeitung Ihrer Anfrage und zur Erstellung eines Pflanzenangebots verwendet.</p>
+    <p><strong>Bepflanzungsplan-Anfragen:</strong> Wenn Sie über unser Kontaktformular eine Anfrage senden, speichern wir Ihren Namen, Ihre E-Mail-Adresse, Ihre Postleitzahl, Ihre Telefonnummer (sofern angegeben) sowie die von Ihnen eingegebenen Gartenparameter. Diese Daten werden ausschließlich zur Bearbeitung Ihrer Anfrage und zur Erstellung eines Pflanzenangebots verwendet. Damit Ihnen ein verbindliches Angebot gemacht werden kann, leiten wir Ihre Anfrage einschließlich dieser Angaben und der Pflanzenliste an unsere Partnergärtnerei weiter — die Staudengärtnerei Gaißmayer in Illertissen, die das Pflanzenpaket liefert. Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO: Die Weitergabe ist zur Bearbeitung der von Ihnen angeforderten Anfrage erforderlich. Preise aus unserem Planer werden dabei nicht übermittelt.</p>
     <p><strong>Server-Logfiles:</strong> Beim Besuch unserer Website werden automatisch technische Daten (IP-Adresse, Browsertyp, Betriebssystem, Uhrzeit) in Server-Logfiles gespeichert. Diese Daten werden ausschließlich zur technischen Fehleranalyse verwendet und nach 7 Tagen gelöscht.</p>
     <p><strong>KI-Verarbeitung:</strong> Ihre Gartenparameter werden zur Erstellung des Bepflanzungsplans an die OpenAI API übermittelt. Es werden keine personenbezogenen Daten (Name, E-Mail) an OpenAI übertragen.</p>
     <p><strong>Plan per E-Mail:</strong> Wenn Sie sich den Link zu Ihrem Bepflanzungsplan zuschicken lassen, speichern wir Ihre E-Mail-Adresse zusammen mit den Eckdaten des Plans (Fläche, Lichtverhältnisse, Bodenart, Gartenstil, Postleitzahl). Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO — Sie haben diese Zusendung ausdrücklich angefordert. Wir verwenden die Adresse für diesen Zweck und löschen sie auf Wunsch jederzeit.</p>
