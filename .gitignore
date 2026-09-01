@@ -22,3 +22,8 @@ public/og/
 # Lokale Vorschau der Anfrage-Mails (test-mails/*.eml). Enthaelt Kundendaten aus Testlaeufen
 # und hat in einem oeffentlichen Repo nichts verloren; entsteht neu beim naechsten Testlauf.
 test-mails/
+
+# Rohdaten des Gaissmayer-Preisabgleichs. Der Katalog ist deren vollstaendige Preisliste —
+# dieses Repo ist oeffentlich, sie gehoert nicht hinein. Neu holen: scripts/preise-gaissmayer.js --holen
+data/gaissmayer-katalog.json
+data/gaissmayer-ohne-treffer.json
