@@ -174,7 +174,10 @@ for (const [spalte, typ] of [
 // Ziel-URL zentral gepflegt: sobald ein Deep-Link / eine Kooperation existiert, hier ändern.
 const GAISSMAYER_URL = 'https://www.gaissmayer.de/web/shop/';
 // Deeplink in Gaißmayers Produktsuche (verifiziert liefert Treffer). Param-Name aus dem Suchformular.
-const GAISSMAYER_SEARCH = 'https://www.gaissmayer.de/web/shop/suche/produkte?filter%5Bartikel%5D%5Btext_suche%5D%5Bwerte%5D%5B%5D=';
+// Der Schrägstrich hinter "produkte" gehört dazu: ohne ihn antwortet der Shop mit 301 auf
+// dieselbe URL mit Schrägstrich — und zwar auf http://, sodass jeder Kaufklick über einen
+// unverschlüsselten Zwischenschritt lief, bevor HSTS ihn wieder auf https zog.
+const GAISSMAYER_SEARCH = 'https://www.gaissmayer.de/web/shop/suche/produkte/?filter%5Bartikel%5D%5Btext_suche%5D%5Bwerte%5D%5B%5D=';
 // Interner Zähl-Link: leitet auf Gaißmayer weiter und protokolliert den Klick pro Pflanze.
 const goLink = (botanisch) => `/go/gaissmayer?p=${encodeURIComponent(botanisch || '')}`;
 // Nur http(s)- oder relative URLs zulassen (blockt javascript:/data: aus geteilten Plänen).
@@ -5595,11 +5598,17 @@ function loadBeispielPlan(slug) {
     const umbenannt = new Map();
     for (const pf of (plan.pflanzen || [])) {
       try {
-        const akt = db.prepare('SELECT name_deutsch FROM pflanzen WHERE name_botanisch = ?').get(pf.name_botanisch);
+        const akt = db.prepare('SELECT name_deutsch, preis_stueck_eur FROM pflanzen WHERE name_botanisch = ?').get(pf.name_botanisch);
         if (akt && akt.name_deutsch && akt.name_deutsch !== pf.name_deutsch) {
           umbenannt.set(pf.name_deutsch, akt.name_deutsch);
           pf.name_deutsch = akt.name_deutsch;
         }
+        /* Der Preis folgt der Datenbank aus demselben Grund wie der Name: Er ist beim
+         * Erzeugen des Plans eingefroren worden und würde sonst für immer den Stand von
+         * damals zeigen. Nach dem Abgleich mit den Gaißmayer-Listenpreisen stünde auf den
+         * acht Beispielseiten sonst weiter der alte, zu hohe Betrag, während der Planer
+         * daneben schon den neuen nennt. */
+        if (akt && akt.preis_stueck_eur != null) pf.preis_stueck_eur = akt.preis_stueck_eur;
       } catch { /* Anzeige ist kein Grund, die Seite scheitern zu lassen */ }
     }
     if (umbenannt.size && plan.pflanzkalender) {
@@ -6163,7 +6172,16 @@ function renderBeispielPlanSSR(plan, flaeche, grafikOpts, quelle = '') {
   // bis 08/2026 ein blanker Eurobetrag unmittelbar über dem Button „Bei Gaißmayer ansehen",
   // was sich unweigerlich als Preis des verlinkten Angebots liest. Die Zahlen bleiben — für
   // die Budgetplanung sind sie der Sinn der Seite —, aber sie sagen jetzt, was sie sind.
-  // gesamtkosten_geschaetzt kommt je nach Aufrufer in zwei Formaten, und BEIDE müssen stimmen:
+  // Der Kopf rechnet die Summe der Karten, statt gesamtkosten_geschaetzt zu glauben. In den
+  // acht Beispielplänen war das Feld ein eingefrorener Modell-String und wich um bis zu 48 %
+  // von den Preisen der Karten DERSELBEN Seite ab (Naturgarten: 406,50 € im Kopf gegen
+  // 274,50 € in den Karten, Cottage 306,70 gegen 226,20). Zwei Zahlen auf einer Seite, die
+  // dasselbe meinen, müssen aus derselben Quelle kommen — sonst driften sie wieder
+  // auseinander, sobald jemand einen Preis in der DB korrigiert.
+  const summeKarten = pflanzen.reduce((s, p) =>
+    s + (Number(p.preis_stueck_eur) || 0) * (Number(p.stueckzahl) || 1), 0);
+  // Fallback für Pläne ohne Einzelpreise (alte Einträge in geteilte_plaene). Dort kommt
+  // gesamtkosten_geschaetzt in zwei Formaten, und BEIDE müssen stimmen:
   //   /plan/:id   → rohe JS-Zahl aus dem Browser-reduce, oft mit Fließkomma-Rest
   //                 (474.59999999999997 liegt dreimal echt in geteilte_plaene)
   //   /beispiel/… → eingefrorener Modell-String, mal mit, mal ohne Euro-Zeichen
@@ -6174,7 +6192,9 @@ function renderBeispielPlanSSR(plan, flaeche, grafikOpts, quelle = '') {
   // Tausendergruppen aussehen. Also erst der Typ, dann die Zeichenkette.
   const kostenWert = plan.gesamtkosten_geschaetzt;
   let kostenZahl;
-  if (typeof kostenWert === 'number') {
+  if (summeKarten > 0) {
+    kostenZahl = summeKarten;
+  } else if (typeof kostenWert === 'number') {
     kostenZahl = kostenWert;
   } else {
     // Trennzeichen am Rand stammen aus Wörtern, nicht aus der Zahl: "ca. 180" hinterlässt
