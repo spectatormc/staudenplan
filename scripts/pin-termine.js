@@ -80,7 +80,7 @@ for (const p of db.prepare('SELECT name_botanisch, bluehzeit FROM pflanzen').all
  * Das nächste Vorkommen eines Monats ab dem Startdatum, mit Vorlauf. Der Vorlauf ist der Kern
  * der Sache: Wer im Mai ein blühendes Beet sehen will, sucht im April danach.
  */
-function naechstesFenster(monat, vorlaufTage = 21) {
+function naechstesFenster(monat, vorlaufTage = 21, nachlaufTage = 75) {
   for (let jahr = START.getUTCFullYear() - 1; jahr <= START.getUTCFullYear() + 1; jahr++) {
     const ziel = plus(new Date(Date.UTC(jahr, monat - 1, 1, 12)), -vorlaufTage);
     if (ziel >= START) return ziel;
@@ -89,10 +89,16 @@ function naechstesFenster(monat, vorlaufTage = 21) {
      * Sie ein Jahr liegen zu lassen wäre absurd — sie ist heute am besten zu zeigen. Grenze bei
      * gut zwei Monaten nach Blühbeginn, danach ist die Blüte wirklich vorbei. */
     const seither = (START - ziel) / 86400000;
-    if (seither > 0 && seither <= 75) return new Date(START);
+    if (seither > 0 && seither <= nachlaufTage) return new Date(START);
   }
   return START;
 }
+
+/* Ein Monatsraster taugt nur, solange der Monat läuft: „Was im August blüht" am 9. September
+ * ist vorbei, auch wenn einzelne Arten noch blühen. Deshalb Vorlauf plus Monatslänge statt
+ * der 75 Tage der Einzelpflanzen — genau das hätte am 08.09.2026 drei August-Fassungen in den
+ * September gesetzt. */
+const NACHLAUF_MONATSRASTER = 21 + 30;
 
 /*
  * Ratgeber tragen die blütenlose Zeit: November bis Februar bekommt aus der Pflanzentabelle
@@ -131,7 +137,7 @@ function wunsch(e) {
     const g = String(e.guid);
     if (winterWunsch.has(g)) return winterWunsch.get(g);
     const m = Number((g.match(/^saison-(\d+)/) || [])[1]);     // saison-9 und saison-9-sonne
-    return m ? naechstesFenster(m, 21) : null;
+    return m ? naechstesFenster(m, 21, NACHLAUF_MONATSRASTER) : null;
   }
   if (e.typ === 'beetplan') {
     // Planungszeit Februar bis Mai, über die vier Monate gestreut
