@@ -5,7 +5,8 @@
  *   node scripts/pin-saison.js                          aktueller Monat
  *   node scripts/pin-saison.js --monat 10 --standort sonne [ziel.jpg]
  *   node scripts/pin-saison.js --monat 12               Winterfassung
- *   node scripts/pin-saison.js --liste                  nur anzeigen
+ *   node scripts/pin-saison.js --thema graeser          Winterfassung zu einer Blattform
+ *   node scripts/pin-saison.js --liste                  alle Pins dieser Sorte zeigen, nichts erzeugen
  *
  * WARUM ZWEI FASSUNGEN — und warum das VOR dem Bauen geprüft gehört:
  * Ein reiner „Was blüht jetzt"-Pin fällt vier Monate im Jahr aus. Gezählt über alle
@@ -19,6 +20,15 @@
  * Deshalb übernimmt von November bis Februar der `winteraspekt`: 131 Pflanzen mit
  * dekorativem Samenstand, Gräserstruktur, immergrünem oder wintergrünem Laub. Das ist
  * gärtnerisch der richtige Inhalt für die Zeit — im Winterbeet zählt Struktur, nicht Blüte.
+ *
+ * WARUM MEHRERE PINS JE MONAT (seit 08.09.2026): Die Sechser-Raster sind mit Abstand die
+ * reichweitenstärksten Pins des Kontos — drei Winterbeet-Raster hatten nach drei Wochen
+ * 1000, 727 und 709 Aufrufe, die Einzelpflanzen einen Bruchteil davon. Es gab aber nur zwölf.
+ * alleSaisonPins() baut deshalb je Blühmonat zusätzlich eine Fassung je Standort und für den
+ * Winter je Blattform (Samenstände, Gräser, Immergrün, wintergrüne Rosetten). Zwei Regeln
+ * halten das ehrlich: Eine Fassung bevorzugt Pflanzen, die in den Pins derselben Gruppe noch
+ * nicht vorkommen (`meiden`), und wird verworfen, wenn sie trotzdem vier der sechs Kacheln
+ * mit einem schon gebauten Pin teilt — Pinterest wertet Fast-Dubletten als Spam.
  *
  * Bewusst KEINE „aktuellen Trends": Ein unbeaufsichtigtes Skript, das auf Trends reagiert
  * und dazu Pflanzenaussagen im Namen der Gartenschmiede veröffentlicht, lässt sich nicht
@@ -50,6 +60,62 @@ const WINTER_WERT = {
   'struktur':             'Struktur im Winterbeet',
 };
 
+/*
+ * Winterthemen: ein Pin je Blattform statt „irgendwas mit Winteraspekt". `werte` sind die
+ * Schlüssel aus WINTER_WERT. „halbimmergrün" (13 Pflanzen) trägt kein eigenes Thema — unter der
+ * Überschrift „immergrün" wäre ein Laub, das nur in milden Wintern bleibt, eine Übertreibung.
+ *
+ * Die Sätze stehen hier fest und gelten für Bild, Pin-Beschreibung UND Landeseite — eine
+ * Quelle, damit die drei nicht auseinanderlaufen. Keine Sprachmodell-Texte (siehe pin-text.js).
+ */
+const THEMA = {
+  samenstaende: {
+    werte: ['samenstand dekorativ'],
+    titel: 'Samenstände im Winterbeet',
+    unter: ort => `6 Stauden${ort}, deren Samenstände stehen bleiben`,
+    hinweis: 'Samenstände erst im Frühjahr zurückschneiden: Sie halten den Winter über Struktur und bieten Insekten Quartier.',
+    pinTitel: ort => [`Samenstände im Winterbeet: 6 Stauden${ort}, die stehen bleiben dürfen`,
+                      `Winterbeet: 6 Stauden${ort} mit dekorativen Samenständen`],
+    satz: 'sechs Stauden, deren Samenstände den Winter über stehen bleiben.',
+  },
+  graeser: {
+    werte: ['gräser struktur'],
+    titel: 'Gräser im Winterbeet',
+    unter: ort => `6 Gräser${ort}, die im Winter Struktur halten`,
+    hinweis: 'Gräser erst im Frühjahr zurückschneiden: Die Halme halten den Winter über Struktur und schützen die Pflanze vor Nässe und Frost.',
+    pinTitel: ort => [`Gräser im Winterbeet: 6 Ziergräser${ort}, die im Winter Struktur halten`,
+                      `Winterbeet: 6 Gräser${ort} mit Winterstruktur`],
+    satz: 'sechs Gräser, die den Winter über stehen bleiben.',
+  },
+  immergruen: {
+    werte: ['blätter immergrün'],
+    titel: 'Immergrün im Winterbeet',
+    unter: ort => `6 Stauden${ort}, die ihr Laub im Winter behalten`,
+    hinweis: 'Immergrüne Stauden nicht im Herbst schneiden — im Frühjahr nur die abgestorbenen Blätter entfernen.',
+    pinTitel: ort => [`Immergrüne Stauden fürs Winterbeet: 6 Arten${ort}, die ihr Laub behalten`,
+                      `Winterbeet: 6 immergrüne Stauden${ort}`],
+    satz: 'sechs Stauden, die ihr Laub im Winter behalten.',
+  },
+  wintergruen: {
+    werte: ['rosetten wintergrün'],
+    titel: 'Wintergrüne Rosetten',
+    unter: ort => `6 Stauden${ort}, die im Winter grün bleiben`,
+    hinweis: 'Wintergrüne Rosetten nicht abschneiden: Sie bleiben den Winter über grün und werden im Frühjahr vom neuen Laub abgelöst.',
+    pinTitel: ort => [`Wintergrüne Stauden: 6 Arten${ort}, die im Winter grün bleiben`,
+                      `Winterbeet: 6 Stauden${ort} mit wintergrünen Rosetten`],
+    satz: 'sechs Stauden mit wintergrünen Blattrosetten.',
+  },
+};
+
+const STANDORTE = ['sonne', 'halbschatten', 'schatten'];
+const ORT     = { sonne: 'für die Sonne', halbschatten: 'für den Halbschatten', schatten: 'für den Schatten' };
+const ORT_IN  = { sonne: 'in der Sonne',  halbschatten: 'im Halbschatten',      schatten: 'im Schatten' };
+const MON_SLUG = ['januar', 'februar', 'maerz', 'april', 'mai', 'juni', 'juli', 'august',
+                  'september', 'oktober', 'november', 'dezember'];
+
+// Ab so vielen gemeinsamen Kacheln gilt eine Fassung als Dublette eines anderen Pins.
+const DOPPEL_AB = 4;
+
 function ladePflanzen(db) {
   return db.prepare(`SELECT id, name_deutsch, name_botanisch, farbe, licht, feuchtigkeit, bluehzeit,
                             hoehe_cm_max, winteraspekt, bienen_freundlich, heimisch, winterhart_zone, lebensdauer,
@@ -62,19 +128,74 @@ function ladePflanzen(db) {
 }
 
 /*
+ * Adresse der Landeseite. Seit 08.09.2026 zeigt jeder Saison-Pin auf eine eigene Seite mit genau
+ * seinen sechs Pflanzen (stauden-server.js: /blueht-im/… und /winterbeet/…) statt auf die
+ * allgemeine Planer-Anleitung. Wer „Struktur im Winterbeet" antippt, will die sechs Stauden
+ * sehen — und bekam sieben Schritte zur Beetplanung.
+ */
+function saisonPfad(s) {
+  const st = s.standort ? `-${s.standort}` : '';
+  return s.winter
+    ? `/winterbeet/${s.thema || MON_SLUG[s.monat - 1]}${st}`
+    : `/blueht-im/${MON_SLUG[s.monat - 1]}${st}`;
+}
+
+/*
+ * Kennung und Dateiname. Die zwölf Grundpins behalten ihre alten Namen (saison-9, saison-09.jpg):
+ * Die Kennung ist die guid im Feed, und was Pinterest einmal kennt, darf nicht umbenannt werden.
+ */
+function saisonKennung(s) {
+  const st = s.standort ? `-${s.standort}` : '';
+  if (s.thema) return { guid: `saison-winter-${s.thema}${st}`, datei: `saison-winter-${s.thema}${st}.jpg` };
+  return { guid: `saison-${s.monat}${st}`, datei: `saison-${String(s.monat).padStart(2, '0')}${st}.jpg` };
+}
+
+/*
+ * Überschrift, Unterzeile und Einordnungssatz — dieselben Worte auf dem Bild, im Feed-Text und
+ * auf der Landeseite. Das Bild zeigt die Pflanzen blühend, denn andere Bilder gibt es nicht;
+ * deshalb sagt die Winter-Unterzeile, was die Pflanze NACH der Blüte tut, nicht „ohne Blüte".
+ */
+function saisonKopf(s) {
+  const th = s.thema ? THEMA[s.thema] : null;
+  const ort = s.standort ? ` ${ORT[s.standort]}` : '';
+  const monat = MON_NAME[s.monat - 1];
+  if (th) return { titel: th.titel, unter: th.unter(ort), hinweis: th.hinweis };
+  if (s.winter) return {
+    titel: 'Struktur im Winterbeet',
+    unter: `6 Stauden${ort}, die nach der Blüte Struktur halten`,
+    hinweis: 'Samenstände und Gräser erst im Frühjahr zurückschneiden: Sie halten den Winter über Struktur und bieten Insekten Quartier.',
+  };
+  return {
+    titel: `Was im ${monat} blüht`,
+    unter: `6 Stauden ${s.standort ? ORT[s.standort] : 'für Beet und Rabatte'}`,
+    hinweis: s.standort
+      ? `Alle sechs blühen im ${monat} und gedeihen ${ORT_IN[s.standort]} — Höhe und Standort stehen dabei, damit sie sich einplanen lassen.`
+      : `Alle sechs blühen im ${monat} — Höhe und Standort stehen dabei, damit sie sich einplanen lassen.`,
+  };
+}
+
+/*
  * Stellt die Auswahl für einen Monat zusammen. `versatz` verschiebt die Auswahl, damit
  * derselbe Monat im nächsten Jahr — oder ein zweiter Pin im selben Monat — andere Pflanzen
  * zeigt, ohne dass dafür ein Zufallsgenerator nötig wäre.
+ *
+ * `thema` schränkt die Winterfassung auf eine Blattform ein (Schlüssel von THEMA).
+ * `meiden` (Set aus Pflanzen-IDs) rückt Pflanzen ans Ende der Rangfolge, ohne sie
+ * auszuschließen: Eine Standortfassung soll andere Arten zeigen als der Grundpin des Monats,
+ * aber lieber eine Wiederholung als ein leeres Feld.
  */
-function saisonAuswahl(pflanzen, { monat, standort, versatz = 0 } = {}) {
+function saisonAuswahl(pflanzen, { monat, standort, versatz = 0, thema = null, meiden = null } = {}) {
   const winter = monat >= 11 || monat <= 2;
+  const th = thema ? THEMA[thema] : null;
+  if (thema && !th) throw new Error(`Unbekanntes Winterthema: ${thema}`);
+  if (thema && !winter) throw new Error(`Thema ${thema} gibt es nur in der Winterfassung, nicht für Monat ${monat}`);
 
   let kandidaten;
   if (winter) {
     kandidaten = pflanzen
-      .map(p => ({ p, aspekt: WINTER_WERT[String(p.winteraspekt || '').trim().toLowerCase()] }))
-      .filter(x => x.aspekt)
-      .map(x => ({ ...x, zeile2: x.aspekt }));
+      .map(p => { const wert = String(p.winteraspekt || '').trim().toLowerCase(); return { p, wert, aspekt: WINTER_WERT[wert] }; })
+      .filter(x => x.aspekt && (!th || th.werte.includes(x.wert)))
+      .map(x => ({ p: x.p, zeile2: x.aspekt }));
   } else {
     kandidaten = pflanzen
       .filter(p => L.bluehtIm(p.bluehzeit, monat))
@@ -96,19 +217,26 @@ function saisonAuswahl(pflanzen, { monat, standort, versatz = 0 } = {}) {
     return { ...x, punkte };
   }).sort((a, b) => b.punkte - a.punkte || a.p.id - b.p.id);
 
+  // Gemiedene ans Ende, in ihrer bisherigen Reihenfolge — stabil, damit derselbe Aufruf
+  // dieselbe Auswahl ergibt.
+  const rangfolge = meiden && meiden.size
+    ? bewertet.filter(x => !meiden.has(x.p.id)).concat(bewertet.filter(x => meiden.has(x.p.id)))
+    : bewertet;
+
   // Im Winter hängt die Auswahl an keinem Monat — ohne Verschiebung zeigten November,
   // Dezember, Januar und Februar viermal hintereinander exakt dieselben sechs Pflanzen.
-  // Aus dem Monat abgeleitet statt zufällig, damit ein Pin reproduzierbar bleibt.
-  const versch = (versatz || (winter ? (monat * 11) % bewertet.length : 0)) % bewertet.length;
+  // Aus dem Monat abgeleitet statt zufällig, damit ein Pin reproduzierbar bleibt. Die
+  // Themenfassungen brauchen das nicht: Sie unterscheiden sich durch die Blattform.
+  const versch = (versatz || (winter && !thema ? (monat * 11) % rangfolge.length : 0)) % rangfolge.length;
 
   // Sechs auswählen, aber keine Gattung doppelt — sonst stehen sechs Storchschnäbel im Raster.
   // Und höchstens zwei Gräser: Unter „Was im August blüht" standen vier davon. Botanisch
   // richtig, aber wer die Überschrift liest, erwartet Blüten. Im Winterbeet sind Gräser
-  // dagegen der Punkt, dort sind drei erlaubt.
-  const grasGrenze = winter ? 3 : 2;
+  // dagegen der Punkt, dort sind drei erlaubt — und im Gräser-Thema natürlich alle sechs.
+  const grasGrenze = thema === 'graeser' ? RASTER : (winter ? 3 : 2);
   const gewaehlt = [], gattungen = new Set();
   let graeser = 0;
-  const reihe = bewertet.slice(versch).concat(bewertet.slice(0, versch));
+  const reihe = rangfolge.slice(versch).concat(rangfolge.slice(0, versch));
   for (const durchgang of [0, 1]) {                    // zweiter Durchgang hebt die Grenze auf
     for (const x of reihe) {
       if (gewaehlt.length === RASTER) break;
@@ -124,27 +252,108 @@ function saisonAuswahl(pflanzen, { monat, standort, versatz = 0 } = {}) {
   }
   if (gewaehlt.length < RASTER) return null;
 
-  return { monat, winter, standort, auswahl: gewaehlt };
+  return { monat, winter, standort: standort || null, thema: thema || null, auswahl: gewaehlt };
+}
+
+/*
+ * Alle Saison-Pins in fester Reihenfolge: zwölf Grundpins, dann je Blühmonat eine Fassung je
+ * Standort, dann die Winterthemen mit ihren Standortfassungen. Fest, weil die Kennungen die
+ * guids im Feed sind und sich zwischen zwei Läufen nicht ändern dürfen.
+ *
+ * Verworfen wird, was keine sechs Gattungen zusammenbringt oder vier Kacheln mit einem Pin
+ * derselben Gruppe teilt (Gruppe = ein Blühmonat bzw. der ganze Winter). Verworfenes wird
+ * zurückgegeben, nicht verschluckt — ein stiller Ausfall sähe im Feed genauso aus wie
+ * „gab es nie".
+ *
+ * `fest` (guid → [{id, zeile2}]) sind die Pflanzen der bereits VERÖFFENTLICHTEN Pins aus der
+ * alten Liste. Für die gilt: nicht neu berechnen, sondern aus diesen IDs wieder aufbauen, und
+ * die Dublettenregel darf sie nicht mehr verwerfen. Der Pin ist draußen, sein Bild liegt bei
+ * Pinterest und sein Link zeigt auf die Seite mit genau diesen sechs — kommt ein neues Bild in
+ * den Pool oder ändert sich eine Winterhärte, darf die Seite nicht plötzlich andere zeigen.
+ * Fehlt eine der sechs inzwischen im Pool, bleibt die Neuberechnung; pins-erzeugen.js hält
+ * dann die alten IDs für die Seite fest und baut kein neues Bild.
+ */
+function alleSaisonPins(pool, { fest = new Map() } = {}) {
+  const pins = [], verworfen = [], hinweise = [];
+  const nachId = new Map(pool.map(p => [p.id, p]));
+  const ids = s => s.auswahl.map(x => x.p.id);
+  const gemieden = gruppe => new Set(gruppe.flatMap(e => e.ids));
+
+  const hole = (opts) => {
+    const s = saisonAuswahl(pool, opts);
+    const grund = { monat: opts.monat, winter: opts.monat >= 11 || opts.monat <= 2, standort: opts.standort || null, thema: opts.thema || null };
+    const alte = fest.get(saisonKennung(grund).guid);
+    if (!alte) return s;
+    const auswahl = alte.map(x => nachId.has(Number(x.id)) ? { p: nachId.get(Number(x.id)), zeile2: String(x.zeile2 || '') } : null);
+    if (auswahl.length >= RASTER && auswahl.every(Boolean)) return { ...grund, auswahl, veroeffentlicht: true };
+    return s ? { ...s, veroeffentlicht: true } : null;
+  };
+
+  const nimm = (s, gruppe, pruefen = true) => {
+    const { guid, datei } = saisonKennung(s);
+    const meine = ids(s);
+    const doppel = pruefen && gruppe.find(g => meine.filter(id => g.ids.includes(id)).length >= DOPPEL_AB);
+    if (doppel && s.veroeffentlicht) {
+      hinweise.push({ guid, grund: `veröffentlicht, teilt ${DOPPEL_AB} oder mehr Pflanzen mit ${doppel.guid} — bleibt trotzdem` });
+    } else if (doppel) {
+      verworfen.push({ guid, grund: `teilt ${DOPPEL_AB} oder mehr Pflanzen mit ${doppel.guid}` });
+      return null;
+    }
+    const eintrag = { guid, datei, s, ids: meine };
+    pins.push(eintrag); gruppe.push(eintrag);
+    return eintrag;
+  };
+  const fehlt = (teil, grund) => verworfen.push({ guid: saisonKennung(teil).guid, grund });
+
+  // Grundpins: die bestehenden zwölf, ohne Meiden und ohne Dublettenprüfung — sie sind
+  // veröffentlicht und bleiben, wie sie sind.
+  const gruppen = {};
+  const winterGruppe = [];
+  for (let m = 1; m <= 12; m++) {
+    const s = hole({ monat: m });
+    if (!s) { fehlt({ monat: m }, 'zu wenige Kandidaten'); continue; }
+    gruppen[m] = s.winter ? winterGruppe : [];
+    nimm(s, gruppen[m], false);
+  }
+
+  // Standortfassungen der Blühmonate. Winter hat Themen statt Standorte.
+  for (let m = 3; m <= 10; m++) {
+    const gruppe = gruppen[m];
+    if (!gruppe) continue;
+    for (const standort of STANDORTE) {
+      const s = hole({ monat: m, standort, meiden: gemieden(gruppe) });
+      if (!s) { fehlt({ monat: m, standort }, 'zu wenige Kandidaten'); continue; }
+      nimm(s, gruppe);
+    }
+  }
+
+  // Winterthemen, je Thema zuerst die allgemeine Fassung, dann die Standorte.
+  for (const thema of Object.keys(THEMA)) {
+    const s = hole({ monat: 11, thema, meiden: gemieden(winterGruppe) });
+    if (!s) { fehlt({ monat: 11, thema }, 'zu wenige Kandidaten'); continue; }
+    if (!nimm(s, winterGruppe)) continue;              // Dublette des Grundpins: dann auch keine Standorte
+    for (const standort of STANDORTE) {
+      const sv = hole({ monat: 11, thema, standort, meiden: gemieden(winterGruppe) });
+      if (!sv) { fehlt({ monat: 11, thema, standort }, 'zu wenige Kandidaten'); continue; }
+      nimm(sv, winterGruppe);
+    }
+  }
+
+  return { pins, verworfen, hinweise };
 }
 
 function saisonPin(s, ziel) {
   const tmp = [];
   const args = ['-size', `${B}x${H}`, `xc:${GRUEN}`, '-gravity', 'northwest'];
   const innen = B - 120;
+  const kopf = saisonKopf(s);
 
-  const titel = s.winter ? 'Struktur im Winterbeet' : `Was im ${MON_NAME[s.monat - 1]} blüht`;
-  const titelGr = L.passendeGroesse(titel, FONT_B, 58, 38, innen);
+  const titelGr = L.passendeGroesse(kopf.titel, FONT_B, 58, 38, innen);
   args.push('-font', FONT_B, '-pointsize', String(titelGr), '-fill', 'white');
-  args.push('-annotate', `+60+68`, titel);
+  args.push('-annotate', `+60+68`, kopf.titel);
 
-  const ort = s.standort ? ({ sonne:'für die Sonne', halbschatten:'für den Halbschatten', schatten:'für den Schatten' })[s.standort] : 'für Beet und Rabatte';
-  // „…nach der Blüte…" statt „…ohne Blüte…": Die Bilder zeigen die Pflanzen blühend, denn
-  // andere gibt es nicht. Unter der Überschrift „Struktur im Winterbeet" sahen sechs
-  // Sommerfotos nach Versehen aus. So beschreibt der Untertitel, was die Pflanze DANACH
-  // tut — und das Bild zeigt genau die Pflanze, um die es geht.
-  const unter = s.winter ? '6 Stauden, die nach der Blüte Struktur halten' : `6 Stauden ${ort}`;
-  args.push('-font', FONT, '-pointsize', String(L.passendeGroesse(unter, FONT, 32, 22, innen)), '-fill', '#95d5b2');
-  args.push('-annotate', `+60+${68 + titelGr + 22}`, unter);
+  args.push('-font', FONT, '-pointsize', String(L.passendeGroesse(kopf.unter, FONT, 32, 22, innen)), '-fill', '#95d5b2');
+  args.push('-annotate', `+60+${68 + titelGr + 22}`, kopf.unter);
 
   // Bildraster, zwei Spalten. Die Namen liegen als Leiste auf dem Bild statt darunter —
   // so bleibt bei sechs Pflanzen genug Platz für die Bilder selbst.
@@ -188,11 +397,8 @@ function saisonPin(s, ziel) {
 
   // Ein Satz, der die Auswahl einordnet. Im Winter ist der Pflegehinweis der eigentliche
   // Nutzen — wer die Samenstände im Herbst abschneidet, hat den ganzen Effekt nicht.
-  const hinweis = s.winter
-    ? 'Samenstände und Gräser erst im Frühjahr zurückschneiden: Sie halten den Winter über Struktur und bieten Insekten Quartier.'
-    : `Alle sechs blühen im ${MON_NAME[s.monat - 1]} — Höhe und Standort stehen dabei, damit sie sich einplanen lassen.`;
   args.push('-font', FONT, '-pointsize', '27', '-fill', '#b7e4c7');
-  for (const z of L.umbrechenBreit(hinweis, FONT, 27, innen)) { args.push('-annotate', `+60+${y}`, z); y += 38; }
+  for (const z of L.umbrechenBreit(kopf.hinweis, FONT, 27, innen)) { args.push('-annotate', `+60+${y}`, z); y += 38; }
 
   args.push('-font', FONT_B, '-pointsize', '31', '-fill', '#95d5b2');
   args.push('-annotate', `+60+${H - 120}`, 'Eigenen Beetplan erstellen — kostenlos');
@@ -212,24 +418,26 @@ if (require.main === module) {
   const pflanzen = ladePflanzen(db);
 
   if (argv.includes('--liste')) {
-    for (let m = 1; m <= 12; m++) {
-      const s = saisonAuswahl(pflanzen, { monat: m });
-      console.log(String(MON_NAME[m - 1]).padEnd(10) + (s
-        ? (s.winter ? '[Winter]  ' : '[Blüte]   ') + s.auswahl.map(x => x.p.name_deutsch).join(', ')
-        : 'ZU WENIGE KANDIDATEN'));
+    const { pins, verworfen } = alleSaisonPins(pflanzen);
+    for (const { guid, s } of pins) {
+      console.log(guid.padEnd(34) + (s.winter ? '[Winter] ' : '[Blüte]  ') + saisonPfad(s).padEnd(34)
+        + s.auswahl.map(x => x.p.name_deutsch).join(', '));
     }
+    console.log(`\n${pins.length} Pins`);
+    for (const v of verworfen) console.log(`  verworfen: ${v.guid} — ${v.grund}`);
     process.exit(0);
   }
 
-  const monat = Number(opt('monat')) || (new Date().getMonth() + 1);
-  const s = saisonAuswahl(pflanzen, { monat, standort: opt('standort'), versatz: Number(opt('versatz')) || 0 });
+  const thema = opt('thema');
+  const monat = Number(opt('monat')) || (thema ? 11 : new Date().getMonth() + 1);
+  const s = saisonAuswahl(pflanzen, { monat, standort: opt('standort'), versatz: Number(opt('versatz')) || 0, thema });
   if (!s) {
-    console.error(`zu wenige Kandidaten für ${MON_NAME[monat - 1]}${opt('standort') ? ' / ' + opt('standort') : ''}`);
+    console.error(`zu wenige Kandidaten für ${thema || MON_NAME[monat - 1]}${opt('standort') ? ' / ' + opt('standort') : ''}`);
     process.exit(1);
   }
-  const ziel = argv.find(a => a.endsWith('.jpg')) || `/tmp/pin-saison-${monat}${opt('standort') ? '-' + opt('standort') : ''}.jpg`;
+  const ziel = argv.find(a => a.endsWith('.jpg')) || `/tmp/${saisonKennung(s).datei}`;
   saisonPin(s, ziel);
   console.log('erzeugt:', ziel, '·', s.winter ? 'Winterfassung' : 'Blühfassung', '·', s.auswahl.map(x => x.p.name_deutsch).join(', '));
 }
 
-module.exports = { ladePflanzen, saisonAuswahl, saisonPin };
+module.exports = { ladePflanzen, saisonAuswahl, saisonPin, alleSaisonPins, saisonPfad, saisonKennung, saisonKopf, THEMA, ORT };

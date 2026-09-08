@@ -1935,24 +1935,6 @@
   }
   function jsArg(s) { return escapeHtml(JSON.stringify(s == null ? '' : String(s))); }
 
-  // ── URL-Parameter: Pflanze aus Lexikon vorauswählen ───────────────────────
-  (function checkUrlPflanze() {
-    const p = new URLSearchParams(window.location.search);
-    const botanisch = p.get('pflanze');
-    const deutsch   = p.get('pname');
-    if (!botanisch || !deutsch) return;
-    wishlist.push({ name_deutsch: deutsch, name_botanisch: botanisch });
-    formData.lieblingspflanzen = wishlist;
-    // Toast-Hinweis anzeigen
-    const toast = document.createElement('div');
-    toast.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1b4332;color:#fff;padding:13px 24px;border-radius:50px;font-size:.9rem;font-weight:600;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,.3);display:flex;gap:10px;align-items:center';
-    toast.innerHTML = `<span style="font-size:1.2rem">🌿</span> <strong>${escapeHtml(deutsch)}</strong> wurde zur Wunschliste hinzugefügt`;
-    document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 4000);
-    saveWishlist();
-    history.replaceState({}, '', '/');
-  })();
-
   // CTA beim Seitenload anzeigen falls Wunschliste vorhanden
   document.addEventListener('DOMContentLoaded', updateHeroWishlistCTA);
 
@@ -2466,6 +2448,33 @@
     formData.lieblingspflanzen = wishlist;
     updateHeroWishlistCTA();
   }
+
+  // ── URL-Parameter: Pflanzen vorauswählen ──────────────────────────────────
+  // /?pflanze=<botanisch>&pname=<deutsch>, beliebig oft paarweise — die Saison-Seiten
+  // (/blueht-im, /winterbeet) übergeben so alle sechs auf einmal. Steht hier UNTER der
+  // Wunschliste, nicht darüber: Bis zum 08.09.2026 lief dieser Block vor `let wishlist`
+  // und hätte bei jedem Aufruf mit Parametern mit einem ReferenceError das ganze Skript
+  // abgebrochen. Aufgefallen ist das nie, weil nichts auf die Parameter verlinkte.
+  (function checkUrlPflanzen() {
+    const p = new URLSearchParams(window.location.search);
+    const botanisch = p.getAll('pflanze'), deutsch = p.getAll('pname');
+    if (!botanisch.length || botanisch.length !== deutsch.length) return;
+    let neu = 0;
+    botanisch.forEach((b, i) => {
+      const bot = String(b || '').trim().slice(0, 120), de = String(deutsch[i] || '').trim().slice(0, 120);
+      if (!bot || !de || wishlist.some(w => w.name_botanisch === bot)) return;
+      wishlist.push({ name_deutsch: de, name_botanisch: bot });
+      neu++;
+    });
+    history.replaceState({}, '', '/');
+    if (!neu) return;
+    const toast = document.createElement('div');
+    toast.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1b4332;color:#fff;padding:13px 24px;border-radius:50px;font-size:.9rem;font-weight:600;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,.3);display:flex;gap:10px;align-items:center';
+    toast.innerHTML = `<span style="font-size:1.2rem">🌿</span> <strong>${neu === 1 ? escapeHtml(wishlist[wishlist.length - 1].name_deutsch) : neu + ' Stauden'}</strong> ${neu === 1 ? 'wurde' : 'wurden'} zur Wunschliste hinzugefügt`;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 4000);
+    saveWishlist();
+  })();
 
   function updateHeroWishlistCTA() {
     const cta = document.getElementById('hero-wl-cta');

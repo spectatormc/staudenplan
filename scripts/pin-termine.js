@@ -7,6 +7,7 @@
  *   node scripts/pin-termine.js --ab 2026-08-19        Startdatum (Vorgabe: morgen)
  *   node scripts/pin-termine.js --neu                  auch bereits vergebene Termine neu setzen
  *   node scripts/pin-termine.js --startschub 3         je Pinnwand N Pins auf den Starttag ziehen
+ *   node scripts/pin-termine.js --termin saison-10=2026-09-09   einen Termin ausdrücklich setzen
  *
  * ── WARUM ÜBERHAUPT EIN TERMINPLAN ───────────────────────────────────────────
  * Pinterests RSS-Anschluss veröffentlicht bis zu 200 Pins am Tag, älteste zuerst. Ein Feed mit
@@ -114,10 +115,22 @@ const ratgeberWunsch = new Map();
   });
 }
 
+/*
+ * Winterthemen (seit 08.09.2026, Kennung saison-winter-<thema>[-<standort>]): reihum auf die
+ * Fenster für November und Dezember, nicht auf alle vier Wintermonate. Die Winterbeet-Raster
+ * sind die reichweitenstärksten Pins des Kontos, und „Winterbeet" wird im Oktober und
+ * November gesucht — im Februar sucht das niemand mehr.
+ */
+const winterWunsch = new Map();
+liste.filter(x => x.typ === 'saison' && /^saison-winter-/.test(String(x.guid))).map(x => x.guid).sort()
+  .forEach((guid, i) => winterWunsch.set(guid, naechstesFenster([11, 12][i % 2], 21)));
+
 // Wunschdatum je Pin. null heißt „egal, verteile mich".
 function wunsch(e) {
   if (e.typ === 'saison') {
-    const m = Number(String(e.guid).replace('saison-', ''));
+    const g = String(e.guid);
+    if (winterWunsch.has(g)) return winterWunsch.get(g);
+    const m = Number((g.match(/^saison-(\d+)/) || [])[1]);     // saison-9 und saison-9-sonne
     return m ? naechstesFenster(m, 21) : null;
   }
   if (e.typ === 'beetplan') {
@@ -148,19 +161,44 @@ function hash(s) {
 const belegt = new Map();                       // 'YYYY-MM-DD' -> Anzahl
 const vergeben = [];
 
+/*
+ * Einzelnen Termin setzen, auch einen schon vergebenen:  --termin saison-10=2026-09-09
+ * Der Regelfall bleibt „einmal vergeben, bleibt vergeben"; das hier ist der ausdrückliche
+ * Eingriff des Betreibers — etwa um einen Pin vorzuziehen, dessen Vorlauf schon verpasst ist.
+ * Mehrfach angebbar.
+ */
+const TERMINE = argv
+  .map((a, i) => a.startsWith('--termin=') ? a.slice('--termin='.length) : argv[i - 1] === '--termin' ? a : null)
+  .filter(Boolean);
+for (const angabe of TERMINE) {
+  const [guid, datum] = angabe.split('=');
+  const e = liste.find(x => x.guid === guid);
+  if (!e) { console.error(`--termin: Pin ${guid} gibt es nicht.`); process.exit(1); }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(datum || '')) { console.error(`--termin: ${angabe} — Datum als JJJJ-MM-TT angeben.`); process.exit(1); }
+  console.log(`--termin: ${guid} ${e.geplant_am ? `von ${e.geplant_am} ` : ''}auf ${datum}`);
+  e.geplant_am = datum;
+}
+
 for (const e of liste) {
   if (e.geplant_am && !NEU) belegt.set(e.geplant_am, (belegt.get(e.geplant_am) || 0) + 1);
 }
 
-function freierTag(ab, maxSuche = 400) {
+function freierTag(ab, grenze = PRO_TAG, maxSuche = 400) {
   let d = ab < START ? new Date(START) : new Date(ab);
   for (let i = 0; i < maxSuche; i++) {
     const t = tag(d);
-    if ((belegt.get(t) || 0) < PRO_TAG) return t;
+    if ((belegt.get(t) || 0) < grenze) return t;
     d = plus(d, 1);
   }
   return tag(d);
 }
+
+/*
+ * Saison-Pins dürfen als Vierter auf ihren Wunschtag. Ohne das landete „Was im Oktober blüht"
+ * am 03.10. statt am 10.09.: Der September war mit Einzelpflanzen voll, und ausgerechnet die
+ * Sorte mit der größten Reichweite rückte als Letzte nach — hinter ihren eigenen Monatsanfang.
+ */
+const grenzeFuer = e => e.typ === 'saison' ? PRO_TAG + 1 : PRO_TAG;
 
 const offen = liste.filter(e => NEU || !e.geplant_am);
 const mitWunsch = [], ohneWunsch = [];
@@ -169,7 +207,7 @@ for (const e of offen) (wunsch(e) ? mitWunsch : ohneWunsch).push(e);
 // Zuerst die terminierten, nach Wunschdatum
 mitWunsch.sort((a, b) => wunsch(a) - wunsch(b));
 for (const e of mitWunsch) {
-  const t = freierTag(wunsch(e));
+  const t = freierTag(wunsch(e), grenzeFuer(e));
   e.geplant_am = t;
   belegt.set(t, (belegt.get(t) || 0) + 1);
   vergeben.push(e);
@@ -207,7 +245,8 @@ for (const e of ohneWunsch) {
  * Genommen wird je Pinnwand das, was ohnehin als Naechstes drankaeme. Der Terminplan wird damit
  * nicht durcheinandergebracht, nur sein Anfang zusammengezogen.
  */
-const SCHUB = Number(wert('startschub')) || 3;
+// „--startschub 0" muss 0 bleiben — mit `Number(x) || 3` wurde daraus stillschweigend 3.
+const SCHUB = wert('startschub') == null ? 3 : (Number(wert('startschub')) || 0);
 if (SCHUB > 0) {
   const jeBrett = {};
   for (const e of liste) (jeBrett[e.board] = jeBrett[e.board] || []).push(e);

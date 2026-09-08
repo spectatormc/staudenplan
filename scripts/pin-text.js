@@ -20,6 +20,7 @@
  * „Staudenbeet", „Schattenbeet"), in ganzen Sätzen statt als Schlagwortliste.
  */
 const L = require('./pin-layout');
+const saison = require('./pin-saison');   // THEMA und saisonPfad: eine Quelle für Bild, Text und Seite
 
 const BASIS = 'https://www.staudenplan.de';
 const HERKUNFT = '?utm_source=pinterest&utm_medium=pin';
@@ -42,7 +43,6 @@ const slugify = s => String(s).toLowerCase()
 const wahl = (liste, zahl) => liste[Math.abs(Math.round(zahl)) % liste.length];
 
 const LICHT_ORT = { sonne: 'sonnige Beete', halbschatten: 'den Halbschatten', schatten: 'schattige Ecken' };
-const LICHT_SEITE = { sonne: '/stauden-fuer-sonne', halbschatten: '/staudenbeet-planen', schatten: '/stauden-fuer-schatten' };
 // Die Standortwerte stehen kleingeschrieben in der Datenbank. Ungefiltert stand im Text
 // „für schatten" und „Standort: halbschatten" — in einem Fließtext ist das schlicht falsch.
 const LICHT_DATIV = { sonne: 'sonnige Standorte', halbschatten: 'den Halbschatten', schatten: 'den Schatten' };
@@ -208,23 +208,43 @@ function textKombination(k, giftigkeit) {
 }
 
 /* ── Saison ──────────────────────────────────────────────────────────────────── */
+/*
+ * Vier Spielarten: Blühmonat, Blühmonat je Standort, Winter allgemein, Winter je Blattform
+ * (THEMA in pin-saison.js). Die Winterthemen bringen ihre Sätze selbst mit — dieselben, die
+ * auf dem Bild und auf der Landeseite stehen. Der Ziellink ist seit 08.09.2026 die Seite mit
+ * genau diesen sechs Pflanzen (saisonPfad), nicht mehr die allgemeine Planer-Anleitung.
+ */
 function textSaison(s, giftigkeit) {
   const monat = L.MON_NAME[s.monat - 1];
   const pflanzen = s.auswahl.map(x => x.p);
+  const namen = pflanzen.map(p => p.name_deutsch).join(', ');
+  const th = s.thema ? saison.THEMA[s.thema] : null;
+  const ort = s.standort ? ` für ${LICHT_ORT[s.standort]}` : '';
 
-  const titel = s.winter
-    ? wahl([`Struktur im Winterbeet: 6 Stauden, die nach der Blüte stehen bleiben`,
-            `Winterbeet: 6 Stauden mit Samenständen und Gräserstruktur`], s.monat)
-    : wahl([`Was im ${monat} blüht: 6 Stauden fürs Beet`,
-            `${monat}: 6 Stauden, die jetzt blühen`,
-            `Blüht im ${monat} — 6 Stauden mit Höhe und Standort`], s.monat);
+  const titel = th
+    ? wahl(th.pinTitel(ort), s.thema.length)
+    : s.winter
+      ? wahl([`Struktur im Winterbeet: 6 Stauden${ort}, die nach der Blüte stehen bleiben`,
+              `Winterbeet: 6 Stauden${ort} mit Samenständen und Gräserstruktur`], s.monat)
+      : s.standort
+        ? wahl([`Was im ${monat} blüht: 6 Stauden${ort}`,
+                `${monat}: 6 Stauden${ort}, die jetzt blühen`], s.monat)
+        : wahl([`Was im ${monat} blüht: 6 Stauden fürs Beet`,
+                `${monat}: 6 Stauden, die jetzt blühen`,
+                `Blüht im ${monat} — 6 Stauden mit Höhe und Standort`], s.monat);
 
-  const teile = s.winter ? [
-    `${pflanzen.map(p => p.name_deutsch).join(', ')} — sechs Stauden, die auch nach der Blüte etwas hermachen.`,
+  const teile = th ? [
+    `${namen} — ${th.satz}`,
+    th.hinweis,
+    'Eigenes Staudenbeet planen: kostenlos auf staudenplan.de.',
+  ] : s.winter ? [
+    `${namen} — sechs Stauden, die auch nach der Blüte etwas hermachen.`,
     'Samenstände und Gräser erst im Frühjahr zurückschneiden: Sie halten den Winter über Struktur und bieten Insekten Quartier.',
     'Eigenes Staudenbeet planen: kostenlos auf staudenplan.de.',
   ] : [
-    `Sechs Stauden, die im ${monat} blühen: ${pflanzen.map(p => p.name_deutsch).join(', ')}.`,
+    s.standort
+      ? `Sechs Stauden${ort}, die im ${monat} blühen: ${namen}.`
+      : `Sechs Stauden, die im ${monat} blühen: ${namen}.`,
     'Mit Höhe und Standort, damit sie sich direkt einplanen lassen.',
     `Passendes Staudenbeet zusammenstellen: kostenlos auf staudenplan.de, mit Pflanzplan zum Ausdrucken.`,
   ];
@@ -232,9 +252,12 @@ function textSaison(s, giftigkeit) {
 
   return fertig({
     titel, beschreibung: teile.filter(Boolean).join(' '),
-    pfad: s.standort ? LICHT_SEITE[s.standort] : (s.winter ? '/staudenbeet-planen' : '/staudenbeet-planen'),
-    alt: s.winter ? 'Sechs Stauden mit Winterstruktur' : `Sechs Stauden, die im ${monat} blühen`,
-    board: s.winter ? 'Winterbeet' : `Was blüht wann`,
+    pfad: saison.saisonPfad(s),
+    alt: th ? `Sechs Stauden fürs Winterbeet: ${th.titel}${ort}`
+       : s.winter ? `Sechs Stauden mit Winterstruktur${ort}` : `Sechs Stauden${ort}, die im ${monat} blühen`,
+    // Standortfassungen gehen auf die Standort-Pinnwände: Die Schatten-Pinnwand hat zwölf
+    // Pins, die Sechser-Raster sind die stärkste Sorte — dort fehlen sie am meisten.
+    board: s.winter ? 'Winterbeet' : s.standort ? brett(s.standort) : `Was blüht wann`,
     kiBild: true,
   });
 }

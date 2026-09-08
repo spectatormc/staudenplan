@@ -27,3 +27,9 @@ test-mails/
 # dieses Repo ist oeffentlich, sie gehoert nicht hinein. Neu holen: scripts/preise-gaissmayer.js --holen
 data/gaissmayer-katalog.json
 data/gaissmayer-ohne-treffer.json
+
+# Datenbank-Sicherungen und Kopien, die auf dem Server im Arbeitsbaum entstehen
+# (stauden.db.bak-vor-preisen-20260901, staudenplan.db). Sie enthalten die Anfragen-Tabelle
+# mit Kundendaten — in einem oeffentlichen Repo ein "git add -A" zu viel.
+*.db
+*.db.bak*

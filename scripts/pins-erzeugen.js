@@ -68,10 +68,25 @@ let erzeugt = 0, vorhanden = 0, fehler = 0;
  * ein fehlendes Bild zeigt, wird von Pinterest stillschweigend übergangen — der Pin fehlt
  * dann einfach, ohne dass irgendwo ein Fehler steht.
  */
-async function bauen({ guid, datei, typ, machen, text }) {
+const HEUTE = new Date().toISOString().slice(0, 10);
+
+/*
+ * Ankunft je Pin messbar machen: utm_content traegt die Kennung. Bis zum 08.09.2026 trugen alle
+ * Pins denselben Link — Pinterest meldete 108 ausgehende Klicks auf fuenf Pins, Plausible zaehlte
+ * fuenf Besucher, und im Server-Log liess sich keiner einem Pin zuordnen.
+ */
+function mitKennung(link, guid) {
+  if (/[?&]utm_content=/.test(link)) return link;
+  return link + (link.includes('?') ? '&' : '?') + 'utm_content=' + encodeURIComponent(guid);
+}
+
+// Veroeffentlicht = Termin erreicht. Dieselbe Regel wie pinsLesen() in stauden-server.js.
+const istVeroeffentlicht = e => Boolean(e && e.geplant_am && e.geplant_am <= HEUTE);
+
+async function bauen({ guid, datei, typ, machen, text, extra = {}, erzwingen = false }) {
   const pfad = path.join(ZIEL, datei);
   const dawar = fs.existsSync(pfad);
-  if (!dawar || NEU) {
+  if (!dawar || NEU || erzwingen) {
     try {
       await machen(pfad);
       erzeugt++;
@@ -88,20 +103,29 @@ async function bauen({ guid, datei, typ, machen, text }) {
     fehler++;
     return;
   }
-  const t = text();
+  const alt = frueher[guid];
+  // Was schon draussen ist, bleibt wie es ist: Titel, Beschreibung, Pinnwand und vor allem der
+  // Link kommen aus der alten Liste. Pinterest friert den Pin beim Veroeffentlichen ein — ein
+  // geaenderter Text im Feed aendert dort nichts mehr, eine geaenderte URL koennte aber als
+  // neuer Eintrag gelesen werden, und ein neu berechneter Text kann vom liegenden Bild
+  // abweichen. Faellig heisst veroeffentlicht: Der Feed liefert ab dem Tag, Pinterest liest
+  // taeglich.
+  const eingefroren = istVeroeffentlicht(alt) && typeof alt.titel === 'string' && typeof alt.link === 'string';
+  const t = eingefroren ? alt : text();
   liste.push({
     guid, typ, datei,
     bild: `${BASIS}/pins/${datei}`,
     titel: t.titel,
     beschreibung: t.beschreibung,
-    link: t.link,
+    link: eingefroren ? alt.link : mitKennung(t.link, guid),
     alt: t.alt,
     board: t.board,
     bytes: fs.statSync(pfad).size,
-    pubDate: frueher[guid]?.pubDate || new Date().toUTCString(),
+    pubDate: alt?.pubDate || new Date().toUTCString(),
     // Einmal vergebener Termin bleibt. Ein Neulauf der Bilder darf einen Pin nicht
     // umterminieren — und schon veroeffentlichte schon gar nicht.
-    ...(frueher[guid]?.geplant_am ? { geplant_am: frueher[guid].geplant_am } : {}),
+    ...(alt?.geplant_am ? { geplant_am: alt.geplant_am } : {}),
+    ...extra,
   });
 }
 
@@ -148,18 +172,51 @@ async function bauen({ guid, datei, typ, machen, text }) {
   }
 
   // ── Saison ─────────────────────────────────────────────────────────────────
+  // Zwoelf Grundpins plus Standort- und Winterfassungen (alleSaisonPins in pin-saison.js).
+  // Der Listeneintrag traegt die sechs Pflanzen und die Adresse der Landeseite: Die Seite
+  // unter /blueht-im bzw. /winterbeet liest genau diese IDs, damit sie dieselben sechs zeigt
+  // wie das Bild — neu berechnen wuerde bei jeder Datenaenderung stillschweigend abweichen.
   if (!NUR || NUR === 'saison') {
     const pool = saisonModul.ladePflanzen(db);
-    let monate = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
-    if (LIMIT) monate = monate.slice(0, LIMIT);
-    console.log(`Saison: ${monate.length} Monate`);
-    for (const m of monate) {
-      const s = saisonModul.saisonAuswahl(pool, { monat: m });
-      if (!s) { console.error(`  ! Monat ${m}: keine Auswahl`); fehler++; continue; }
+    // Veroeffentlichte Saison-Pins werden aus ihren alten IDs wieder aufgebaut, nicht neu
+    // berechnet (siehe alleSaisonPins): Ihr Bild liegt bei Pinterest, ihr Link zeigt auf die
+    // Seite mit genau diesen sechs.
+    const fest = new Map(vorher
+      .filter(e => e.typ === 'saison' && istVeroeffentlicht(e) && Array.isArray(e.pflanzen) && e.pflanzen.length)
+      .map(e => [e.guid, e.pflanzen]));
+    let { pins, verworfen, hinweise } = saisonModul.alleSaisonPins(pool, { fest });
+    if (LIMIT) pins = pins.slice(0, LIMIT);
+    console.log(`Saison: ${pins.length} Pins (${fest.size} davon veroeffentlicht und eingefroren)`);
+    for (const v of verworfen) console.log(`  – ${v.guid}: ${v.grund}`);
+    for (const h of hinweise) console.log(`  ! ${h.guid}: ${h.grund}`);
+    for (const { guid, datei, s, ids } of pins) {
+      const alt = frueher[guid];
+      const vorherige = Array.isArray(alt?.pflanzen) ? alt.pflanzen.map(x => Number(x.id)) : null;
+      const geaendert = Boolean(vorherige && vorherige.join() !== ids.join());
+      const veroeffentlicht = istVeroeffentlicht(alt);
+      /* Liegt das Bild schon, hat sich die Auswahl aber geaendert (Pflanze rausgefallen, Bild
+       * dazugekommen, Winterhaerte korrigiert), wird das Bild neu gebaut. Sonst schriebe die
+       * Liste sechs Namen, von denen das Bild daneben andere zeigt.
+       * Bei einem VEROEFFENTLICHTEN Pin heisst „anders" nur noch: Eine der sechs fehlt im Pool.
+       * Dann bleiben Bild und Seite beim Stand der Veroeffentlichung — der Pin bei Pinterest
+       * zeigt die alten sechs weiter, und die Seite sagt selbst, wenn eine fehlt. */
+      if (geaendert && veroeffentlicht) console.log(`  ! ${guid}: veroeffentlicht, eine Pflanze fehlt im Pool — Bild und Seite bleiben wie veroeffentlicht`);
+      else if (geaendert) console.log(`  ~ ${guid}: Auswahl geaendert, Bild wird neu gebaut`);
+      const neu = {
+        seite: saisonModul.saisonPfad(s),
+        monat: s.monat, winter: s.winter, standort: s.standort, thema: s.thema,
+        kopf: saisonModul.saisonKopf(s),
+        pflanzen: s.auswahl.map(x => ({ id: x.p.id, zeile2: x.zeile2 })),
+      };
+      const extra = geaendert && veroeffentlicht
+        ? { seite: alt.seite || neu.seite, monat: alt.monat ?? neu.monat, winter: alt.winter ?? neu.winter,
+            standort: alt.standort ?? neu.standort, thema: alt.thema ?? neu.thema, kopf: alt.kopf || neu.kopf, pflanzen: alt.pflanzen }
+        : neu;
       await bauen({
-        guid: `saison-${m}`, datei: `saison-${String(m).padStart(2, '0')}.jpg`, typ: 'saison',
+        guid, datei, typ: 'saison', erzwingen: geaendert && !veroeffentlicht,
         machen: z => saisonModul.saisonPin(s, z),
         text: () => txt.textSaison(s, giftigkeit),
+        extra,
       });
     }
   }

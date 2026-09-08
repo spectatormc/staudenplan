@@ -838,6 +838,26 @@ const GIFT_LABEL = {
   reizend:   '🧤 Hautreizend',
 };
 
+/*
+ * Sammelwarnung für eine Pflanzenliste, nach Stufe gruppiert. Der Erklärtext kommt aus der
+ * kuratierten Liste, nicht aus eigener Formulierung: „katzen" heißt lebensgefährlich durch
+ * Nierenversagen, „reizend" betrifft die Haut — eine Sammelformulierung würde beides zu
+ * „nicht in den Mund nehmen" verflachen. Genutzt vom geteilten Plan und den Saison-Seiten.
+ */
+function giftBlockHTML(pflanzen) {
+  const giftListe = pflanzen.map(p => ({ p, g: giftigkeit(p.name_botanisch) })).filter(x => x.g);
+  if (!giftListe.length) return '';
+  const nachStufe = {};
+  giftListe.forEach(x => (nachStufe[x.g.stufe] = nachStufe[x.g.stufe] || []).push(x));
+  return `<div style="margin:12px 0;padding:12px 14px;background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;font-size:.85rem;line-height:1.6;color:#991b1b">`
+    + GIFT_REIHENFOLGE.filter(s => nachStufe[s]).map(s => {
+      const arten = nachStufe[s].map(x => escHtml(x.p.name_deutsch)).join(', ');
+      const text = escHtml(nachStufe[s][0].g.text.split('. ').slice(0, 2).join('. '));
+      return `<strong>${GIFT_LABEL[s]}:</strong> ${arten}. ${text}`;
+    }).join('<br>')
+    + `</div>`;
+}
+
 const GEOPHYTEN_GATTUNGEN = ['Tulipa', 'Narcissus', 'Allium', 'Muscari', 'Crocus', 'Galanthus', 'Scilla', 'Camassia', 'Nectaroscordum', 'Fritillaria'];
 const istGeophyt = p => GEOPHYTEN_GATTUNGEN.some(g => String(p.name_botanisch || '').startsWith(g + ' '));
 
@@ -2283,6 +2303,7 @@ const QUELLEN = [
   [/^\/beispiel(e\/?$|\/)/i, 'Beispielbeet'],
   [/^\/ratgeber/i,       'Ratgeber'],
   [/^\/pflanzen\/?$/i,   'Pflanzenlexikon'],
+  [/^\/(blueht-im|winterbeet)(\/|$)/i, 'Saison-Seite'],   // Landeseiten der Pinterest-Sechser-Raster
   [/^\/$/,               'Planer'],
 ];
 
@@ -2937,6 +2958,7 @@ app.get('/sitemap.xml', (req, res) => {
     return /^\d{4}-\d{2}-\d{2}$/.test(d) ? `<lastmod>${d}</lastmod>` : '';
   };
 
+  const saisonSets = saisonSortiert(saisonSeiten());
   const urls = [
     `<url><loc>${base}/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>`,
     `<url><loc>${base}/pflanzen</loc><changefreq>weekly</changefreq><priority>0.9</priority></url>`,
@@ -2950,6 +2972,10 @@ app.get('/sitemap.xml', (req, res) => {
     `<url><loc>${base}/beispiele</loc><changefreq>monthly</changefreq><priority>0.9</priority></url>`,
     `<url><loc>${base}/quiz</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>`,
     `<url><loc>${base}/pflege/haeufige-fehler</loc><changefreq>monthly</changefreq><priority>0.85</priority></url>`,
+    // Landeseiten der Saison-Pins — nur die, die es wirklich gibt (aus public/pins/liste.json)
+    ...(saisonSets.some(e => !e.winter) ? [`<url><loc>${base}/blueht-im</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>`] : []),
+    ...(saisonSets.some(e => e.winter) ? [`<url><loc>${base}/winterbeet</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>`] : []),
+    ...saisonSets.map(e => `<url><loc>${base}${escHtml(e.seite)}</loc><changefreq>monthly</changefreq><priority>0.75</priority></url>`),
     ...BEISPIELE.map(b => `<url><loc>${base}/beispiel/${b.slug}</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>`),
     ...pflanzen.map(p => `<url><loc>${base}/pflanze/${slugify(p.name_botanisch)}</loc>${lastmod(p.aktualisiert_am)}<changefreq>monthly</changefreq><priority>0.7</priority></url>`),
     ...wissens.map(w => `<url><loc>${base}/ratgeber/${slugify(w.titel)}</loc>${lastmod(w.datum)}<changefreq>monthly</changefreq><priority>0.8</priority></url>`),
@@ -3138,7 +3164,7 @@ ${items}
 app.get('/pinterest', (req, res) => {
   const alle = pinsLesen();                       // nur das heute Fällige
   let gesamt = [];
-  try { gesamt = JSON.parse(fs.readFileSync(PIN_LISTE, 'utf8')); } catch {}
+  gesamt = pinsGesamt();                          // liest nur eine echte Liste, sonst []
   const heute = new Date().toISOString().slice(0, 10);
   const kommend = gesamt.filter(e => e.geplant_am && e.geplant_am > heute);
   const naechster = kommend.map(e => e.geplant_am).sort()[0] || null;
@@ -3197,7 +3223,7 @@ app.get('/pinterest/:datei', (req, res) => {
    * gegen das Fällige.
    */
   let gesamt = [];
-  try { gesamt = JSON.parse(fs.readFileSync(PIN_LISTE, 'utf8')); } catch {}
+  gesamt = pinsGesamt();                          // liest nur eine echte Liste, sonst []
 
   if (name === 'probe') {
     // Fünf Stück, bewusst je Sorte eines: Der Probelauf soll alle vier Bauarten einmal durch
@@ -3245,6 +3271,282 @@ app.get('/pinterest/:datei', (req, res) => {
     eintraege: auswahl,
   }));
 });
+
+// ─── Landeseiten der Saison-Pins: /blueht-im/… und /winterbeet/… ──────────────
+/*
+ * Eine Seite je Sechser-Raster. Bis zum 08.09.2026 zeigten alle Saison-Pins auf
+ * /staudenbeet-planen — wer auf Pinterest „Struktur im Winterbeet" antippte, bekam eine
+ * Anleitung in sieben Schritten statt der sechs Stauden aus dem Bild. Pinterest meldete für
+ * fünf dieser Pins 108 ausgehende Klicks; Plausible zählte fünf Besucher.
+ *
+ * Die Seite liest dieselbe Liste wie der Feed (public/pins/liste.json). Dort hält
+ * scripts/pins-erzeugen.js zu jedem Saison-Pin die sechs Pflanzen-IDs, Überschriften und die
+ * Adresse fest — im selben Lauf wie das Bild. Neu berechnen wäre falsch: Die Auswahl hängt von
+ * Bildbestand und Winterhärte ab, beides ändert sich; das Bild auf Pinterest nicht mehr. So
+ * zeigen Seite und Pin garantiert dieselben sechs, oder es gibt die Seite nicht (404).
+ */
+let pinListeStand = { mtime: -1, liste: [] };
+function pinsGesamt() {
+  try {
+    const mtime = fs.statSync(PIN_LISTE).mtimeMs;
+    if (mtime !== pinListeStand.mtime) {
+      const roh = JSON.parse(fs.readFileSync(PIN_LISTE, 'utf8'));
+      pinListeStand = { mtime, liste: Array.isArray(roh) ? roh : [] };
+    }
+    return pinListeStand.liste;
+  } catch { return []; }
+}
+
+// Nur Einträge, die eine Seite tragen können. Die Adresse wird gegen ein festes Muster
+// geprüft, weil sie aus einer Datei kommt und in Links und die Sitemap wandert.
+const SEITEN_MUSTER = /^\/(blueht-im|winterbeet)\/[a-z-]{1,40}$/;
+function saisonSeiten() {
+  return pinsGesamt().filter(e => e && e.typ === 'saison' && typeof e.seite === 'string' && SEITEN_MUSTER.test(e.seite)
+    && Array.isArray(e.pflanzen) && e.pflanzen.length > 0 && e.pflanzen.every(x => x && typeof x === 'object')
+    && e.kopf && typeof e.kopf.titel === 'string' && typeof e.kopf.unter === 'string' && typeof e.kopf.hinweis === 'string');
+}
+
+const SAISON_MONAT = ['', 'Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
+const SAISON_ORT = { sonne: 'für die Sonne', halbschatten: 'für den Halbschatten', schatten: 'für den Schatten' };
+const SAISON_ORT_RANG = { sonne: 1, halbschatten: 2, schatten: 3 };
+
+// Anzeigename in Listen. Die vier allgemeinen Winter-Sets hießen sonst alle gleich.
+function saisonName(e) {
+  const ort = SAISON_ORT[e.standort] ? ` · ${SAISON_ORT[e.standort]}` : '';
+  if (e.winter && !e.thema) return `Struktur im Winterbeet · ${SAISON_MONAT[Number(e.monat)] || ''}${ort}`;
+  return `${e.kopf.titel}${ort}`;
+}
+
+// Kalenderfolge: Blühmonate zuerst, dann der Winter ab November, die Themen dahinter;
+// je Monat die allgemeine Fassung vor den Standorten.
+function saisonSortiert(sets) {
+  const rang = e => [
+    e.winter ? 1 : 0,
+    e.winter ? (e.thema ? 20 : (Number(e.monat) + 1) % 12) : Number(e.monat),
+    String(e.thema || ''),
+    SAISON_ORT_RANG[e.standort] || 0,
+  ];
+  return [...sets].sort((a, b) => {
+    const ra = rang(a), rb = rang(b);
+    for (let i = 0; i < ra.length; i++) {
+      if (ra[i] === rb[i]) continue;
+      return typeof ra[i] === 'string' ? String(ra[i]).localeCompare(String(rb[i])) : ra[i] - rb[i];
+    }
+    return 0;
+  });
+}
+
+const SAISON_CHIP = 'display:inline-block;background:#fff;border-radius:30px;padding:8px 14px;text-decoration:none;color:#1b4332;font-size:.84rem;font-weight:600;box-shadow:0 1px 6px rgba(0,0,0,.08)';
+const saisonChip = e => `<a href="${escHtml(e.seite)}" style="${SAISON_CHIP}">${escHtml(saisonName(e))}</a>`;
+const saisonKurz = (t, max) => {
+  const s = String(t).replace(/\s+/g, ' ').trim();
+  if (s.length <= max) return s;
+  const c = s.slice(0, max - 1);
+  return c.slice(0, c.lastIndexOf(' ')).replace(/[,;–-]$/, '') + '…';
+};
+
+// Die Pflanzen eines Sets aus der Datenbank, in der Reihenfolge des Bildes. Fehlt eine
+// (gelöscht statt auf status gesetzt), fehlt sie auch hier — und die Seite sagt das.
+function saisonPflanzen(e) {
+  const ids = e.pflanzen.map(x => Number(x.id)).filter(Number.isInteger);
+  if (!ids.length) return [];
+  const rows = db.prepare(`SELECT id, name_deutsch, name_botanisch, bild_url, bluehzeit, hoehe_cm_max, licht, feuchtigkeit
+                           FROM pflanzen WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids);
+  const nachId = new Map(rows.map(r => [r.id, r]));
+  return e.pflanzen.map(x => nachId.has(Number(x.id)) ? { ...nachId.get(Number(x.id)), zeile2: String(x.zeile2 || '') } : null).filter(Boolean);
+}
+
+const SAISON_STYLE = `<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',system-ui,sans-serif;background:#f8f4ef;color:#1a1a1a}</style>`;
+const saisonHero = ({ krumen, h1, unter }) => `
+  <div style="background:linear-gradient(160deg,#1b4332,#2d6a4f);color:#fff;padding:48px 24px 40px;text-align:center">
+    <div style="font-size:.8rem;opacity:.7;margin-bottom:8px">${krumen}</div>
+    <h1 style="font-size:clamp(1.5rem,4vw,2.1rem);font-weight:800;line-height:1.25;margin-bottom:12px">${h1}</h1>
+    <p style="opacity:.88;max-width:640px;margin:0 auto;font-size:1rem;line-height:1.6">${unter}</p>
+  </div>`;
+const SAISON_CTA = `
+    <div style="background:linear-gradient(135deg,#1b4332,#2d6a4f);color:#fff;border-radius:14px;padding:28px;margin-top:44px;text-align:center">
+      <h2 style="font-size:1.2rem;margin-bottom:8px">Eigenen Beetplan erstellen — kostenlos</h2>
+      <p style="opacity:.88;font-size:.9rem;margin-bottom:18px">Standort, Größe und Stil eingeben — der Planer stellt passende winterharte Stauden zusammen, mit Pflanzplan zum Ausdrucken.</p>
+      <a href="/" style="background:#fff;color:#1b4332;border-radius:50px;padding:12px 30px;text-decoration:none;font-weight:700;font-size:.9rem;display:inline-block">Kostenlosen Plan erstellen →</a>
+    </div>`;
+const saisonKrume = (winter, letzte) => `<a href="/" style="color:rgba(255,255,255,.7);text-decoration:none">Startseite</a> › `
+  + (letzte
+    ? `<a href="/${winter ? 'winterbeet' : 'blueht-im'}" style="color:rgba(255,255,255,.7);text-decoration:none">${winter ? 'Winterbeet' : 'Was blüht wann'}</a> › <span>${letzte}</span>`
+    : `<span>${winter ? 'Winterbeet' : 'Was blüht wann'}</span>`);
+
+function saisonSeiteHTML(e, alle) {
+  const pflanzen = saisonPflanzen(e);
+  if (!pflanzen.length) return null;
+  const fehlend = e.pflanzen.length - pflanzen.length;
+  const winterAllgemein = Boolean(e.winter && !e.thema);
+  const monat = SAISON_MONAT[Number(e.monat)] || '';
+  const url = `https://www.staudenplan.de${e.seite}`;
+  const bild = typeof e.bild === 'string' && /^https:\/\/www\.staudenplan\.de\/pins\/[a-z0-9-]+\.jpg$/.test(e.bild) ? e.bild : '';
+  const titel = `${winterAllgemein ? `Winterbeet im ${monat}` : e.kopf.titel}: ${e.kopf.unter}`;
+  const beschreibung = saisonKurz(`${pflanzen.map(p => p.name_deutsch).join(', ')} — ${e.kopf.unter}. ${e.kopf.hinweis}`, 300);
+
+  const gross = s => { const t = String(s || '').trim(); return t.charAt(0).toUpperCase() + t.slice(1); };
+  const daten = p => [
+    p.hoehe_cm_max ? `bis ${p.hoehe_cm_max} cm` : '',
+    p.licht ? `Standort: ${String(p.licht).split('|').map(gross).filter(Boolean).join(' / ')}` : '',
+    p.feuchtigkeit ? `${String(p.feuchtigkeit).split('|')[0].trim()}er Boden` : '',
+  ].filter(Boolean).join(' · ');
+
+  const karten = pflanzen.map(p => {
+    const slug = pflanzeToSlug(p.name_botanisch);
+    const g = giftigkeit(p.name_botanisch);
+    const stark = Boolean(g && (g.stufe === 'stark' || g.stufe === 'katzen'));
+    // Markierung auf der Kachel wie im Pin: In einem Raster aus sechs wäre eine Sammelwarnung
+    // allein nicht zuzuordnen. Die Sammelwarnung mit Erklärtext steht zusätzlich oben.
+    const marke = g ? `<span style="position:absolute;top:10px;left:10px;background:${stark ? '#b23a3a' : '#d9a441'};color:${stark ? '#fff' : '#3d2c00'};font-weight:700;font-size:.72rem;padding:4px 9px;border-radius:6px">${GIFT_LABEL[g.stufe] || '⚠️ Giftig'}</span>` : '';
+    const bild = p.bild_url
+      ? `<img src="${escHtml(p.bild_url)}" alt="${escHtml(p.name_deutsch)} (${escHtml(p.name_botanisch)}) — Illustration" loading="lazy" style="width:100%;height:100%;object-fit:cover">`
+      : `<div style="width:100%;height:100%;background:linear-gradient(135deg,#d8f3dc,#b7e4c7);display:flex;align-items:center;justify-content:center;font-size:3rem">🌿</div>`;
+    return `
+      <article style="background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.07);display:flex;flex-direction:column">
+        <a href="/pflanze/${escHtml(slug)}" style="position:relative;display:block;height:210px;overflow:hidden;background:#e9f5ee">${bild}${marke}</a>
+        <div style="padding:14px 16px 16px;display:flex;flex-direction:column;gap:5px;flex:1">
+          <h2 style="font-size:1.05rem;color:#1b4332;font-weight:700;line-height:1.3"><a href="/pflanze/${escHtml(slug)}" style="color:inherit;text-decoration:none">${escHtml(p.name_deutsch)}</a></h2>
+          <div style="font-size:.78rem;color:#888;font-style:italic">${escHtml(p.name_botanisch)}</div>
+          <div style="font-size:.86rem;color:#2d6a4f;font-weight:600">${escHtml(p.zeile2)}</div>
+          <div style="font-size:.8rem;color:#555;line-height:1.5">${escHtml(daten(p))}</div>
+          <div style="margin-top:auto;padding-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+            <a href="/pflanze/${escHtml(slug)}" style="background:#f0faf3;color:#1b4332;border-radius:50px;padding:7px 14px;text-decoration:none;font-weight:700;font-size:.8rem">Zur Pflanze →</a>
+            <a href="${escHtml(goLink(p.name_botanisch))}" target="_blank" rel="noopener nofollow" data-kauf="${escHtml(p.name_botanisch)}" data-quelle="saison-seite" style="background:#6b4226;color:#fff;border-radius:50px;padding:7px 14px;text-decoration:none;font-weight:700;font-size:.8rem">In der Gärtnerei ansehen →</a>
+          </div>
+        </div>
+      </article>`;
+  }).join('');
+
+  // Alle sechs auf einmal in die Wunschliste des Planers (stauden-portal.html liest die
+  // Parameter paarweise ein).
+  const planerLink = '/?' + pflanzen.map(p => `pflanze=${encodeURIComponent(p.name_botanisch)}&pname=${encodeURIComponent(p.name_deutsch)}`).join('&');
+  const geschwister = saisonSortiert(alle.filter(x => x.seite !== e.seite));
+  const monatsSets = geschwister.filter(x => !x.winter), winterSets = geschwister.filter(x => x.winter);
+  const gruppe = (ueberschrift, sets) => sets.length ? `
+      <h3 style="font-size:.95rem;color:#1b4332;margin:18px 0 10px;font-weight:700">${ueberschrift}</h3>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">${sets.map(saisonChip).join('')}</div>` : '';
+
+  const schema = escJsonLd({
+    '@context': 'https://schema.org', '@type': 'ItemList',
+    name: titel, description: beschreibung, url, ...(bild ? { image: bild } : {}),
+    itemListElement: pflanzen.map((p, i) => ({ '@type': 'ListItem', position: i + 1, name: p.name_deutsch,
+      url: `https://www.staudenplan.de/pflanze/${pflanzeToSlug(p.name_botanisch)}` })),
+  });
+  const krumen = escJsonLd({
+    '@context': 'https://schema.org', '@type': 'BreadcrumbList', itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Startseite', item: 'https://www.staudenplan.de/' },
+      { '@type': 'ListItem', position: 2, name: e.winter ? 'Winterbeet' : 'Was blüht wann', item: `https://www.staudenplan.de/${e.winter ? 'winterbeet' : 'blueht-im'}` },
+      { '@type': 'ListItem', position: 3, name: titel, item: url },
+    ],
+  });
+
+  return `<!DOCTYPE html><html lang="de"><head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>${escHtml(titel)} | Staudenplan.de</title>
+  <meta name="description" content="${escHtml(beschreibung)}">
+  <link rel="canonical" href="${escHtml(url)}">
+  <meta property="og:title" content="${escHtml(titel)}">
+  <meta property="og:description" content="${escHtml(beschreibung)}">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="${escHtml(url)}">
+  ${bild ? `<meta property="og:image" content="${escHtml(bild)}"><meta property="og:image:width" content="1000"><meta property="og:image:height" content="1500">` : ''}
+  <script type="application/ld+json">${schema}</script>
+  <script type="application/ld+json">${krumen}</script>
+  ${SAISON_STYLE}
+  </head><body>
+  ${NAV_LINKS}
+  ${saisonHero({
+    krumen: saisonKrume(e.winter, escHtml(winterAllgemein ? monat : e.kopf.titel)),
+    h1: escHtml(e.kopf.titel),
+    unter: escHtml(winterAllgemein ? `${e.kopf.unter} · ${monat}` : e.kopf.unter),
+  })}
+  <main style="max-width:1060px;margin:0 auto;padding:36px 20px 60px">
+    <div style="background:#fff;border-radius:14px;padding:22px 26px;box-shadow:0 2px 12px rgba(0,0,0,.07);margin-bottom:28px">
+      <p style="line-height:1.75;color:#333;font-size:.98rem">${escHtml(e.kopf.hinweis)}</p>
+      ${fehlend ? `<p style="margin-top:10px;font-size:.88rem;color:#92400e">${fehlend === 1 ? 'Eine Pflanze aus dem Bild ist nicht mehr im Sortiment.' : `${fehlend} Pflanzen aus dem Bild sind nicht mehr im Sortiment.`}</p>` : ''}
+      ${giftBlockHTML(pflanzen)}
+      <p style="margin:16px 0 0;display:flex;gap:10px;flex-wrap:wrap">
+        <a href="${escHtml(planerLink)}" style="display:inline-block;background:#1b4332;color:#fff;border-radius:50px;padding:11px 24px;text-decoration:none;font-weight:700;font-size:.9rem">🌿 Diese ${pflanzen.length === 6 ? 'sechs' : pflanzen.length} ins Beet planen →</a>
+        <a href="/${e.winter ? 'winterbeet' : 'blueht-im'}" style="display:inline-block;background:#f0faf3;color:#1b4332;border-radius:50px;padding:11px 24px;text-decoration:none;font-weight:700;font-size:.9rem">Alle Sets ansehen</a>
+      </p>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:16px">${karten}</div>
+    ${monatsSets.length || winterSets.length ? `
+    <div style="margin-top:40px;padding-top:28px;border-top:2px solid #d8f3dc">
+      <h2 style="font-size:1.15rem;color:#1b4332;font-weight:700">Weitere Sechser-Sets</h2>
+      ${gruppe('Was blüht wann', monatsSets)}${gruppe('Fürs Winterbeet', winterSets)}
+    </div>` : ''}
+    ${SAISON_CTA}
+  </main>
+  ${SITE_FOOTER}
+  </body></html>`;
+}
+
+// Übersicht je Bereich: alle Sets mit ihren sechs Namen, eine Abfrage für alle Pflanzen.
+function saisonIndexHTML(winter, sets) {
+  const pfad = winter ? 'winterbeet' : 'blueht-im';
+  const url = `https://www.staudenplan.de/${pfad}`;
+  const titel = winter ? 'Winterbeet: Stauden, die nach der Blüte Struktur halten' : 'Was blüht wann: Stauden nach Monat';
+  const beschreibung = winter
+    ? `${sets.length} Sechser-Sets fürs Winterbeet — Samenstände, Gräser, immergrünes und wintergrünes Laub, mit Höhe, Standort und Giftwarnung.`
+    : `${sets.length} Sechser-Sets von März bis Oktober: welche winterharten Stauden in welchem Monat blühen — mit Höhe, Standort und Giftwarnung.`;
+  const alleIds = [...new Set(sets.flatMap(e => e.pflanzen.map(x => Number(x.id))).filter(Number.isInteger))];
+  const namen = new Map(alleIds.length
+    ? db.prepare(`SELECT id, name_deutsch FROM pflanzen WHERE id IN (${alleIds.map(() => '?').join(',')})`).all(...alleIds).map(r => [r.id, r.name_deutsch])
+    : []);
+  const karten = sets.map(e => `
+      <a href="${escHtml(e.seite)}" style="background:#fff;border-radius:12px;padding:16px 18px;text-decoration:none;color:inherit;box-shadow:0 2px 8px rgba(0,0,0,.07);display:block">
+        <div style="font-size:1rem;font-weight:700;color:#1b4332;margin-bottom:4px">${escHtml(saisonName(e))}</div>
+        <div style="font-size:.8rem;color:#2d6a4f;margin-bottom:6px">${escHtml(e.kopf.unter)}</div>
+        <div style="font-size:.82rem;color:#555;line-height:1.5">${escHtml(e.pflanzen.map(x => namen.get(Number(x.id))).filter(Boolean).join(', '))}</div>
+      </a>`).join('');
+  const schema = escJsonLd({
+    '@context': 'https://schema.org', '@type': 'CollectionPage', name: titel, description: beschreibung, url,
+    hasPart: sets.map(e => ({ '@type': 'WebPage', name: saisonName(e), url: `https://www.staudenplan.de${e.seite}` })),
+  });
+  return `<!DOCTYPE html><html lang="de"><head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>${escHtml(titel)} | Staudenplan.de</title>
+  <meta name="description" content="${escHtml(beschreibung)}">
+  <link rel="canonical" href="${escHtml(url)}">
+  <meta property="og:title" content="${escHtml(titel)}">
+  <meta property="og:description" content="${escHtml(beschreibung)}">
+  <meta property="og:type" content="website">
+  <script type="application/ld+json">${schema}</script>
+  ${SAISON_STYLE}
+  </head><body>
+  ${NAV_LINKS}
+  ${saisonHero({ krumen: saisonKrume(winter, ''), h1: escHtml(winter ? 'Winterbeet' : 'Was blüht wann'), unter: escHtml(beschreibung) })}
+  <main style="max-width:1060px;margin:0 auto;padding:36px 20px 60px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">${karten}</div>
+    <p style="margin-top:24px"><a href="/${winter ? 'blueht-im' : 'winterbeet'}" style="${SAISON_CHIP}">${winter ? 'Was blüht wann →' : 'Fürs Winterbeet →'}</a></p>
+    ${SAISON_CTA}
+  </main>
+  ${SITE_FOOTER}
+  </body></html>`;
+}
+
+// NAV_LINKS und SITE_FOOTER entstehen erst weiter unten — deshalb eine Funktion, keine Konstante.
+const saison404 = () => `<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Seite nicht gefunden</title></head><body>${NAV_LINKS}<div style="text-align:center;padding:80px 20px"><h1>Dieses Set gibt es nicht</h1><p><a href="/blueht-im">Was blüht wann</a> · <a href="/winterbeet">Winterbeet</a></p></div>${SITE_FOOTER}</body></html>`;
+
+function saisonSeiteSenden(req, res, praefix) {
+  const slug = String(req.params.slug || '');
+  const alle = saisonSeiten();
+  const e = /^[a-z-]{1,40}$/.test(slug) ? alle.find(x => x.seite === `/${praefix}/${slug}`) : null;
+  const html = e ? saisonSeiteHTML(e, alle) : null;
+  if (!html) return res.status(404).send(saison404());
+  res.send(html);
+}
+function saisonIndexSenden(res, winter) {
+  const sets = saisonSortiert(saisonSeiten().filter(e => Boolean(e.winter) === winter));
+  if (!sets.length) return res.status(404).send(saison404());
+  res.send(saisonIndexHTML(winter, sets));
+}
+app.get('/blueht-im', (req, res) => saisonIndexSenden(res, false));
+app.get('/blueht-im/:slug', (req, res) => saisonSeiteSenden(req, res, 'blueht-im'));
+app.get('/winterbeet', (req, res) => saisonIndexSenden(res, true));
+app.get('/winterbeet/:slug', (req, res) => saisonSeiteSenden(req, res, 'winterbeet'));
 
 // ─── Pflanzen-API (für Client-Suche) ─────────────────────────────────────────
 app.get('/api/pflanzen', pflanzenLimiter, (req, res) => {
@@ -4948,6 +5250,26 @@ app.get('/staudenbeet-planen', (req, res) => {
   // Die Zahl steht hier in einem Satz über den Planer, nicht über das Lexikon — deshalb die
   // planbare Menge und nicht alle 709.
   const pflanzenCount = db.prepare(`SELECT COUNT(*) as n FROM pflanzen WHERE ${PLANBAR}`).get().n;
+
+  /*
+   * Wer mit Pinterest-Kennung kommt, hat einen der Saison-Pins angetippt, die bis zum
+   * 08.09.2026 alle hierher zeigten — Pinterest friert den Ziellink ein, die sechs
+   * veröffentlichten Pins lassen sich nicht mehr umleiten. Also steht hier oben, was der Pin
+   * versprochen hat: die Sechser-Sets. Winter zuerst, denn drei der sechs sind Winterbeet-Pins.
+   */
+  let pinterestBlock = '';
+  if (String(req.query.utm_source || '').toLowerCase() === 'pinterest') {
+    const sets = saisonSortiert(saisonSeiten());
+    const jetzt = new Date().getMonth() + 1, naechster = jetzt % 12 + 1;
+    const gezeigt = [...sets.filter(e => e.winter), ...sets.filter(e => !e.winter && [jetzt, naechster].includes(Number(e.monat)))];
+    if (gezeigt.length) pinterestBlock = `
+    <div style="background:#fff;border:2px solid #52b788;border-radius:14px;padding:20px 22px;margin-bottom:30px">
+      <h2 style="font-size:1.1rem;color:#1b4332;font-weight:700;margin-bottom:6px">Von Pinterest hier? Die sechs Stauden aus dem Pin</h2>
+      <p style="font-size:.92rem;color:#333;line-height:1.65;margin-bottom:12px">Jedes Sechser-Raster hat eine eigene Seite mit Höhe, Standort, Giftwarnung und Kauflink — und einem Knopf, der alle sechs in den Planer übernimmt.</p>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">${gezeigt.map(saisonChip).join('')}</div>
+      <p style="font-size:.85rem;margin-top:12px"><a href="/blueht-im" style="color:#2d6a4f;font-weight:700">Alle Monate →</a> &nbsp; <a href="/winterbeet" style="color:#2d6a4f;font-weight:700">Alles fürs Winterbeet →</a></p>
+    </div>`;
+  }
   let artikel = [];
   try { artikel = db.prepare(`SELECT titel FROM wissen WHERE titel LIKE '%plan%' OR titel LIKE '%Planung%' OR titel LIKE '%kombin%' OR titel LIKE '%Standort%' OR inhalt LIKE '%Bepflanzungsplan%' LIMIT 6`).all(); } catch {}
   const artikelHtml = artikel.map(a => `<a href="/ratgeber/${slugify(a.titel)}" style="display:flex;align-items:center;gap:10px;background:#fff;border-radius:10px;padding:14px 18px;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.06);transition:background .12s;margin-bottom:10px" onmouseover="this.style.background='#f0fdf4'" onmouseout="this.style.background='#fff'"><span style="font-size:1.2rem">📖</span><span style="font-size:.9rem;font-weight:600;color:#1b4332">${a.titel}</span><span style="margin-left:auto;color:#2d6a4f;font-weight:700;font-size:.82rem">Lesen →</span></a>`).join('');
@@ -5008,7 +5330,7 @@ app.get('/staudenbeet-planen', (req, res) => {
     </div>
   </div>
   <main style="max-width:820px;margin:0 auto;padding:44px 20px 60px">
-
+    ${pinterestBlock}
     <p style="line-height:1.8;color:#333;font-size:1rem;margin-bottom:14px">Ein gelungenes Staudenbeet ist kein Zufall, sondern das Ergebnis weniger klarer Entscheidungen: der richtige Standort, eine durchdachte Höhenstaffelung, eine über die Saison gestaffelte Blüte und stimmige Farben. Wer diese Schritte der Reihe nach geht, vermeidet die häufigsten Fehler — Pflanzen am falschen Platz, kahle Phasen und ein unruhiges Farbbild. Diese Anleitung führt dich durch die komplette Planung.</p>
     <p style="line-height:1.8;color:#333;font-size:1rem;margin-bottom:30px">Wenn du die Arbeit abkürzen möchtest: Unser <a href="/" style="color:#2d6a4f;font-weight:700">kostenloser Staudenbeet-Planer</a> nimmt dir die Schritte 1–6 automatisch ab — er gleicht Standort, Höhen, Blühzeiten und Stückzahlen mit ${pflanzenCount} winterharten Stauden ab. Die Anleitung hilft dir trotzdem, den Plan zu verstehen und zu verfeinern.</p>
 
@@ -6268,22 +6590,7 @@ function renderBeispielPlanSSR(plan, flaeche, grafikOpts, quelle = '') {
   // gespeicherten Plan gelesen: Pläne, die vor dem 08.08.2026 geteilt wurden, tragen das
   // Feld nicht — sie bekommen die Warnung so trotzdem. Der Empfänger eines geteilten Links
   // hat den Plan nicht selbst erstellt und kennt die Pflanzen oft nicht.
-  const giftListe = pflanzen.map(p => ({ p, g: giftigkeit(p.name_botanisch) })).filter(x => x.g);
-  let giftBlock = '';
-  if (giftListe.length) {
-    const nachStufe = {};
-    giftListe.forEach(x => (nachStufe[x.g.stufe] = nachStufe[x.g.stufe] || []).push(x));
-    giftBlock = `<div style="margin:12px 0;padding:12px 14px;background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;font-size:.85rem;line-height:1.6;color:#991b1b">`
-      + GIFT_REIHENFOLGE.filter(s => nachStufe[s]).map(s => {
-        const arten = nachStufe[s].map(x => escHtml(x.p.name_deutsch)).join(', ');
-        // Der Erklärtext kommt aus der kuratierten Liste, nicht aus eigener Formulierung:
-        // „katzen" heißt lebensgefährlich durch Nierenversagen, „reizend" betrifft die Haut —
-        // eine Sammelformulierung würde beides zu „nicht in den Mund nehmen" verflachen.
-        const text = escHtml(nachStufe[s][0].g.text.split('. ').slice(0, 2).join('. '));
-        return `<strong>${GIFT_LABEL[s]}:</strong> ${arten}. ${text}`;
-      }).join('<br>')
-      + `</div>`;
-  }
+  const giftBlock = giftBlockHTML(pflanzen);
 
   return `<div class="card-wrap">
     <h2 class="sec-title">🌿 KI-Pflanzplan für dieses Beet</h2>
