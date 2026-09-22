@@ -273,9 +273,21 @@ async function bauen({ guid, datei, typ, machen, text, extra = {}, erzwingen = f
     }
   } else {
     vorhanden++;
-    // In diesem Zweig und bei gesetztem Schalter kann der Pin nur veröffentlicht sein:
-    // Wäre er es nicht, hätte neuWeilUnveroeffentlicht ihn oben in den Neubau geschickt.
-    if (NEU_UNVEROEFFENTLICHT) geschontVeroeffentlicht++;
+    /* GEZAEHLT WIRD, WAS GEPRUEFT IST, NICHT WAS VERMUTET WIRD.
+     *
+     * Hier stand: "In diesem Zweig kann der Pin nur veroeffentlicht sein." Das galt, bis
+     * neuWeilUnveroeffentlicht um "alt muss dastehen" erweitert wurde. Seither landet auch
+     * ein Pin OHNE Listeneintrag hier, dessen Datei schon liegt — und wurde als geschonter
+     * veroeffentlichter mitgezaehlt, obwohl er unveroeffentlicht ist. Der Soll-Ist-Vergleich
+     * am Ende schlug deshalb Alarm (92 statt 91), ohne dass etwas passiert war.
+     *
+     * Ein Kommentar, der eine Bedingung behauptet, statt sie zu pruefen, haelt genau so
+     * lange, bis jemand die Bedingung aendert. Jetzt wird geprueft. */
+    if (NEU_UNVEROEFFENTLICHT && veroeffentlicht) geschontVeroeffentlicht++;
+    if (NEU_UNVEROEFFENTLICHT && !veroeffentlicht && !alt) {
+      console.error(`  ~ ${datei}: Datei liegt, steht aber in keinem Listeneintrag — nicht`
+        + ' neu gebaut, weil ohne Eintrag nicht zu belegen ist, ob der Pin schon draussen ist.');
+    }
   }
   if (!fs.existsSync(pfad)) {
     console.error(`  ! Datei fehlt nach dem Erzeugen: ${datei}`);
