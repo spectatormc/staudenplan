@@ -282,7 +282,23 @@ function saisonAuswahl(pflanzen, { monat, standort, versatz = 0, thema = null, m
   if (winter) {
     kandidaten = pflanzen
       .map(p => ({ p, wert: winterSchluessel(p), aspekt: winterAspekt(p) }))
+      /* IN EIN WINTERRASTER KOMMT NUR, WER EIN WINTERBILD HAT.
+       *
+       * Sonst steht unter "Graeser im Winterbeet" eine Kachel in Bluete neben fuenf
+       * winterlichen — und ein Raster, das zu zwei Dritteln haelt, was die Ueberschrift
+       * verspricht, ist schlechter als eines, das es ganz tut. Von 163 Pflanzen mit
+       * Winteraspekt haben 137 ein geprueftes Winterbild; die uebrigen 26 hat die
+       * Bildpruefung verworfen (ihre Winterbilder zeigten nicht die richtige Art).
+       *
+       * Wird die Auswahl dadurch zu klein, faellt das Raster ueber die Pruefung
+       * "kandidaten.length < RASTER" ganz weg — das ist die sichere Richtung: lieber kein
+       * Raster als ein halbes. Veroeffentlichte Raster sind nicht betroffen, ihre Auswahl
+       * ist eingefroren (fest in alleSaisonPins). */
       .filter(x => x.aspekt && (!th || th.werte.includes(x.wert)))
+      .filter(x => {
+        try { return winterAuftrag().winterBildQuelle(x.p).eigen; }
+        catch { return false; }
+      })
       .map(x => ({ p: x.p, zeile2: x.aspekt }));
   } else {
     kandidaten = pflanzen
