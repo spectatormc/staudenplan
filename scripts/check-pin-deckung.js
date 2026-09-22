@@ -199,11 +199,33 @@ function genannt(text) {
   let rest = String(text || '');
   const treffer = [];
   for (const name of NAMEN) {
-    const i = rest.indexOf(name);
-    if (i < 0) continue;
-    if (istBuchstabe(rest[i - 1]) || istBuchstabe(rest[i + name.length])) continue;
-    treffer.push({ name, ids: nachName.get(name) });
-    rest = rest.slice(0, i) + ' '.repeat(name.length) + rest.slice(i + name.length);
+    /* ALLE Vorkommen ausblenden, nicht nur das erste.
+     *
+     * Ein Pflanzenname steht in einer Pin-Beschreibung regelmaessig ZWEIMAL: einmal in der
+     * Aufzaehlung und einmal im Giftsatz ("Giftig: Stinkende Nieswurz, Wulfens Wolfsmilch,
+     * Weinraute"). Wurde nur das erste Vorkommen geschwaerzt, blieb das zweite stehen, und
+     * darin traf der kuerzere Name einer ANDEREN Art: "Wolfsmilch" (Euphorbia characias,
+     * id 39) fand sich in "Wulfens Wolfsmilch" (id 295). Die Pruefung meldete daraufhin 58
+     * Pins als abweichend, deren Beschreibung die Bildpflanzen exakt nennt — und eine
+     * Pruefung, die Richtiges anzeigt, wird abgeschaltet.
+     *
+     * Die Laengensortierung oben genuegt dafuer nicht: Sie entscheidet, WER zuerst trifft,
+     * nicht wie viele Vorkommen verschwinden. */
+    let gefunden = false;
+    for (;;) {
+      const i = rest.indexOf(name);
+      if (i < 0) break;
+      if (istBuchstabe(rest[i - 1]) || istBuchstabe(rest[i + name.length])) {
+        // Teil eines laengeren Wortes: ueberspringen, aber nicht abbrechen — weiter hinten
+        // kann derselbe Name frei stehen. Ausgeblendet wird mit einem Zeichen, das
+        // istBuchstabe() nicht als Buchstaben zaehlt und das in Beschreibungen nicht vorkommt.
+        rest = rest.slice(0, i) + '\u0000'.repeat(name.length) + rest.slice(i + name.length);
+        continue;
+      }
+      gefunden = true;
+      rest = rest.slice(0, i) + ' '.repeat(name.length) + rest.slice(i + name.length);
+    }
+    if (gefunden) treffer.push({ name, ids: nachName.get(name) });
   }
   return treffer;
 }
