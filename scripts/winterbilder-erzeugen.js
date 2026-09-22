@@ -96,8 +96,16 @@ if (IDS.length) {
 }
 
 const ohneAspekt = kandidaten.filter(p => !W.kannWinterbild(p));
-for (const p of ohneAspekt) {
-  console.log(`  ! [${p.id}] ${p.name_deutsch}: winteraspekt "${p.winteraspekt || ''}" ist kein Schluessel aus WINTER_WERT — uebersprungen.`);
+/* Einzeln gemeldet wird nur, was AUSDRUECKLICH verlangt war (--ids): Dort ist "die Pflanze,
+ * die du genannt hast, bekommt kein Bild" eine Antwort. Beim Lauf ueber den ganzen Pool sind
+ * es rund 130 Pflanzen ohne Winteraspekt — eine Zeile je Stueck uebertoente jede Meldung, auf
+ * die es ankommt, und ein Protokoll, das niemand liest, ist keines. */
+if (IDS.length) {
+  for (const p of ohneAspekt) {
+    console.log(`  ! [${p.id}] ${p.name_deutsch}: winteraspekt "${p.winteraspekt || ''}" ist kein Schluessel aus WINTER_WERT — uebersprungen.`);
+  }
+} else if (ohneAspekt.length) {
+  console.log(`  ${ohneAspekt.length} Pflanze(n) ohne Winteraspekt uebersprungen (bekommen auch keinen Winter-Pin).`);
 }
 let auswahl = kandidaten.filter(p => W.kannWinterbild(p));
 
