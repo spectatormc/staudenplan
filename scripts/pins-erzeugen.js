@@ -4,6 +4,9 @@
  *
  *   node scripts/pins-erzeugen.js                 alles, vorhandene Dateien bleiben stehen
  *   node scripts/pins-erzeugen.js --neu           vorhandene überschreiben
+ *   node scripts/pins-erzeugen.js --neu-unveroeffentlicht
+ *                                                 vorhandene überschreiben, aber NUR bei Pins,
+ *                                                 die noch nicht veröffentlicht sind
  *   node scripts/pins-erzeugen.js --nur pflanze   nur eine Sorte
  *                                                 (pflanze|pflanze-winter|beetplan|saison|kombi|ratgeber|pflege)
  *   node scripts/pins-erzeugen.js --limit 5       höchstens N je Sorte, für Probeläufe
@@ -27,6 +30,25 @@
  * gewachsen, waehrend liste.json die alten enclosure-Laengen truege — und die liest Pinterest
  * aus dem Feed. Bricht der Lauf trotzdem ab, schreibt der Abbruchzweig liste.json und misst
  * fuer die noch nicht bearbeiteten Pins die Dateigroesse frisch.
+ *
+ * --neu-unveroeffentlicht: WOFÜR ES DEN DRITTEN SCHALTER GIBT.
+ *
+ * Seit dem 22.09.2026 schreiben die Bildbauer beim Zeichnen die IDs der abgebildeten Pflanzen
+ * in die JPEG-Datei (bildKommentarArgs() in pin-layout.js). Nur damit kann
+ * scripts/check-pin-deckung.js belegen, dass die Beschreibung eines Pins dieselben Pflanzen
+ * nennt, die auf seinem Bild zu sehen sind. Den Kommentar bekommt aber nur ein NEU gebautes
+ * Bild — die rund 490 schon liegenden, noch nicht fälligen Dateien hätten ihn nie, und die
+ * Prüfung bliebe auf Dauer rot. Eine Prüfung, die nie grün wird, schaltet man ab.
+ *
+ * "--neu" löst das nicht: Es baut auch die Bilder der bereits veröffentlichten Pins neu. Deren
+ * Datei darf sich nicht ändern — ihre Adresse steht bei Pinterest, und die Landeseiten zeigen
+ * genau diese Auswahl. Deshalb der eigene Schalter, der den Neubau erzwingt und dabei die
+ * Unterscheidung benutzt, die bauen() ohnehin trifft: S.istVeroeffentlicht(). Was fällig ist,
+ * bleibt unangetastet; ob eine Datei neu gebaut wird, entscheidet sich damit an derselben
+ * Regel wie das Einfrieren des Textes und wie der Termin in pin-termine.js.
+ *
+ * Mit "--nur <sorte>" lässt er sich eingrenzen, etwa auf die vier Sorten mit Pflanzenbild.
+ * Zusammen mit "--neu" bricht der Lauf ab: Die beiden Schalter sagen Gegenteiliges.
  *
  * KI-KENNZEICHNUNG: Jeder Pin mit KI-erzeugtem Bild bekommt in bauen() das IPTC-Feld
  * DigitalSourceType in die JPEG-Datei geschrieben (pin-ki-metadaten.js). Das geschieht
@@ -52,7 +74,21 @@ const wert = name => {
   return i >= 0 ? argv[i + 1] : null;
 };
 const NEU = argv.includes('--neu');
+/* Neubau nur für das, was noch nicht draußen ist — Begründung im Modulkopf. Geprüft wird mit
+ * argv.includes(), also auf genaue Gleichheit: '--neu' bleibt '--neu', auch wenn der zweite
+ * Schalter damit anfängt. */
+const NEU_UNVEROEFFENTLICHT = argv.includes('--neu-unveroeffentlicht');
 const NUR = wert('nur');
+
+/* Die beiden Schalter zusammen wären eine Zusage, die der Lauf nicht einhält:
+ * --neu-unveroeffentlicht verspricht, die veröffentlichten Bilder nicht anzufassen, --neu
+ * baut genau sie mit. Ein stilles "--neu gewinnt" hieße, dass jemand mit dem Vorsatz, die
+ * Pinterest-Bilder zu schonen, sie gerade überschreibt. */
+if (NEU && NEU_UNVEROEFFENTLICHT) {
+  console.error('--neu und --neu-unveroeffentlicht schliessen sich aus: --neu baut auch die Bilder der');
+  console.error('bereits veroeffentlichten Pins neu, --neu-unveroeffentlicht sagt zu, genau das nicht zu tun.');
+  process.exit(1);
+}
 const LIMIT = Number(wert('limit')) || 0;
 
 const db = new Database(process.env.DB_PFAD || path.join(WURZEL, 'stauden.db'), { readonly: true });
@@ -78,9 +114,25 @@ fs.mkdirSync(ZIEL, { recursive: true });
 const vorher = fs.existsSync(LISTE) ? JSON.parse(fs.readFileSync(LISTE, 'utf8')) : [];
 const frueher = Object.fromEntries(vorher.map(e => [e.guid, e]));
 
+/* DIE ZUSAGE DES SCHALTERS HAENGT AN DIESER LISTE. --neu-unveroeffentlicht unterscheidet
+ * veroeffentlicht von unveroeffentlicht ausschliesslich ueber frueher[guid].geplant_am.
+ * Fehlt liste.json oder ist sie leer, ist istVeroeffentlicht() fuer JEDEN Pin false — der
+ * Schalter wuerde dann genau die Bilder neu bauen, die er schonen soll, und die Bilanzzeile
+ * meldete brav "0 veroeffentlichte unangetastet". Eine Zusage, deren Grundlage fehlt, wird
+ * nicht abgeleitet, sondern abgelehnt. */
+if (NEU_UNVEROEFFENTLICHT && !vorher.length) {
+  console.error('--neu-unveroeffentlicht braucht eine gefuellte ' + LISTE + ':');
+  console.error('Ohne sie gilt jeder Pin als unveroeffentlicht, und der Schalter wuerde genau');
+  console.error('die Bilder neu bauen, die er schonen soll. Erst einen normalen Lauf machen.');
+  process.exit(1);
+}
+
 const liste = [];
 let erzeugt = 0, vorhanden = 0, fehler = 0;
 let kiNeu = 0, kiSchon = 0, kiUnmoeglich = 0;
+// Nur fuer --neu-unveroeffentlicht: was der Schalter wirklich angefasst und was er
+// ausgelassen hat. Eine Zusage, die man nicht nachzaehlen kann, ist keine.
+let neuUnveroeffentlicht = 0, geschontVeroeffentlicht = 0;
 
 /*
  * Ein Eintrag entsteht nur, wenn die Bilddatei danach wirklich existiert. Ein Feed, der auf
@@ -152,13 +204,67 @@ function listeSchreiben(vollstaendig) {
   fs.writeFileSync(LISTE, JSON.stringify(liste, null, 1));
 }
 
+/*
+ * machen(pfad, guid): DIE KENNUNG WIRD HEREINGEREICHT, NICHT ZWEIMAL GEBILDET.
+ *
+ * Die Bildbauer schreiben die IDs der abgebildeten Pflanzen in die Datei und legen die
+ * Kennung dazu (bildKommentarArgs() in pin-layout.js). Gebildet wird sie an den
+ * Aufrufstellen weiter unten — 'pflanze-<slug>', 'kombi-<slug>', saisonKennung(s) —, und
+ * zwar genau einmal, als Feld 'guid' dieses Aufrufs. bauen() gibt dieselbe Zeichenkette an
+ * machen() weiter. Würde pin-bild.js oder pin-kombination.js sie selbst zusammensetzen, gäbe
+ * es eine zweite Fassung der Kennungsregel, die beim nächsten Umbenennen auseinanderliefe —
+ * und im Bild stünde dann eine Kennung, unter der der Pin nirgends geführt wird.
+ * Die Sorten ohne Pflanzenbild ignorieren das zweite Argument; sie schreiben keinen
+ * Bildkommentar, weil auf ihrem Bild keine Pflanze zu sehen ist.
+ */
+/* WANN IST EIN TEXT "NEU"? Nicht: wann wurde er berechnet, sondern wann hat er sich geaendert.
+ *
+ * Ein frischer Zeitstempel bei jedem Lauf haette Stufe (ii) von check-pin-deckung.js wieder
+ * wertlos gemacht: Geprueft werden dort genau die unveroeffentlichten Eintraege, und deren Text
+ * wird bei JEDEM Lauf neu gerechnet. Die Pruefung haette also gemessen "Bild aelter als der
+ * letzte Lauf" statt "Bild aelter als sein Text" — und nach dem zweiten Lauf jede liegende
+ * Datei angezeigt. Genau diese Falschmeldung hat die Pruefung schon einmal gekostet.
+ *
+ * Deshalb: Stimmt der neu gerechnete Text in allen ausgelieferten Feldern mit dem alten
+ * ueberein, behaelt der Eintrag seinen alten Zeitstempel. Erst eine echte Aenderung setzt ihn. */
+const TEXTFELDER = ['titel', 'beschreibung', 'link', 'alt', 'board'];
+function textZeitstempel(alt, t, eingefroren) {
+  if (eingefroren) return alt.text_am || null;
+  const gleich = alt && TEXTFELDER.every(f => String(alt[f] ?? '') === String(t[f] ?? ''));
+  if (gleich && alt.text_am) return alt.text_am;
+  return new Date().toISOString();
+}
+
 async function bauen({ guid, datei, typ, machen, text, extra = {}, erzwingen = false, quellen = null }) {
   const pfad = path.join(ZIEL, datei);
   const dawar = fs.existsSync(pfad);
-  if (!dawar || NEU || erzwingen) {
+
+  /* ── Der alte Eintrag wird HIER geholt, nicht erst beim Text ─────────────────────────
+   *
+   * Beide Zeilen standen bis zum 22.09.2026 unter dem Bau-Zweig, beim Einfrieren des Textes.
+   * Dort sind sie zu spät: --neu-unveroeffentlicht muss VOR dem Bau wissen, ob dieser Pin
+   * schon draußen ist. Es sind reine Nachschlagevorgänge ohne Nebenwirkung — der TEXT wird
+   * weiterhin erst unten gerechnet, die Reihenfolge Text-vor-KI-Block bleibt unberührt.
+   * Gefragt wird mit derselben Regel wie überall im Pin-Kanal (S.istVeroeffentlicht).
+   */
+  const alt = frueher[guid];
+  const veroeffentlicht = istVeroeffentlicht(alt);
+
+  /* Der Neubau, den --neu-unveroeffentlicht erzwingt — und die Grenze, die ihn von --neu
+   * unterscheidet. Ein veröffentlichter Pin behält seine Datei Byte für Byte: Seine Adresse
+   * steht bei Pinterest, und die Landeseite zeigt genau die Auswahl, die auf diesem Bild
+   * ist. Neu gebaut wird also nur, was noch niemand gesehen hat. */
+  /* alt MUSS dastehen: Eine Datei ohne Listeneintrag ist nicht "noch nicht veroeffentlicht",
+   * sondern unbekannter Herkunft — etwa die verwaiste pflanze-artemisia-arborescens.jpg vom
+   * 18.08.2026, deren Pflanze noch am selben Tag aus dem Bestand fiel. Schweigen der Liste
+   * ist kein Beleg. */
+  const neuWeilUnveroeffentlicht = NEU_UNVEROEFFENTLICHT && Boolean(alt) && !veroeffentlicht;
+
+  if (!dawar || NEU || erzwingen || neuWeilUnveroeffentlicht) {
     try {
-      await machen(pfad);
+      await machen(pfad, guid);
       erzeugt++;
+      if (neuWeilUnveroeffentlicht && dawar) neuUnveroeffentlicht++;
     } catch (e) {
       console.error(`  ! ${datei}: ${e.message}`);
       fehler++;
@@ -166,6 +272,9 @@ async function bauen({ guid, datei, typ, machen, text, extra = {}, erzwingen = f
     }
   } else {
     vorhanden++;
+    // In diesem Zweig und bei gesetztem Schalter kann der Pin nur veröffentlicht sein:
+    // Wäre er es nicht, hätte neuWeilUnveroeffentlicht ihn oben in den Neubau geschickt.
+    if (NEU_UNVEROEFFENTLICHT) geschontVeroeffentlicht++;
   }
   if (!fs.existsSync(pfad)) {
     console.error(`  ! Datei fehlt nach dem Erzeugen: ${datei}`);
@@ -186,8 +295,9 @@ async function bauen({ guid, datei, typ, machen, text, extra = {}, erzwingen = f
    * abweichen. Faellig heisst veroeffentlicht: Der Feed liefert ab dem Tag, Pinterest liest
    * taeglich.
    */
-  const alt = frueher[guid];
-  const veroeffentlicht = istVeroeffentlicht(alt);
+  // `alt` und `veroeffentlicht` stehen seit dem 22.09.2026 am Anfang der Funktion — die
+  // Bauentscheidung braucht sie schon dort (--neu-unveroeffentlicht). Hier wird nur noch
+  // gefragt, ob der Text dieses Eintrags eingefroren ist.
   const eingefroren = veroeffentlicht && typeof alt.titel === 'string' && typeof alt.link === 'string';
   const t = eingefroren ? alt : text();
   const kiSorte = L.istKiPin(typ);
@@ -233,7 +343,7 @@ async function bauen({ guid, datei, typ, machen, text, extra = {}, erzwingen = f
    *
    * DIE STELLE IST NICHT BELIEBIG, DESHALB STEHT DAS HIER:
    *
-   * (a) AUSSERHALB des Zweigs `if (!dawar || NEU || erzwingen)` weiter oben. Der läuft nur,
+   * (a) AUSSERHALB des Zweigs `if (!dawar || NEU || erzwingen || neuWeilUnveroeffentlicht)` weiter oben. Der läuft nur,
    *     wenn das Bild NEU gebaut wird. Stünde die Kennzeichnung dort, bekämen die bereits
    *     liegenden Dateien sie NIE — im Normallauf sind das fast alle, darunter sämtliche
    *     Saison-Raster, die nur bei geänderter Auswahl neu gebaut werden. So werden sie beim
@@ -334,6 +444,21 @@ async function bauen({ guid, datei, typ, machen, text, extra = {}, erzwingen = f
     kiBild: typeof t.kiBild === 'boolean' ? t.kiBild : kiSorte,
     bytes: fs.statSync(pfad).size,
     pubDate: alt?.pubDate || new Date().toUTCString(),
+    /* WANN DER TEXT DIESES EINTRAGS ENTSTANDEN IST — je Eintrag, nicht je Lauf.
+     *
+     * Gelesen wird das Feld von scripts/check-pin-deckung.js, Stufe (ii): Ist die Bilddatei
+     * deutlich älter als der Text DIESES Pins, stammen Bild und Beschreibung aus
+     * verschiedenen Läufen — genau die Lage des Vorfalls bei saison-12 (Bild 10:45, Text
+     * 13:14). Gegen die Änderungszeit von liste.json ließe sich das nicht messen: Die wird
+     * bei jedem Lauf neu geschrieben, die Bilddateien bleiben ohne --neu stehen, und damit
+     * wäre ab dem zweiten Lauf jede nicht neu gebaute Datei "älter als der Text".
+     *
+     * Ein eingefrorener Pin behält den Zeitstempel seiner Veröffentlichung. Sein Text wurde
+     * nicht neu gerechnet (er kommt aus alt), also darf er auch nicht frisch aussehen — sonst
+     * behauptete die Liste einen Text von heute über ein Bild von damals. Fehlt das Feld in
+     * einem alten Eintrag, bleibt es null: Die Prüfung sagt dann "nicht prüfbar" statt zu
+     * raten. Veröffentlichte Pins prüft sie ohnehin nicht mehr. */
+    text_am: textZeitstempel(alt, t, eingefroren),
     // Einmal vergebener Termin bleibt. Ein Neulauf der Bilder darf einen Pin nicht
     // umterminieren — und schon veroeffentlichte schon gar nicht.
     ...(alt?.geplant_am ? { geplant_am: alt.geplant_am } : {}),
@@ -385,7 +510,7 @@ async function bauen({ guid, datei, typ, machen, text, extra = {}, erzwingen = f
       const slug = txt.slugify(p.name_botanisch);
       await bauen({
         guid: `pflanze-${slug}`, datei: `pflanze-${slug}.jpg`, typ: S.TYP.pflanze,
-        machen: z => bildModul.pinBild(p, z),
+        machen: (z, kennung) => bildModul.pinBild(p, z, { guid: kennung }),
         text: () => txt.textPflanze(p, giftigkeit),
         quellen: [p],
       });
@@ -416,7 +541,7 @@ async function bauen({ guid, datei, typ, machen, text, extra = {}, erzwingen = f
       await bauen({
         guid: `${S.TYP.pflanzeWinter}-${slug}`, datei: `${S.TYP.pflanzeWinter}-${slug}.jpg`,
         typ: S.TYP.pflanzeWinter,
-        machen: z => bildModul.pinBild(p, z, { winter: true }),
+        machen: (z, kennung) => bildModul.pinBild(p, z, { winter: true, guid: kennung }),
         text: () => txt.textPflanzeWinter(p, giftigkeit),
         quellen: [p],
       });
@@ -479,7 +604,7 @@ async function bauen({ guid, datei, typ, machen, text, extra = {}, erzwingen = f
         : neu;
       await bauen({
         guid, datei, typ: S.TYP.saison, erzwingen: geaendert && !veroeffentlicht,
-        machen: z => saisonModul.saisonPin(s, z),
+        machen: (z, kennung) => saisonModul.saisonPin(s, z, { guid: kennung }),
         text: () => txt.textSaison(s, giftigkeit),
         quellen: s.auswahl.map(x => x.p),
         extra,
@@ -504,7 +629,7 @@ async function bauen({ guid, datei, typ, machen, text, extra = {}, erzwingen = f
       const slug = txt.slugify(standort);
       await bauen({
         guid: `kombi-${slug}`, datei: `kombi-${slug}.jpg`, typ: S.TYP.kombi,
-        machen: z => kombiModul.kombiPin(k, z),
+        machen: (z, kennung) => kombiModul.kombiPin(k, z, { guid: kennung }),
         text: () => txt.textKombination(k, giftigkeit),
         quellen: k.pflanzen,
       });
@@ -570,6 +695,22 @@ async function bauen({ guid, datei, typ, machen, text, extra = {}, erzwingen = f
   // Ergebnis, beim ersten dagegen der Hinweis, dass nichts geschrieben wurde.
   console.log(`KI-Kennzeichnung: ${kiNeu} neu geschrieben · ${kiSchon} bereits vorhanden`
     + (kiUnmoeglich ? ` · ${kiUnmoeglich} NICHT MÖGLICH` : ''));
+  // Der Schalter sagt zu, die veröffentlichten Bilder nicht anzufassen. Die Zusage steht
+  // damit als Zahl im Protokoll und nicht nur in diesem Kommentar.
+  if (NEU_UNVEROEFFENTLICHT) {
+    /* Soll gegen Ist. Die Ist-Zahl allein kann nur gelingen: Ein faelschlich neu gebauter
+     * veroeffentlichter Pin erhoeht den einen Zaehler und fehlt im anderen, ohne dass es
+     * auffiele. Gezaehlt wird deshalb aus derselben Liste, aus der die Entscheidung kam. */
+    const sollGeschont = vorher.filter(e => istVeroeffentlicht(e) && e.datei
+      && (!NUR || e.typ === NUR)).length;
+    console.log(`--neu-unveroeffentlicht: ${neuUnveroeffentlicht} vorhandene Bilder neu gebaut`
+      + ` · ${geschontVeroeffentlicht} von ${sollGeschont} veroeffentlichten unangetastet`);
+    if (geschontVeroeffentlicht !== sollGeschont) {
+      console.error(`  ! Erwartet waren ${sollGeschont} geschonte veroeffentlichte Pins.`
+        + ' Die Zusage des Schalters ist damit NICHT belegt.');
+      fehler++;
+    }
+  }
   for (const [b, n] of Object.entries(jeBrett).sort((x, y) => y[1] - x[1])) {
     console.log(`  ${String(n).padStart(4)}  ${b}`);
   }

@@ -393,8 +393,18 @@ function alleSaisonPins(pool, { fest = new Map() } = {}) {
   return { pins, verworfen, hinweise };
 }
 
-function saisonPin(s, ziel) {
+/*
+ * 'guid' NUR ZUM MITSCHREIBEN IN DEN BILDKOMMENTAR (siehe bildKommentarArgs() in
+ * pin-layout.js). Die Vorgabe ruft saisonKennung() auf — dieselbe und einzige Fassung der
+ * Kennungsregel, die auch pins-erzeugen.js benutzt, kein Nachbau. Der Stapellauf reicht
+ * trotzdem die Kennung des Listeneintrags herein: Dann steht im Bild genau die Kennung, unter
+ * der es in liste.json gefuehrt wird, und eine vertauschte Datei faellt der Pruefung auf.
+ */
+function saisonPin(s, ziel, { guid = saisonKennung(s).guid } = {}) {
   const tmp = [];
+  // Was wirklich ins Raster gezeichnet wird — eingesammelt in der Schleife, die es zeichnet,
+  // nicht ein zweites Mal aus s.auswahl abgeleitet.
+  const gezeichnet = [];
   const args = ['-size', `${B}x${H}`, `xc:${GRUEN}`, '-gravity', 'northwest'];
   const innen = B - 120;
   const kopf = saisonKopf(s);
@@ -416,6 +426,7 @@ function saisonPin(s, ziel) {
                              '-extent', `${SPALTE}x${ZEILE}`, datei], { stdio: 'pipe' });
     tmp.push(datei);
     args.push('-draw', `image over ${sx},${sy} 0,0 "${datei}"`);
+    gezeichnet.push(x.p.id);
   });
 
   s.auswahl.forEach((x, i) => {
@@ -455,6 +466,11 @@ function saisonPin(s, ziel) {
   args.push('-annotate', `+60+${H - 120}`, 'Eigenen Beetplan erstellen — kostenlos');
   args.push('-font', FONT, '-pointsize', '25', '-fill', '#74c69d');
   args.push('-annotate', `+60+${H - 40}`, 'staudenplan.de   ·   Illustrationen');
+
+  /* Die sechs IDs in die Datei selbst. Damit kann check-pin-deckung.js das Bild befragen,
+   * statt Text gegen Text zu halten — die Begruendung steht bei bildKommentarArgs() in
+   * pin-layout.js. */
+  args.push(...L.bildKommentarArgs({ guid, ids: gezeichnet }));
 
   args.push('-quality', '88', ziel);
   execFileSync(L.MAGICK, args, { stdio: 'pipe' });

@@ -77,7 +77,20 @@ function ersteFakt(p, winter) {
   return aspekt;
 }
 
-function pinBild(p, ziel, { winter = false } = {}) {
+/*
+ * BEIDE EINZELPFLANZEN-SORTEN LAUFEN HIER DURCH: 'pflanze' und 'pflanze-winter' (Schalter
+ * 'winter'). Sie zeigen dieselbe Bilddatei derselben Pflanze und unterscheiden sich nur in
+ * der Faktenzeile — der Bildkommentar traegt deshalb in beiden Faellen dieselbe eine ID, und
+ * das ist richtig so: Auf dem Bild ist genau diese eine Pflanze zu sehen. Auseinander haelt
+ * die beiden die 'guid', die der Stapellauf hereinreicht (pflanze-<slug> bzw.
+ * pflanze-winter-<slug>).
+ *
+ * 'guid' wird hereingereicht und nicht hier gebildet: Die Kennung entsteht in
+ * pins-erzeugen.js, ein Nachbau waere eine zweite Fassung derselben Regel. Ohne sie traegt
+ * das Bild nur die ID; die Pruefung kommt damit aus (guid ist dort optional) und kann dann
+ * nur keine vertauschte Datei erkennen. Aufbau: bildKommentarArgs() in pin-layout.js.
+ */
+function pinBild(p, ziel, { winter = false, guid = null } = {}) {
   const quelle = path.join(WURZEL, 'public', p.bild_url.replace(/^\//, ''));
   if (!fs.existsSync(quelle)) throw new Error('Bilddatei fehlt: ' + quelle);
 
@@ -136,6 +149,11 @@ function pinBild(p, ziel, { winter = false } = {}) {
   // bezog. Mit northwest und fester y-Position ist die Lage eindeutig.
   args.push('-font', FONT, '-pointsize', '25', '-fill', '#74c69d');
   args.push('-annotate', `+60+${H - 40}`, 'staudenplan.de   ·   Illustration');
+
+  /* Die ID der einen Pflanze in die Datei selbst — es ist die, deren Bilddatei oben als
+   * 'quelle' oben in die Bildflaeche gelaufen ist. Wozu: bildKommentarArgs() in
+   * pin-layout.js. */
+  args.push(...L.bildKommentarArgs({ guid, ids: [p.id] }));
 
   args.push('-quality', '88', ziel);
   execFileSync(MAGICK, args, { stdio: 'pipe' });

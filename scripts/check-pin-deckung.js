@@ -42,39 +42,44 @@
  *   Exitcode 1, die Luecke bleibt also sichtbar; sie wird von (A) geschlossen, nicht von
  *   einer Zahl, die zufaellig einmal richtig liegt.
  *
- * ZWEI ZEILEN FEHLEN NOCH, DAMIT DIESE PRUEFUNG ETWAS BELEGEN KANN. Sie gehoeren in
- * scripts/pins-erzeugen.js und in die Bildskripte; beides sind eigene, kleine Schritte, die
- * jederzeit gemacht werden koennen — sie standen nur nicht im Umfang der Aenderung vom
- * 21.09.2026 und stehen deshalb hier als Auftrag statt dort als Code. Wer sie ausfuehrt,
- * streicht den jeweiligen Absatz hier.
+ * (A) UND (B) SIND SEIT DEM 22.09.2026 GEBAUT. Bis dahin standen sie hier als Auftrag statt
+ * dort als Code, und dieser Lauf meldete deshalb jeden Pin als NICHT PRUEFBAR. Was es jetzt
+ * gibt und wo es steht:
  *
- * (A) FUER STUFE (ii) — in scripts/pins-erzeugen.js, in bauen(), dort wo der Listeneintrag
- *     aus dem Text gebildet wird (das Objekt mit titel/beschreibung/link), EIN Feld:
+ * (A) FUER STUFE (ii) — das Feld text_am je Listeneintrag, gesetzt in bauen()
+ *     (scripts/pins-erzeugen.js) beim Zusammensetzen des Eintrags:
  *
  *       text_am: eingefroren ? (alt.text_am || null) : new Date().toISOString(),
  *
- *     Dann traegt jeder Eintrag das Alter SEINES Textes: bei einem eingefrorenen Pin den
- *     Stand der Veroeffentlichung, sonst den laufenden Bau. Genau diese Unterscheidung ist
- *     der Punkt — ein Pin, dessen Text nicht neu gerechnet wurde, darf auch nicht so aussehen.
+ *     Jeder Eintrag traegt damit das Alter SEINES Textes: bei einem eingefrorenen Pin den
+ *     Stand der Veroeffentlichung, sonst den laufenden Bau. Ein Pin, dessen Text nicht neu
+ *     gerechnet wurde, sieht damit auch nicht neu aus. Eintraege aus der Zeit davor haben das
+ *     Feld nicht; fuer sie sagt Stufe (ii) weiterhin nichts, statt zu raten.
  *
- * (B) FUER STUFE (i) — die eine Zeile, ohne die der Bildkommentar nie entsteht:
- *   scripts/pin-saison.js, in saisonPin(), unmittelbar vor `args.push('-quality', '88', ziel)`:
+ * (B) FUER STUFE (i) — der Bildkommentar, geschrieben beim BAUEN des Bildes. Den Aufbau
+ *     liefert bildKommentarArgs() in scripts/pin-layout.js, EINMAL fuer alle vier Sorten mit
+ *     Pflanzenbild; die Bildbauer haengen ihn unmittelbar vor -quality an ihre
+ *     ImageMagick-Argumente: scripts/pin-saison.js (die sechs IDs des Rasters),
+ *     scripts/pin-kombination.js (die drei Kacheln) und scripts/pin-bild.js (die eine
+ *     Pflanze, fuer pflanze wie fuer pflanze-winter). Die IDs werden dabei in derselben
+ *     Schleife eingesammelt, die die Kacheln zeichnet — nicht ein zweites Mal aus der Auswahl
+ *     abgeleitet.
  *
- *     args.push('-set', 'comment', JSON.stringify({ guid: saisonKennung(s).guid,
- *       ids: s.auswahl.map(x => x.p.id), erzeugt_am: new Date().toISOString() }));
+ *     DER KOMMENTAR ENTSTEHT NUR BEIM BAUEN. Ihn nachtraeglich in eine liegende Datei zu
+ *     schreiben waere das Gegenteil eines Belegs: Man behauptete die heutige Auswahl ueber
+ *     ein altes Bild und faerbte diese Pruefung gruen, ohne irgendetwas gesehen zu haben.
+ *     Damit die rund 490 schon liegenden, aber noch nicht faelligen Dateien ihn trotzdem
+ *     bekommen, hat scripts/pins-erzeugen.js den Schalter --neu-unveroeffentlicht: Er baut
+ *     genau diese Bilder neu und laesst die der veroeffentlichten Pins unangetastet.
  *
- *   Fuer die uebrigen Sorten mit Pflanzenbild dieselbe Zeile an derselben Stelle:
- *   scripts/pin-kombination.js in kombiPin() (ids: k.pflanzen.map(p => p.id)) und
- *   scripts/pin-bild.js in pinBild() (ids: [p.id]). Dort kennt die Funktion die guid nicht —
- *   sie wird in pins-erzeugen.js gebildet. Deshalb ist `guid` in dieser Pruefung OPTIONAL:
- *   Steht sie im Bild, muss sie passen; fehlt sie, werden nur die IDs verglichen. Die guid
- *   nachzubauen waere eine zweite Fassung der Kennungsregel — sie gehoert als Argument
- *   hereingereicht, nicht hier erraten.
+ *     `guid` bleibt OPTIONAL. Steht sie im Bild, muss sie zum Eintrag passen; fehlt sie,
+ *     werden nur die IDs verglichen. Gebildet wird sie in pins-erzeugen.js (bei der Sorte
+ *     saison in saisonKennung()) und von dort an den Bildbauer hereingereicht — sie in den
+ *     Bildskripten nachzubauen waere eine zweite Fassung der Kennungsregel.
  *
- *   Solange (A) und (B) fehlen, meldet dieser Lauf jeden Pin als NICHT PRUEFBAR und endet mit
- *   Exitcode 1. Das ist der ehrliche Zustand: Die Deckung von Bild und Text ist heute nicht
- *   belegt. Was hier NICHT mehr passiert, ist die Umkehrung — aus „nicht belegt" ein
- *   „nachweislich falsch" zu machen.
+ *   WAS DIESE PRUEFUNG WEITERHIN NICHT TUT, ist die Umkehrung: aus „nicht belegt" ein
+ *   „nachweislich falsch" zu machen. Ein Pin ohne Bildkommentar und ohne text_am bleibt
+ *   NICHT PRUEFBAR, und der Lauf endet mit Exitcode 1 — sichtbar, aber ohne Befund gegen ihn.
  *
  * GEPRUEFT WIRD, WAS NOCH NICHT FAELLIG IST. Ein veroeffentlichter Pin ist bei Pinterest und
  * nicht mehr zurueckzuholen; die Pruefung soll VOR dem Veroeffentlichen greifen. „Faellig"
@@ -258,16 +263,46 @@ if (SELBSTTEST) {
   pruefe('Name mit Buchstaben davor wird NICHT erkannt', gefunden('WortStorchschnabel blueht').length === 0);
   pruefe('leerer Text nennt niemanden', genannt('').length === 0);
 
-  const nutz = Buffer.from(JSON.stringify({ guid: 'saison-12', ids: [1, 2, 3], erzeugt_am: '2026-09-21T10:45:00Z' }), 'utf8');
-  const kopf = Buffer.alloc(4);
-  kopf.writeUInt16BE(0xFFFE, 0);
-  kopf.writeUInt16BE(nutz.length + 2, 2);
-  const jpg = Buffer.concat([Buffer.from([0xFF, 0xD8]), kopf, nutz, Buffer.from([0xFF, 0xD9])]);
-  const probe = path.join(require('os').tmpdir(), `pin-deckung-selbsttest-${process.pid}.jpg`);
-  fs.writeFileSync(probe, jpg);
-  const k = bildKommentar(probe);
-  fs.unlinkSync(probe);
+  /* Kleinste denkbare JPEG-Datei mit genau diesem COM-Segment, gelesen und wieder geloescht.
+   * Zweimal gebraucht: einmal mit einem von Hand geschriebenen Kommentar (belegt, dass der
+   * Leser das Format versteht), einmal mit dem, den die Bildbauer wirklich schreiben. */
+  const alsKommentar = inhalt => {
+    const nutz = Buffer.from(inhalt, 'utf8');
+    const kopf = Buffer.alloc(4);
+    kopf.writeUInt16BE(0xFFFE, 0);
+    kopf.writeUInt16BE(nutz.length + 2, 2);
+    const probe = path.join(require('os').tmpdir(), `pin-deckung-selbsttest-${process.pid}.jpg`);
+    fs.writeFileSync(probe, Buffer.concat([Buffer.from([0xFF, 0xD8]), kopf, nutz, Buffer.from([0xFF, 0xD9])]));
+    try { return bildKommentar(probe); } finally { fs.unlinkSync(probe); }
+  };
+
+  const k = alsKommentar(JSON.stringify({ guid: 'saison-12', ids: [1, 2, 3], erzeugt_am: '2026-09-21T10:45:00Z' }));
   pruefe('Bildkommentar wird gelesen', !k.fehlt && k.guid === 'saison-12' && k.ids.join() === '1,2,3');
+
+  /* SCHREIBER UND LESER, FELD FUER FELD.
+   *
+   * Gebaut wird mit demselben Baustein, den pin-saison.js, pin-kombination.js und pin-bild.js
+   * an ihre ImageMagick-Argumente haengen: bildKommentarArgs() in pin-layout.js. Eine hier
+   * nachgeschriebene Fassung belegte nur, dass dieser Selbsttest zu sich selbst passt. So
+   * faellt auf, wenn dort ein Feld umbenannt wird — der Kommentar landete weiterhin in der
+   * Datei, und diese Pruefung laese still nichts mehr daraus, also wieder "nicht pruefbar".
+   * Der Baustein ruft ImageMagick nicht auf; der Selbsttest laeuft damit auch auf einem
+   * CI-Runner ohne Bildwerkzeug. */
+  const gebaut = L.bildKommentarArgs({ guid: 'saison-12', ids: [11, 22, 33] });
+  pruefe('der Bildkommentar wird als ImageMagick-Argument "-set comment" gebaut',
+    gebaut.length === 3 && gebaut[0] === '-set' && gebaut[1] === 'comment');
+  const g = alsKommentar(gebaut[2]);
+  pruefe('was die Bildbauer schreiben, liest diese Pruefung Feld fuer Feld',
+    !g.fehlt && g.guid === 'saison-12' && g.ids.join() === '11,22,33'
+    && Number.isFinite(Date.parse(g.erzeugt_am)));
+  const ohneKennung = alsKommentar(L.bildKommentarArgs({ ids: [7] })[2]);
+  pruefe('ohne Kennung bleiben die IDs lesbar — guid ist hier ausdruecklich optional',
+    !ohneKennung.fehlt && ohneKennung.guid === null && ohneKennung.ids.join() === '7');
+  /* Die andere Richtung: Ein Kommentar ohne ids liest sich als "COM-Segment ohne ids", also
+   * wieder als nicht pruefbar. Deshalb entsteht er gar nicht erst. */
+  let warfOhneIds = false;
+  try { L.bildKommentarArgs({ ids: [] }); } catch { warfOhneIds = true; }
+  pruefe('ohne IDs entsteht gar kein Kommentar, statt eines Kommentars ohne Aussage', warfOhneIds);
 
   const keinBild = path.join(require('os').tmpdir(), `pin-deckung-selbsttest-${process.pid}.txt`);
   fs.writeFileSync(keinBild, 'kein JPEG');
@@ -292,7 +327,7 @@ console.log('--- Pruefung: Deckung von Pin-Bild und Pin-Beschreibung ---');
 console.log(`Liste: ${LISTE} (${liste.length} Eintraege, zuletzt geschrieben ${new Date(listeGeschrieben).toISOString()})`);
 const mitTextAm = liste.filter(e => textAmVon(e)).length;
 console.log(`Eintraege mit eigenem Textzeitstempel (text_am): ${mitTextAm} von ${liste.length}`
-  + (mitTextAm ? '' : ' — Stufe (ii) kann damit nichts messen, siehe Kopf dieser Datei (A)'));
+  + (mitTextAm ? '' : ' — Stufe (ii) kann damit nichts messen; das Feld setzt bauen() in pins-erzeugen.js'));
 
 /* Geprueft werden die Sorten, deren Bild Pflanzen zeigt. Das sind heute genau die Sorten aus
  * KI_PIN_SORTEN (pin-layout.js): Jedes Pflanzenbild im Pin-Pool ist selbst erzeugt, die
@@ -363,7 +398,7 @@ for (const e of liste) {
   }
   const alter = (textAm - fs.statSync(pfad).mtimeMs) / 60000;
   if (alter > TOLERANZ_MIN) {
-    FEHLER(wo, `Bild ${Math.round(alter)} Minuten aelter als der Text dieses Pins (text_am ${e.text_am}, Grenze ${TOLERANZ_MIN}) und ohne Bildkommentar (${k.grund}) — Bild und Beschreibung stammen aus verschiedenen Laeufen.`);
+    FEHLER(wo, `Bild ${Math.round(alter)} Minuten aelter als der Text dieses Pins (text_am ${e.text_am}, Grenze ${TOLERANZ_MIN}) und ohne Bildkommentar (${k.grund}) — Bild und Beschreibung stammen aus verschiedenen Laeufen. Eine liegende Datei bekommt den Bildkommentar nur durch einen Neubau: node scripts/pins-erzeugen.js --neu-unveroeffentlicht`);
     continue;
   }
   UNGEPRUEFT(wo, `kein Bildkommentar (${k.grund}); die Zeiten passen zwar zusammen, geprueft ist damit aber nichts.`);
@@ -381,10 +416,13 @@ if (geprueft < MIN_PINS) {
   fehler++;
 }
 if (ungeprueft > 0) {
-  console.error(`FEHLER: ${ungeprueft} Pins sind nicht pruefbar. Solange der Bildkommentar fehlt, ist die`);
-  console.error('Deckung von Bild und Text nicht belegt. Die beiden Zeilen, die dafuer noch fehlen,');
-  console.error('stehen im Kopf dieser Datei: (A) das Feld text_am in scripts/pins-erzeugen.js,');
-  console.error('(B) der Bildkommentar per -set comment in pin-saison.js / pin-kombination.js / pin-bild.js.');
+  console.error(`FEHLER: ${ungeprueft} Pins sind nicht pruefbar. Ohne Bildkommentar ist die Deckung von`);
+  console.error('Bild und Text nicht belegt. Geschrieben wird er beim BAUEN des Bildes; eine liegende');
+  console.error('Datei bekommt ihn nur durch einen Neubau:');
+  console.error('  node scripts/pins-erzeugen.js --neu-unveroeffentlicht');
+  console.error('Der Schalter laesst die Bilder der veroeffentlichten Pins unangetastet. Ihn nicht zu');
+  console.error('benutzen und stattdessen den Kommentar in die fertige Datei zu schreiben, faerbte diese');
+  console.error('Pruefung gruen, ohne etwas zu belegen — siehe Kopf dieser Datei.');
   console.error('„Nicht pruefbar" ist der ehrliche Zustand — kein Befund gegen die gemeldeten Pins.');
   fehler++;
 }

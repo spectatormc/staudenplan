@@ -1,5 +1,6 @@
 /*
- * Geteilte Bausteine der Pin-Erzeugung: Maße, Schriften, Monatsrechnung, Textumbruch.
+ * Geteilte Bausteine der Pin-Erzeugung: Maße, Schriften, Monatsrechnung, Textumbruch — und
+ * der Bildkommentar, der festhält, welche Pflanzen wirklich ins Bild gezeichnet wurden.
  *
  * Herausgezogen, nachdem `umbrechen` in der dritten Datei stand und die Schätzung der
  * Textbreite zweimal zu abgeschnittenen Überschriften geführt hat. Wer hier etwas ändert,
@@ -254,6 +255,65 @@ const KI_PIN_SORTEN = [TYP.pflanze, TYP.kombi, TYP.saison, TYP.pflanzeWinter];
 const istKiPin = typ => KI_PIN_SORTEN.includes(typ);
 
 /*
+ * DER BILDKOMMENTAR: WELCHE PFLANZEN STEHEN WIRKLICH IM BILD?
+ *
+ * Er entsteht beim BAUEN des Bildes als COM-Segment der JPEG-Datei ('-set comment') und wird
+ * von scripts/check-pin-deckung.js gelesen, Stufe (i). Der Vorfall, gegen den er geschrieben
+ * ist: Bei saison-12 nannte die Beschreibung die Pfingst-Nelke, das Bild zeigte
+ * Leberbluemchen — die Datei entstand um 10:45, der Text um 13:14 desselben Tages, zwei
+ * Laeufe, zwei Auswahlen, ein Pin.
+ *
+ * WARUM DIE DATEI GEFRAGT WIRD UND NICHT liste.json: Beschreibung und das Feld 'pflanzen[]'
+ * entstehen im selben Lauf aus derselben Auswahl und stimmen deshalb per Konstruktion
+ * ueberein — auch dann, wenn beide vom Bild abweichen. Das einzige Stueck, das unabhaengig
+ * davon altern kann, ist die JPG-Datei.
+ *
+ * DESHALB NUR HIER UND NIRGENDWO SONST. Den Kommentar nachtraeglich in eine bestehende Datei
+ * zu schreiben waere das Gegenteil eines Belegs: Man behauptete die HEUTIGE Auswahl ueber ein
+ * ALTES Bild und faerbte die Pruefung gruen, ohne irgendetwas gesehen zu haben. Die IDs
+ * muessen aus derselben Schleife stammen, die die Kacheln zeichnet; die drei Bildbauer
+ * sammeln sie deshalb beim Zeichnen ein und reichen sie hier herein, statt die Auswahl ein
+ * zweites Mal abzuleiten.
+ *
+ * EINE FASSUNG FUER ALLE SORTEN MIT PFLANZENBILD — pflanze und pflanze-winter (beide
+ * pin-bild.js), kombi (pin-kombination.js) und saison (pin-saison.js), also genau
+ * KI_PIN_SORTEN eine Zeile hoeher. Stuende der Aufbau dreimal einzeln, muesste ein
+ * geaendertes Feld dreimal nachgezogen werden, und an der vergessenen Stelle laese die
+ * Pruefung stillschweigend nichts.
+ *
+ * 'guid' IST OPTIONAL UND WIRD HEREINGEREICHT, NIE HIER GEBILDET. Die Kennung entsteht in
+ * pins-erzeugen.js (bei der Sorte saison in saisonKennung(), pin-saison.js); sie hier
+ * nachzubauen waere eine zweite Fassung der Kennungsregel. Fehlt sie, vergleicht die Pruefung
+ * nur die IDs; steht sie im Bild, muss sie zum Eintrag passen — damit faellt auch eine Datei
+ * auf, die zum falschen Pin gehoert.
+ *
+ * KEINE IDS, KEIN BILD: Ohne lesbare IDs wird geworfen statt ein Kommentar ohne 'ids'
+ * geschrieben. Den liest die Pruefung als "COM-Segment ohne ids", also wieder als
+ * "nicht pruefbar" — ein stiller Rueckfall genau in den Zustand, den dieser Kommentar
+ * beenden soll. Ein Bild, von dem niemand sagen kann, was darauf ist, soll gar nicht erst
+ * entstehen.
+ *
+ * KEIN PROZENTZEICHEN IN DER KENNUNG: ImageMagick deutet '%' im Wert von -set als Platzhalter
+ * und ersetzte ihn still. Alle heutigen Kennungen kommen aus slugify() und bestehen aus
+ * [a-z0-9-]; eine, die das verlaesst, bricht hier ab, statt einen verstuemmelten Kommentar in
+ * die Datei zu schreiben.
+ */
+function bildKommentarArgs({ guid = null, ids }) {
+  const gezeichnet = (Array.isArray(ids) ? ids : []).map(Number);
+  if (!gezeichnet.length || gezeichnet.some(n => !Number.isFinite(n))) {
+    throw new Error('Bildkommentar ohne lesbare Pflanzen-IDs: ' + JSON.stringify(ids));
+  }
+  if (guid !== null && guid !== undefined && !/^[A-Za-z0-9._-]+$/.test(String(guid))) {
+    throw new Error('Bildkommentar: Kennung enthaelt Zeichen, die ImageMagick deutet: ' + guid);
+  }
+  return ['-set', 'comment', JSON.stringify({
+    ...(guid === null || guid === undefined ? {} : { guid: String(guid) }),
+    ids: gezeichnet,
+    erzeugt_am: new Date().toISOString(),
+  })];
+}
+
+/*
  * Gegenprobe zum Sortennamen: Zeigt dieser Pin wirklich ein KI-Bild?
  *
  * Der Sortenname allein ist kein Beleg. Die Garantie kommt aus dem Lader (`bild_ki = 1`),
@@ -336,5 +396,6 @@ module.exports = { B, H, MAGICK, FONT, FONT_B, GRUEN, MONATE, MON_KURZ, MON_NAME
                    farbeVon, mengeAus, schnitt,
                    hatDeutschenNamen, istBeetpflanze, istGras, istWinterhartHier,
                    KI_PIN_SORTEN, istKiPin, kiHerkunftFehler, kiHerkunftWidersprueche,
+                   bildKommentarArgs,
                    BILD_SPALTEN_SQL: BH.BILD_SPALTEN_SQL, textBreite, passendeGroesse,
                    zeichenProZeile, umbrechen, umbrechenBreit };

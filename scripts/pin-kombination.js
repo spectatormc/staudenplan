@@ -138,9 +138,18 @@ function findeKombinationen(pflanzen, { standort, anzahl = 20 } = {}) {
   return gewaehlt;
 }
 
-function kombiPin(kombi, ziel) {
+/*
+ * 'guid' NUR FUER DEN BILDKOMMENTAR, und sie wird hereingereicht statt hier gebildet: Die
+ * Kennung 'kombi-<slug>' entsteht in pins-erzeugen.js, sie hier nachzubauen waere eine zweite
+ * Fassung derselben Regel. Ohne sie traegt das Bild nur die IDs — die Pruefung kommt damit
+ * aus (guid ist dort ausdruecklich optional), sie kann dann nur keine vertauschte Datei
+ * erkennen. Begruendung und Aufbau: bildKommentarArgs() in pin-layout.js.
+ */
+function kombiPin(kombi, ziel, { guid = null } = {}) {
   const d = kombi.pflanzen;
   const tmp = [];
+  // Was wirklich ins Kopfband gezeichnet wird — eingesammelt beim Zeichnen.
+  const gezeichnet = [];
 
   // Die drei Bilder nebeneinander als Kopfband. Bei 1000 px teilt sich das nicht glatt,
   // die dritte Kachel bekommt den Rest.
@@ -152,6 +161,7 @@ function kombiPin(kombi, ziel) {
     execFileSync(L.MAGICK, [quelle, '-resize', `${breiten[i]}x${BILD_H}^`, '-gravity', 'center',
                              '-extent', `${breiten[i]}x${BILD_H}`, datei], { stdio: 'pipe' });
     tmp.push(datei);
+    gezeichnet.push(p.id);
     const eintrag = { datei, x, breite: breiten[i] };
     x += breiten[i];
     return eintrag;
@@ -247,6 +257,10 @@ function kombiPin(kombi, ziel) {
   args.push('-annotate', `+60+${H - 120}`, 'Passenden Beetplan erstellen — kostenlos');
   args.push('-font', FONT, '-pointsize', '25', '-fill', '#74c69d');
   args.push('-annotate', `+60+${H - 40}`, 'staudenplan.de   ·   Illustrationen');
+
+  /* Die drei IDs in die Datei selbst, damit check-pin-deckung.js das Bild befragen kann
+   * statt den Text (bildKommentarArgs() in pin-layout.js). */
+  args.push(...L.bildKommentarArgs({ guid, ids: gezeichnet }));
 
   args.push('-quality', '88', ziel);
   execFileSync(L.MAGICK, args, { stdio: 'pipe' });
