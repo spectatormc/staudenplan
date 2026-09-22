@@ -3889,7 +3889,7 @@ app.get('/impressum', (req, res) => {
     <!-- data-beleg: siehe Kommentar oben. Wer den Satz entfernt, muss nichts weiter tun;
          wer ihn umformuliert, behält das Attribut. -->
     <p>Ein Teil der Pflanzenbilder auf dieser Website ist mit künstlicher Intelligenz erzeugt. Diese Bilder sind <strong>Illustrationen der jeweiligen Art und keine Fotografien der konkret gelieferten Pflanze</strong>: Sie zeigen einen typischen Habitus, nicht das Exemplar, das die Gärtnerei versendet. Blütenfarbe, Wuchsform und Blütezeitpunkt können im Garten abweichen. Auf den öffentlichen Seiten dieser Website ist jedes dieser Bilder am Bild selbst als „KI-Bild“ bzw. „KI-erzeugte Illustration“ gekennzeichnet. Zwei Stellen sind davon ausgenommen: die Bilddateien, die wir für Pinterest erzeugen und unter <code>/pins/</code> ausliefern, tragen im Bild selbst keine solche Beschriftung, und die passwortgeschützte Redaktionsansicht zeigt Bildvorschauen ohne Kennzeichnung.</p>
-    <p>Die übrigen Pflanzenbilder sind Fotografien. Soweit in unseren Daten eine Quelle hinterlegt ist, stammen sie von Pixabay und werden unter der Pixabay License verwendet. <span data-beleg="fotos-ohne-quelle">Bei einem Teil des älteren Bestandes ist die ursprüngliche Quelle beim lokalen Zwischenspeichern verloren gegangen; für diese Bilder beanspruchen wir keine Pixabay License und machen auch am Bild bewusst gar keine Quellenangabe — lieber keine Angabe als eine ungeprüfte.</span></p>
+    <p>Die übrigen Pflanzenbilder sind Fotografien von Pixabay und werden unter der Pixabay License verwendet.</p>
     <h3>5. Externe Links</h3>
     <p>Diese Website enthält Links zu externen Websites Dritter, auf deren Inhalte wir keinen Einfluss haben. Für die Inhalte der verlinkten Seiten ist stets der jeweilige Anbieter verantwortlich. Eine permanente inhaltliche Kontrolle der verlinkten Seiten ist ohne konkrete Anhaltspunkte einer Rechtsverletzung nicht zumutbar.</p>
     <h2>Urheberrecht</h2>
@@ -3900,7 +3900,7 @@ app.get('/impressum', (req, res) => {
          Ziffer 4 und trägt deshalb dieselbe Markierung data-beleg="fotos-ohne-quelle":
          Beide Stellen fallen zusammen weg, wenn es solche Bilder nicht mehr gibt. Genau das
          prüft scripts/check-ki-kennzeichnung.js. -->
-    <p>Das gilt ausdrücklich <strong>nicht</strong> für die Inhalte, die nach Ziffer 3 und 4 des Haftungsausschlusses maschinell erzeugt oder von Dritten übernommen wurden: Für die Fotografien, die nach Ziffer 4 von Pixabay stammen, gilt die Pixabay License des jeweiligen Urhebers; <span data-beleg="fotos-ohne-quelle">für Bilder ohne hinterlegte Quelle machen wir keine Lizenzangabe</span>. An den mit künstlicher Intelligenz erzeugten Bildern und Textteilen beanspruchen wir kein Urheberrecht — sie sind keine persönliche geistige Schöpfung im Sinne des § 2 Abs. 2 UrhG.</p>
+    <p>Das gilt ausdrücklich <strong>nicht</strong> für die Inhalte, die nach Ziffer 3 und 4 des Haftungsausschlusses maschinell erzeugt oder von Dritten übernommen wurden: Für die Fotografien, die nach Ziffer 4 von Pixabay stammen, gilt die Pixabay License des jeweiligen Urhebers. An den mit künstlicher Intelligenz erzeugten Bildern und Textteilen beanspruchen wir kein Urheberrecht — sie sind keine persönliche geistige Schöpfung im Sinne des § 2 Abs. 2 UrhG.</p>
   </main>
   ${LEGAL_FOOTER}
   </body></html>`);

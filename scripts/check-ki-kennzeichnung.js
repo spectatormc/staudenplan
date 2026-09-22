@@ -513,7 +513,14 @@ if (SELBSTTEST) selbsttest();
     {
       const antwort = await abrufen('/impressum');
       if (antwort.status !== 200) UNGEPRUEFT('/impressum', `Status ${antwort.status}`);
-      else markerImpressum = (antwort.text.match(new RegExp(IMPRESSUM_MARKER.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
+      else {
+        /* HTML-Kommentare zaehlen NICHT mit: Der Marker wird dort erklaert, und eine
+         * Erklaerung behauptet dem Leser gegenueber nichts. Wer sie mitzaehlt, bekommt
+         * die Pruefung nie wieder gruen, sobald die Saetze entfernt sind — und schaltet
+         * sie dann ab. Gezaehlt wird nur, was auf der Seite tatsaechlich steht. */
+        const ohneKommentare = antwort.text.replace(/<!--[\s\S]*?-->/g, '');
+      markerImpressum = (ohneKommentare.match(new RegExp(IMPRESSUM_MARKER.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
+      }
     }
 
     // ── Leerlaufsperre ──────────────────────────────────────────────────────
