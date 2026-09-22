@@ -23,8 +23,13 @@ const fs   = require('fs');
 // ── Argumente ─────────────────────────────────────────────────────────────────
 const args        = process.argv.slice(2);
 const DRY_RUN     = args.includes('--dry-run');
-const FIX         = args.includes('--fix') && !args.includes('--dry-run');
-const PROPOSE     = args.includes('--propose') && !FIX && !DRY_RUN;
+/* --vorschlag prüft das Bild unter bild_vorschlag statt das ausgelieferte unter bild_url.
+ * Gedacht für den Ablauf „erzeugen → prüfen → übernehmen": Der Vorschlag wird beurteilt,
+ * BEVOR er live geht, statt danach. Der Modus schreibt nie (kein --fix, kein --propose) —
+ * er beurteilt nur, und über das Übernehmen entscheidet scripts/bild-vorschlag-uebernehmen.js. */
+const VORSCHLAG   = args.includes('--vorschlag');
+const FIX         = args.includes('--fix') && !args.includes('--dry-run') && !VORSCHLAG;
+const PROPOSE     = args.includes('--propose') && !FIX && !DRY_RUN && !VORSCHLAG;
 const STAGING_ONLY= args.includes('--staging');
 const LIVE_ONLY   = args.includes('--live');
 const ONLY_BAD    = args.includes('--only-bad');
@@ -48,13 +53,16 @@ const UPDATE_VORSCHLAG = db.prepare("UPDATE pflanzen SET bild_vorschlag = ?, bil
 const UPDATE_GEPRUEFT  = db.prepare('UPDATE pflanzen SET bild_geprueft = 1 WHERE id = ?');
 
 // ── Pflanzenliste aufbauen ─────────────────────────────────────────────────────
-let where = "bild_url IS NOT NULL AND name_deutsch != 'Test-Pflanze'";
+let where = VORSCHLAG
+  ? "bild_vorschlag IS NOT NULL AND bild_vorschlag != '' AND name_deutsch != 'Test-Pflanze'"
+  : "bild_url IS NOT NULL AND name_deutsch != 'Test-Pflanze'";
 if (IDS && IDS.length)  where += ` AND id IN (${IDS.join(',')})`;
 else if (STAGING_ONLY)  where += " AND status = 'staging'";
 else if (LIVE_ONLY)     where += " AND (status IS NULL OR status = 'live')";
 
 let pflanzen = db.prepare(`
-  SELECT id, name_deutsch, name_botanisch, bild_url, status, farbe
+  SELECT id, name_deutsch, name_botanisch, status, farbe,
+         ${VORSCHLAG ? 'bild_vorschlag AS bild_url' : 'bild_url'}
   FROM pflanzen WHERE ${where}
   ORDER BY id
 `).all();
