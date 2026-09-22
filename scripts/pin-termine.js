@@ -2,6 +2,7 @@
  * Vergibt jedem Pin ein Veröffentlichungsdatum (`geplant_am`) in public/pins/liste.json.
  *
  *   node scripts/pin-termine.js --dry-run              Kalender zeigen, nichts schreiben
+ *   node scripts/pin-termine.js --ohne-pruefung        Notausgang: Termine ohne die Pin-Pruefungen
  *   node scripts/pin-termine.js                        Termine vergeben und schreiben
  *   node scripts/pin-termine.js --pro-tag 3            Pins pro Tag (Vorgabe 3)
  *   node scripts/pin-termine.js --ab 2026-08-19        Startdatum (Vorgabe: morgen)
@@ -63,6 +64,7 @@ const wert = n => {
 };
 const DRY = argv.includes('--dry-run');
 const NEU = argv.includes('--neu');
+const OHNE_PRUEFUNG = argv.includes('--ohne-pruefung');
 /*
  * Pins pro Tag. Diese Zahl ist nicht nur eine Frequenz, sie ist eine VORAUSSETZUNG DES FEEDS:
  * stauden-server.js liefert je Pinnwand hoechstens FEED_MAX Eintraege, und zwar die zuletzt
@@ -86,6 +88,47 @@ const istVeroeffentlicht = e => S.istVeroeffentlicht(e, HEUTE);
 
 const db = new Database(process.env.DB_PFAD || path.join(WURZEL, 'stauden.db'), { readonly: true });
 const liste = JSON.parse(fs.readFileSync(LISTE, 'utf8'));
+
+/* ── Die beiden Pin-Pruefungen laufen hier, nicht in einer Anleitung ─────────────────────
+ *
+ * Ein Termin ist der Punkt, ab dem der Feed einen Pin ausliefert — und ein veroeffentlichter
+ * Pin laesst sich nicht per Deploy zurueckholen. Alles davor ist reparierbar, alles danach
+ * nicht. Deshalb laufen check-pin-deckung und check-pin-metadaten an DIESER Stelle und nicht
+ * am Deploy: Die Website kann man zurueckrollen, den Pin nicht.
+ *
+ * CI.md hat das bisher als Anweisung an einen Menschen beschrieben ("vor jedem Lauf von",
+ * "nach jedem Lauf von"). Eine Zusage, die nur in einer Anleitung steht, setzt der Code nicht
+ * durch — genau das Muster, gegen das dieses Projekt seine Regeln hat.
+ *
+ * --dry-run laeuft ohne Pruefung: Er schreibt nichts, also kann er auch nichts ausliefern.
+ * --ohne-pruefung gibt es als Notausgang, meldet sich aber laut. */
+function pinPruefungen() {
+  if (DRY) return;
+  if (OHNE_PRUEFUNG) {
+    console.error("!! --ohne-pruefung: Termine werden vergeben, OHNE dass Bild und Beschreibung");
+    console.error("!! abgeglichen wurden. Ab dem Termin liefert der Feed aus, und ein Pin, der");
+    console.error("!! einmal bei Pinterest steht, kommt nicht zurueck.");
+    return;
+  }
+  const { execFileSync } = require("child_process");
+  for (const skript of ["check-pin-deckung.js", "check-pin-metadaten.js"]) {
+    process.stdout.write(`Pruefung ${skript} ... `);
+    try {
+      execFileSync(process.execPath, [path.join(__dirname, skript)], { stdio: "pipe" });
+      console.log("bestanden");
+    } catch (e) {
+      console.log("FEHLGESCHLAGEN");
+      const aus = [e.stdout, e.stderr].map(b => (b ? b.toString() : "")).join("");
+      console.error(aus.split("\n").filter(Boolean).slice(-12).join("\n"));
+      console.error(`\nKeine Termine vergeben. ${skript} muss erst durchlaufen —`);
+      console.error("sonst bekaeme ein Pin einen Termin, dessen Bild und Beschreibung nicht");
+      console.error("nachweislich dieselben Pflanzen nennen. Notausgang: --ohne-pruefung.");
+      process.exit(1);
+    }
+  }
+}
+pinPruefungen();
+
 
 // ── Blühzeit je Pflanzen-Slug, für das Wunschdatum der Einzelpflanzen ────────
 const MONATE = { januar: 1, februar: 2, 'märz': 3, april: 4, mai: 5, juni: 6,
