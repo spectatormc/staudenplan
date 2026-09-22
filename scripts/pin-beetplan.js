@@ -38,14 +38,45 @@ const STUFE_AUS_LABEL = {
   'Hautreizend': 'reizend',
 };
 
-function holeSeite(pfad) {
+function einmalHolen(pfad) {
   return new Promise((ok, fehler) => {
-    http.get({ host: '127.0.0.1', port: PORT, path: pfad, headers: { 'User-Agent': 'pin-generator' } }, r => {
+    const req = http.get({ host: '127.0.0.1', port: PORT, path: pfad, headers: { 'User-Agent': 'pin-generator' } }, r => {
       if (r.statusCode !== 200) { r.resume(); return fehler(new Error(pfad + ' → HTTP ' + r.statusCode)); }
       let s = ''; r.setEncoding('utf8');
       r.on('data', d => s += d).on('end', () => ok(s));
-    }).on('error', fehler);
+    });
+    req.on('error', fehler);
+    // Ohne eigene Frist haengt ein Lauf im schlimmsten Fall, bis jemand ihn abbricht.
+    req.setTimeout(20000, () => req.destroy(new Error(pfad + ' → keine Antwort binnen 20 s')));
   });
+}
+
+/* DREI VERSUCHE, WEIL EINER NACHWEISLICH NICHT REICHT.
+ *
+ * Der Beetplan-Pin ist der einzige, der seine Grafik ueber HTTP vom laufenden Server holt —
+ * die uebrigen Sorten lesen die Datenbank. Am 22.09.2026 ist derselbe Abruf in drei
+ * aufeinanderfolgenden Stapellaeufen je einmal mit "socket hang up" gescheitert, jedes Mal
+ * bei einem anderen Beetplan: Der Server bedient waehrend des Laufs nebenher die Website und
+ * schliesst gelegentlich eine Verbindung. Der Pin fiel dadurch aus der Liste und musste von
+ * Hand nachgezogen werden.
+ *
+ * Ein einzelner Fehlversuch ist also kein Befund ueber die Seite, sondern ueber den
+ * Augenblick. Erst wenn drei Versuche mit Pause scheitern, stimmt etwas mit der Seite nicht —
+ * und dann bricht der Pin weiterhin ab, statt ein halbes Bild zu erzeugen. */
+async function holeSeite(pfad, versuche = 3) {
+  let letzter;
+  for (let i = 1; i <= versuche; i++) {
+    try {
+      return await einmalHolen(pfad);
+    } catch (e) {
+      letzter = e;
+      if (i < versuche) {
+        console.error(`  ~ ${pfad}: ${e.message} — Versuch ${i} von ${versuche}, neuer Versuch in ${i} s`);
+        await new Promise(r => setTimeout(r, i * 1000));
+      }
+    }
+  }
+  throw letzter;
 }
 
 // Aus der gerenderten Seite: das Beet-SVG und die Legendennamen in der Reihenfolge der Nummern.
