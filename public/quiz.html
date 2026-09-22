@@ -56,7 +56,12 @@
   .progress-fill { height: 100%; background: linear-gradient(90deg, var(--green), var(--light-green)); border-radius: 4px; transition: width .4s ease; }
   .frage-nr { font-size: .8rem; color: #888; text-align: right; margin-bottom: 12px; }
 
-  .pflanze-bild { width: 100%; max-height: 300px; object-fit: cover; border-radius: 10px; margin-bottom: 24px; display: block; }
+  .pflanze-bild { width: 100%; max-height: 300px; object-fit: cover; border-radius: 10px; margin-bottom: 6px; display: block; }
+  /* Herkunft des Quizbildes. Steht unter dem Bild, nicht in einer Leiste: Das Bild ist hier
+     die ganze Frage, und ein KI-erzeugtes Bild muss als solches erkennbar sein. Der Text
+     kommt aus der Antwort von /api/quiz-fragen (scripts/bild-herkunft.js), nicht aus einer
+     zweiten Regel in dieser Datei. */
+  .bild-herkunft { font-size: .7rem; color: #aaa; text-align: right; margin-bottom: 18px; min-height: 1em; }
   .pflanze-frage { font-size: 1.05rem; font-weight: 700; color: var(--green); margin-bottom: 16px; text-align: center; }
 
   .optionen { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -174,6 +179,9 @@
     <div id="wissenstest-start" class="card" style="text-align:center;padding:36px 24px">
       <div style="font-size:2.5rem;margin-bottom:14px">🌺</div>
       <h3 style="font-size:1.3rem;color:var(--green);margin-bottom:10px">Erkennst du diese Stauden?</h3>
+      <!-- „je ein Bild" ist eine Zusage, und sie hat eine Regel: /api/quiz-fragen bildet die
+           Fragen nur aus Zeilen, deren Bild auch gezeigt werden darf (stauden-server.js,
+           quizVorrat() → bildZeigbar). Vorher konnte eine Frage ohne Bild erscheinen. -->
       <p style="color:#555;margin-bottom:24px;line-height:1.6">10 Fragen – je ein Bild, vier Antwortmöglichkeiten. Zeig, was du weißt!</p>
       <button class="btn-weiter" onclick="starteWissenstest()">Quiz starten →</button>
     </div>
@@ -183,6 +191,7 @@
         <div class="frage-nr" id="frage-nr">Frage 1 von 10</div>
         <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
         <img class="pflanze-bild" id="pflanze-bild" src="" alt="Staude" loading="lazy">
+        <p class="bild-herkunft" id="bild-herkunft"></p>
         <p class="pflanze-frage">Wie heißt diese Staude?</p>
         <div class="optionen" id="optionen"></div>
         <div class="feedback" id="feedback"></div>
@@ -231,8 +240,15 @@
 <section style="background:#fff;padding:48px 20px;border-top:1px solid #e8f5ee">
   <div style="max-width:860px;margin:0 auto">
     <h2 style="font-size:1.35rem;color:#1b4332;font-weight:800;margin-bottom:16px">Stauden-Quiz: Teste dein Gartenwissen kostenlos</h2>
+    <!-- Die Zahl im folgenden Satz ist ein Platzhalter (QUIZ_POOL, in doppelte Unterstriche
+         gefasst — er steht hier absichtlich nicht ausgeschrieben, sonst würde die Route ihn
+         auch in diesem Kommentar ersetzen). Gefüllt wird er in /quiz aus quizVorrat()
+         (stauden-server.js), also aus derselben Liste, aus der auch die Fragen gezogen
+         werden. Vorher stand hier „über 700“ als getippte Zahl ohne Ableitung: Der Vorrat
+         ist nicht der Gesamtbestand, sondern was live steht UND ein Bild mit belegter
+         Herkunft hat. Wer die Zahl von Hand einträgt, nimmt der Seite diese Kopplung. -->
     <p style="color:#444;line-height:1.75;margin-bottom:14px">
-      Unser <strong>Stauden-Quiz</strong> bietet zwei interaktive Tests für Gartenfreunde: Im <strong>Wissenstest</strong> zeigen wir dir echte Pflanzenfotos aus über 700 winterharten Stauden – du tippst, wie die Staude heißt. Kannst du Echinacea von Rudbeckia unterscheiden? Weißt du, wie Ziersalbei auf Botanisch heißt? Nach 10 Fragen erfährst du, ob du <em>Staudenexperte</em>, <em>Gartenkenner</em> oder noch <em>Gartenanfänger</em> bist.
+      Unser <strong>Stauden-Quiz</strong> bietet zwei interaktive Tests für Gartenfreunde: Im <strong>Wissenstest</strong> zeigen wir dir Pflanzenbilder aus __QUIZ_POOL__ winterharten Stauden – du tippst, wie die Staude heißt. Gefragt wird nach jeder Staude, deren Bildherkunft bei uns belegt ist: Ein Teil der Bilder sind Fotografien, ein Teil KI-erzeugte Illustrationen – bei den Illustrationen steht das unter dem Bild. Kannst du Echinacea von Rudbeckia unterscheiden? Weißt du, wie Ziersalbei auf Botanisch heißt? Nach 10 Fragen erfährst du, ob du <em>Staudenexperte</em>, <em>Gartenkenner</em> oder noch <em>Gartenanfänger</em> bist.
     </p>
     <p style="color:#444;line-height:1.75;margin-bottom:14px">
       Im <strong>Gartentyp-Quiz</strong> – "Welcher Gartentyp bist du?" – beantwortest du 7 kurze Fragen zu deinen Vorlieben und erfährst, welcher von vier Gartentypen am besten zu dir passt: <em>Naturgärtner</em>, <em>Blumenliebhaber</em>, <em>Strukturgärtner</em> oder <em>Teichgärtner</em>. Jeder Typ bekommt drei passende Stauden-Empfehlungen und einen direkten Link zum kostenlosen KI-Pflanzplan.
@@ -241,7 +257,7 @@
       <div style="background:#f0faf3;border-radius:12px;padding:18px">
         <div style="font-size:1.5rem;margin-bottom:6px">🧠</div>
         <h3 style="font-size:.95rem;color:#1b4332;font-weight:700;margin-bottom:4px">Pflanzen erkennen Quiz</h3>
-        <p style="font-size:.82rem;color:#555;line-height:1.5">Staude am Foto erkennen – 10 Fragen, 4 Antworten, sofortiges Feedback. Jedes Mal andere Pflanzen.</p>
+        <p style="font-size:.82rem;color:#555;line-height:1.5">Staude am Bild erkennen – 10 Fragen, 4 Antworten, sofortiges Feedback. Jedes Mal andere Pflanzen.</p>
       </div>
       <div style="background:#f0faf3;border-radius:12px;padding:18px">
         <div style="font-size:1.5rem;margin-bottom:6px">🌸</div>
@@ -305,6 +321,7 @@ async function starteWissenstest() {
         <div class="frage-nr" id="frage-nr">Frage 1 von ${fragen.length}</div>
         <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
         <img class="pflanze-bild" id="pflanze-bild" src="" alt="Staude" loading="lazy">
+        <p class="bild-herkunft" id="bild-herkunft"></p>
         <p class="pflanze-frage">Wie heißt diese Staude?</p>
         <div class="optionen" id="optionen"></div>
         <div class="feedback" id="feedback"></div>
@@ -321,7 +338,28 @@ function zeigeFrage() {
   const total = fragen.length;
   document.getElementById('frage-nr').textContent = `Frage ${frageIdx + 1} von ${total}`;
   document.getElementById('progress-fill').style.width = `${(frageIdx / total) * 100}%`;
-  document.getElementById('pflanze-bild').src = f.bild_url;
+  /* Bild nur zeigen, wenn die Herkunft belegt ist. Das entscheidet der Server: Fehlt das
+     Merkmal bild_herkunft, heißt das „nicht zeigen" — eine Frage mit einem Bild, über das
+     die Seite nichts aussagen kann, wäre genau die Lücke, die geschlossen werden soll.
+     Der Zweig ohne Bild sollte seit 09/2026 nicht mehr vorkommen: /api/quiz-fragen lässt
+     solche Zeilen gar nicht erst als Frage zu (quizVorrat()). Er bleibt trotzdem stehen —
+     ein Client, der ein Merkmal nicht hat, darf das Bild nicht auf Verdacht zeigen.
+     Liegt das Merkmal vor, liegt auch eine bild_url vor; beides entscheidet dieselbe Stelle
+     (scripts/bild-herkunft.js, bildZeigbar), deshalb wird die Bedingung hier nicht noch
+     einmal formuliert. Auch Unterschrift und alt-Zusatz kommen von dort, nicht aus diesem
+     Skript. */
+  const bildEl = document.getElementById('pflanze-bild');
+  const herkunftEl = document.getElementById('bild-herkunft');
+  if (f.bild_herkunft) {
+    bildEl.src = f.bild_url;
+    bildEl.alt = 'Staude' + (f.bild_herkunft.alt || '');
+    bildEl.style.display = '';
+    herkunftEl.textContent = f.bild_herkunft.text || '';
+  } else {
+    bildEl.removeAttribute('src');
+    bildEl.style.display = 'none';
+    herkunftEl.textContent = '';
+  }
   document.getElementById('feedback').textContent = '';
   document.getElementById('btn-weiter').style.display = 'none';
 

@@ -37,15 +37,29 @@ const L = require('./pin-layout');
 const WURZEL = path.join(__dirname, '..');
 const BILD_H = 580;                                   // Kopfband mit den drei Bildern
 const { B, H, FONT, FONT_B, GRUEN, MON_KURZ, MON_NAME, FARBTON,
-        spanne, farbeVon, schnitt, passendeGroesse, zeichenProZeile, umbrechen } = L;
+        spanne, ueberJahreswechsel, farbeVon, schnitt, passendeGroesse, zeichenProZeile, umbrechen } = L;
 
+/* `bild_ki` steht in der WHERE-Bedingung UND in der Spaltenliste: Die Bedingung wählt aus,
+ * die Spalte belegt die Auswahl. Der Kombi-Pin bekommt danach eine maschinenlesbare
+ * KI-Kennzeichnung ins JPEG; die darf nicht aus dem Sortennamen abgeleitet werden, sondern
+ * wird gegen dieses Feld geprüft (kiHerkunftFehler() in pin-layout.js).
+ * Die Bildspalten stehen als BILD_SPALTEN_SQL in scripts/bild-herkunft.js — mit `bild_lizenz`,
+ * ohne die die Gegenprobe keinen Widerspruch finden könnte. */
 function ladePflanzen(db) {
   return db.prepare(`SELECT id, name_deutsch, name_botanisch, farbe, licht, feuchtigkeit, bluehzeit,
                             hoehe_cm_min, hoehe_cm_max, bienen_freundlich, heimisch, kombinationspartner,
-                            lebensbereich, winterhart_zone, lebensdauer, bild_url
+                            lebensbereich, winterhart_zone, lebensdauer, ${L.BILD_SPALTEN_SQL}
                      FROM pflanzen
                      WHERE bild_ki = 1 AND bild_url IS NOT NULL AND hoehe_cm_max > 0`).all()
-           .filter(p => spanne(p.bluehzeit) && fs.existsSync(path.join(WURZEL, 'public', p.bild_url.replace(/^\//, ''))))
+           /* Keine Blühzeit über den Jahreswechsel. spanne() gibt seit dem 21.09.2026 auch
+            * [12, 3] zurück (Christrose, „Dezember - März") statt null — richtig, aber für
+            * diesen Pin unbrauchbar: Der Blühkalender zeichnet einen Balken von Spalte a bis
+            * Spalte e, und „von Dezember bis März" wäre ein rückwärts gezeichnetes Rechteck.
+            * Die Blühfolge „erst A, dann B, ab Monat X C" ergäbe ebenfalls keinen Sinn mehr.
+            * Bis zum 21.09.2026 fiel diese eine Pflanze hier durch die null-Prüfung heraus;
+            * die Bedingung sagt jetzt ausdrücklich, was sie vorher nebenbei tat. */
+           .filter(p => { const sp = spanne(p.bluehzeit); return sp && !ueberJahreswechsel(sp); })
+           .filter(p => fs.existsSync(path.join(WURZEL, 'public', p.bild_url.replace(/^\//, ''))))
            .filter(L.hatDeutschenNamen)
            .filter(L.istBeetpflanze)
            .filter(L.istWinterhartHier);
@@ -63,6 +77,10 @@ function bewerte(d) {
   if (new Set(d.map(p => p.name_botanisch.split(' ')[0])).size < 3) return null;   // dreimal dieselbe Gattung
 
   const s = d.map(p => spanne(p.bluehzeit));
+  // Zweite Sperre neben dem Lader, weil bewerte() exportiert ist und auch mit einer selbst
+  // zusammengestellten Liste aufgerufen werden kann. Alles darunter rechnet mit a <= e:
+  // `bis - von`, die Lückenprüfung und der Balken im Blühkalender.
+  if (s.some(x => !x || ueberJahreswechsel(x))) return null;
   const sortiert = d.map((p, i) => ({ p, s: s[i] })).sort((a, b) => a.s[0] - b.s[0]);
   const von = sortiert[0].s[0], bis = Math.max(...s.map(x => x[1]));
   if (bis - von < 4) return null;                               // unter fünf Monaten lohnt die Aussage nicht

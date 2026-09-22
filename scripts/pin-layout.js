@@ -8,6 +8,14 @@
 const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+// Sortennamen und Kennungen stehen in pin-sorten.js — dem einzigen Modul, das auch der
+// Terminlauf lädt. Von dort kommt der Name der Sorte, deren Bild hier gekennzeichnet wird.
+const { TYP } = require('./pin-sorten');
+// Die Bildherkunft wird NICHT ein zweites Mal abgeleitet. scripts/bild-herkunft.js ist die
+// eine Ableitung für alle Ausgabepfade (Lexikon, Planer, Quiz, Landeseiten) — der Pin-Kanal
+// ist ein weiterer und bekommt deshalb dieselbe, nicht eine eigene, schwächere Fassung.
+// Das Modul hat keine Abhängigkeiten und lädt weder ImageMagick noch die Datenbank.
+const BH = require('./bild-herkunft');
 
 /*
  * Werkzeug und Schriften werden GESUCHT, nicht angenommen.
@@ -24,7 +32,30 @@ const path = require('path');
  * Werkzeug wirklich, scheitert der Aufruf später — dann aber mit dieser Warnung davor.
  */
 function findeWerkzeug() {
+  // PIN_MAGICK ist nicht nur ein Pfad-Notausgang, sondern auch der Schalter gegen die
+  // Zeitbombe eine Zeile tiefer: PIN_MAGICK=/usr/bin/convert erzwingt ImageMagick 6.
   if (process.env.PIN_MAGICK) return process.env.PIN_MAGICK;
+  /*
+   * STILLE ZEITBOMBE, HIER NUR FESTGEHALTEN — NICHT GELÖST (Stand 21.09.2026):
+   *
+   * 278 der Einzelpflanzen-Pins tragen ein APP11/JUMBF-Segment mit C2PA-Manifest, das sie
+   * von der OpenAI-Quelldatei geerbt haben. Geerbt wird es nur, weil pin-bild.js das
+   * Quellbild als ERSTES Argument an convert gibt und ImageMagick 6 die Profile des ersten
+   * Bildes übernimmt. Die Raster-Sorten (pin-saison, pin-kombination) beginnen mit einer
+   * frischen Leinwand und haben es deshalb nie bekommen — dort ist nichts verloren gegangen,
+   * es ist nie angekommen.
+   *
+   * Unter ImageMagick 7 geht das Segment auf BEIDEN Wegen verloren: `magick` übernimmt
+   * APP11 nicht als Profil. Würde auf dem Server je ImageMagick 7 installiert, griffe die
+   * Suche hier sofort zu „magick" — und die 278 Pins verlören bei der nächsten Erzeugung
+   * still ihr Manifest, ohne dass irgendwo ein Fehler stünde.
+   *
+   * Für die maschinenlesbare KI-Kennzeichnung ist das folgenlos: Die schreibt
+   * pin-ki-metadaten.js nach dem Bildbau direkt in die fertige Datei und ist von ImageMagick
+   * unabhängig. Betroffen wäre allein die geerbte Provenienz — die als Signatur ohnehin tot
+   * ist (der Hash gilt für die unbeschnittenen Originalbytes), aber nicht von uns entfernt
+   * wird.
+   */
   for (const kandidat of ['magick', 'convert']) {          // 7 vor 6: magick ist die Zukunft
     try { execFileSync(kandidat, ['-version'], { stdio: 'ignore' }); return kandidat; } catch { /* weiter */ }
   }
@@ -79,14 +110,53 @@ const GIFT_LABEL = { stark:'Stark giftig', giftig:'Giftig', katzen:'Für Katzen 
                      haustiere:'Für Haustiere giftig', reizend:'Hautreizend' };
 const GIFT_RANG = { stark:0, giftig:1, katzen:2, haustiere:3, reizend:4 };
 
-/* Blühzeit „Juli - September" → [7, 9]; null, wenn nicht lesbar („keine Blüte"). */
+/*
+ * Blühzeit „Juli - September" → [7, 9]; null, wenn nicht lesbar („keine Blüte").
+ *
+ * JAHRESWECHSEL: [12, 3] für „Dezember - März" ist eine gültige Spanne, keine kaputte.
+ * Bis zum 21.09.2026 stand als Bedingung `e >= a` in der Rückgabe. Damit galt die Blühzeit
+ * der Christrose (Helleborus niger, „Dezember - März") als nicht lesbar: Sie zählte in KEINEM
+ * Monat als blühend — nicht im Dezember, nicht im Januar, nicht im März. Sie fiel aus jedem
+ * Saison-Raster heraus, ihr eigener Pin nannte keine Blühzeit im Text (während das Bild sie
+ * druckte), und die Zählung „Nov 0 Dez 0" im Kopf von pin-saison.js war gegen sie blind.
+ *
+ * WIE VIELE ZEILEN UMBRECHEN, SAGT DIESER CODE NICHT. Im lokalen Datenstand ist Helleborus
+ * niger der einzige Treffer, aber der ist ein Teilstand (226 von 711 Zeilen) — das ist eine
+ * Aussage über den Teilstand, nicht über die Produktion. Die Zahl liefert der Lauf von
+ * scripts/daten-widersprueche.js auf dem Server, Prüfung „Blühzeit läuft über den
+ * Jahreswechsel".
+ *
+ * MIT `e >= a` IST AUCH DIE SPERRE GEGEN VERDREHTE SPANNEN WEGGEFALLEN: „September - Juli"
+ * ergibt jetzt [9, 7] und damit elf Monate Blüte, wo vorher die Zeile still aus allen
+ * Pin-Sorten herausfiel. Ein Zahlendreher und ein gewollter Jahreswechsel sehen in den Feldern
+ * gleich aus; der Unterschied steckt in der Absicht, nicht in den Daten. Deshalb wird hier
+ * nichts mehr stumm verworfen, sondern jede Umbruchspanne einmal aufgelistet und einzeln
+ * eingestuft (dieselbe Prüfung in daten-widersprueche.js).
+ *
+ * WER SPANNEN LIEST, MUSS DEN UMBRUCH BEHANDELN — sonst wird aus einem stillen Ausfall ein
+ * stiller Unsinn: `for (let m = a; m <= e; m++)` läuft bei [12, 3] kein einziges Mal, `e - a`
+ * wird negativ, und ein Balken von Spalte a bis Spalte e wird rückwärts gezeichnet. Deshalb
+ * stehen hier zwei Helfer dafür, und jede Verwendung von spanne() im Projekt benutzt einen
+ * davon oder schließt Umbruchspannen ausdrücklich aus (pin-kombination.js).
+ */
 function spanne(bluehzeit) {
   const t = String(bluehzeit || '').split(/\s*(?:–|—|-|bis)\s*/).map(s => s.trim());
   const a = MONATE[t[0]], e = MONATE[t[1]] || MONATE[t[0]];
-  return (a && e && e >= a) ? [a, e] : null;
+  return (a && e) ? [a, e] : null;
 }
 
-const bluehtIm = (bluehzeit, monat) => { const s = spanne(bluehzeit); return !!s && s[0] <= monat && monat <= s[1]; };
+/* Läuft die Spanne über den Jahreswechsel? */
+const ueberJahreswechsel = s => Array.isArray(s) && s[1] < s[0];
+
+/* Länge in Monaten, vom ersten an gezählt: [7,9] → 2, [5,5] → 0, [12,3] → 3. Für alles, was
+ * nicht umbricht, genau das bisherige `e - a`. */
+const dauer = s => Array.isArray(s) ? (s[1] - s[0] + 12) % 12 : 0;
+
+const bluehtIm = (bluehzeit, monat) => {
+  const s = spanne(bluehzeit);
+  if (!s) return false;
+  return ueberJahreswechsel(s) ? (monat >= s[0] || monat <= s[1]) : (s[0] <= monat && monat <= s[1]);
+};
 const farbeVon = p => String(p.farbe || '').split(/[|,]/)[0].trim().toLowerCase();
 const mengeAus = s => new Set(String(s || '').split('|').map(x => x.trim().toLowerCase()).filter(Boolean));
 const schnitt = (a, b) => [...mengeAus(a)].filter(x => mengeAus(b).has(x));
@@ -157,6 +227,74 @@ const istGras = p => {
 };
 
 /*
+ * WELCHE PIN-SORTEN EIN KI-ERZEUGTES BILD ZEIGEN — EINE LISTE FÜR ALLES.
+ *
+ * Aus ihr folgen beide Kennzeichnungen: der Satz „Bild: KI-erzeugte Illustration." in der
+ * Beschreibung (fertig() in pin-text.js) und das maschinenlesbare IPTC-Feld
+ * DigitalSourceType in der JPEG-Datei (pin-ki-metadaten.js, eingehängt in bauen() in
+ * pins-erzeugen.js). Vorher stand „kiBild: true" dreimal einzeln in pin-text.js; eine vierte
+ * Pin-Sorte mit KI-Bild hätte man an drei Stellen nachtragen müssen, und ob die Datei dazu
+ * passt, prüfte niemand.
+ *
+ * Die Sorten hier zeigen Fotos aus der Bilddatenbank, und die sind dort ausnahmslos selbst
+ * erzeugt: Alle Lader filtern `WHERE bild_ki = 1` (pin-saison.js, das auch beide
+ * Einzelpflanzen-Sorten versorgt, und pin-kombination.js).
+ *
+ * `pflanze-winter` (seit 21.09.2026) steht hier, weil es dieselbe Bilddatei derselben Pflanze
+ * zeigt wie `pflanze` — nur mit dem Winteraspekt statt der Blühzeit in der Faktenzeile. Eine
+ * neue Sorte mit KI-Bild MUSS in diese Liste, sonst ginge sie ohne beide Kennzeichnungen
+ * hinaus: ohne den Satz in der Beschreibung und ohne das Feld in der Datei.
+ *
+ * BEETPLAN, RATGEBER UND PFLEGE STEHEN BEWUSST NICHT HIER. Der Beetplan-Pin zeigt eine aus
+ * Rechtecken gezeichnete Beetskizze, Ratgeber und Pflege sind reine Typografie auf farbigem
+ * Grund — nichts davon ist ein KI-Bild. Sie zu kennzeichnen wäre kein überflüssiger Hinweis,
+ * sondern eine neue Falschaussage, und zwar eine maschinenlesbare.
+ */
+const KI_PIN_SORTEN = [TYP.pflanze, TYP.kombi, TYP.saison, TYP.pflanzeWinter];
+const istKiPin = typ => KI_PIN_SORTEN.includes(typ);
+
+/*
+ * Gegenprobe zum Sortennamen: Zeigt dieser Pin wirklich ein KI-Bild?
+ *
+ * Der Sortenname allein ist kein Beleg. Die Garantie kommt aus dem Lader (`bild_ki = 1`),
+ * nicht aus dem Wort „pflanze" — die Prüfung in pin-bild.js steht in dessen
+ * `require.main === module`-Zweig und läuft im Stapellauf nie mit. Baut jemand später einen
+ * eigenen Lader ein, der die Bedingung vergisst, liefe die Kennzeichnung stillschweigend
+ * weiter und behauptete über ein Pixabay-Foto, es sei KI-erzeugt.
+ *
+ * GEFRAGT WIRD MIT DERSELBEN ABLEITUNG WIE AUF DER WEBSITE: bildHerkunft() aus
+ * scripts/bild-herkunft.js. Dort entscheidet bild_ki, und bild_lizenz sowie der Dateiname
+ * sind die Gegenprobe. Eine eigene Fassung hier hätte denselben Fall auf zwei Wegen
+ * beantwortet — die Kachel im Lexikon anders als den Pin aus demselben Bild.
+ *
+ * Damit die Gegenprobe überhaupt etwas prüfen kann, laden pin-saison.js und
+ * pin-kombination.js `bild_lizenz` mit (BILD_SPALTEN_SQL). Ein Widerspruch VERWIRFT den Pin
+ * nicht: id 698 (Bergenia 'Silberlicht') trägt bild_ki=1 und dazu „Pixabay License" — das
+ * Lizenzfeld ist dort falsch, nicht bild_ki, und die Pflanze steht im Pin-Pool. Ein solcher
+ * Fall gehört ins Log, nicht in die Ablage; verworfen wird nur, was unbelegt ist.
+ */
+function kiHerkunftFehler(pflanzen) {
+  if (!Array.isArray(pflanzen) || !pflanzen.length) return 'keine Quellpflanzen übergeben — Herkunft des Bildes unbelegt';
+  const ohneFeld = pflanzen.filter(p => !BH.bildHerkunft(p).bekannt);
+  if (ohneFeld.length) return `der Lader liefert die Spalte bild_ki nicht mit (${ohneFeld.length} von ${pflanzen.length}) — Herkunft unbelegt`;
+  const fremd = pflanzen.filter(p => !BH.bildHerkunft(p).ki);
+  if (fremd.length) return `kein KI-Bild (bild_ki=0): ${fremd.map(p => p.name_botanisch || p.id).join(', ')}`;
+  return null;
+}
+
+/*
+ * Die Widersprüche derselben Ableitung, als Zeilen fürs Log. Getrennt von kiHerkunftFehler(),
+ * weil sie etwas anderes bedeuten: „unbelegt" hält den Pin zurück, „widersprüchlich" wird
+ * gemeldet und nachgepflegt (siehe oben, id 698).
+ */
+function kiHerkunftWidersprueche(pflanzen) {
+  if (!Array.isArray(pflanzen)) return [];
+  return pflanzen
+    .map(p => { const h = BH.bildHerkunft(p); return h.widerspruch ? `${(p && (p.name_botanisch || p.id)) || '?'}: ${h.widerspruch}` : null; })
+    .filter(Boolean);
+}
+
+/*
  * Textbreite bei ImageMagick erfragen statt aus der Zeichenzahl schätzen. Eine geschätzte
  * Breite hat den Titel schon rechts aus dem Bild laufen lassen — Monatsnamen und
  * Pflanzennamen sind zu unterschiedlich lang für eine Faustregel.
@@ -194,6 +332,9 @@ function umbrechenBreit(text, font, size, maxBreite) {
 }
 
 module.exports = { B, H, MAGICK, FONT, FONT_B, GRUEN, MONATE, MON_KURZ, MON_NAME, FARBTON,
-                   GIFT_LABEL, GIFT_RANG, spanne, bluehtIm, farbeVon, mengeAus, schnitt,
-                   hatDeutschenNamen, istBeetpflanze, istGras, istWinterhartHier, textBreite, passendeGroesse,
+                   GIFT_LABEL, GIFT_RANG, spanne, ueberJahreswechsel, dauer, bluehtIm,
+                   farbeVon, mengeAus, schnitt,
+                   hatDeutschenNamen, istBeetpflanze, istGras, istWinterhartHier,
+                   KI_PIN_SORTEN, istKiPin, kiHerkunftFehler, kiHerkunftWidersprueche,
+                   BILD_SPALTEN_SQL: BH.BILD_SPALTEN_SQL, textBreite, passendeGroesse,
                    zeichenProZeile, umbrechen, umbrechenBreit };

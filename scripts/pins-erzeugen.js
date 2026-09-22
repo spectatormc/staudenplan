@@ -4,7 +4,8 @@
  *
  *   node scripts/pins-erzeugen.js                 alles, vorhandene Dateien bleiben stehen
  *   node scripts/pins-erzeugen.js --neu           vorhandene überschreiben
- *   node scripts/pins-erzeugen.js --nur pflanze   nur eine Sorte (pflanze|beetplan|saison|kombi|ratgeber)
+ *   node scripts/pins-erzeugen.js --nur pflanze   nur eine Sorte
+ *                                                 (pflanze|pflanze-winter|beetplan|saison|kombi|ratgeber|pflege)
  *   node scripts/pins-erzeugen.js --limit 5       höchstens N je Sorte, für Probeläufe
  *
  * WARUM DATEIEN UND NICHT AUF ZURUF: Pinterest lädt das Bild selbst von einer öffentlichen
@@ -19,6 +20,20 @@
  * pubDate WIRD ÜBERNOMMEN, NICHT NEU GESETZT: Pinterest veröffentlicht aus einem Feed das
  * Älteste zuerst. Wer die Bilder neu erzeugt, darf die Reihenfolge nicht durcheinanderbringen
  * und schon veröffentlichte Pins nicht wieder nach vorn holen.
+ *
+ * REIHENFOLGE IM LAUF: Was den laufenden Server braucht — die Beetplan-Seiten —, wird GANZ AM
+ * ANFANG geholt, vor der ersten Datei. Seit die Kennzeichnung auch liegende Dateien anfasst,
+ * ist ein Abbruch in der Mitte nicht mehr folgenlos: Die Dateien sind dann um rund 530 Byte
+ * gewachsen, waehrend liste.json die alten enclosure-Laengen truege — und die liest Pinterest
+ * aus dem Feed. Bricht der Lauf trotzdem ab, schreibt der Abbruchzweig liste.json und misst
+ * fuer die noch nicht bearbeiteten Pins die Dateigroesse frisch.
+ *
+ * KI-KENNZEICHNUNG: Jeder Pin mit KI-erzeugtem Bild bekommt in bauen() das IPTC-Feld
+ * DigitalSourceType in die JPEG-Datei geschrieben (pin-ki-metadaten.js). Das geschieht
+ * ABSICHTLICH auch für Dateien, die in diesem Lauf nicht neu gebaut werden — sonst blieben
+ * die bereits liegenden Pins für immer ungekennzeichnet. Welche Sorten das betrifft, steht
+ * als KI_PIN_SORTEN in pin-layout.js und steuert von dort aus auch den Satz „Bild:
+ * KI-erzeugte Illustration." in der Beschreibung.
  */
 const Database = require('better-sqlite3');
 const path = require('path');
@@ -42,6 +57,9 @@ const LIMIT = Number(wert('limit')) || 0;
 
 const db = new Database(process.env.DB_PFAD || path.join(WURZEL, 'stauden.db'), { readonly: true });
 const { giftigkeit } = require('./pflanzen-giftigkeit');
+const L = require('./pin-layout');
+const S = require('./pin-sorten');        // Sortennamen und „veröffentlicht": dieselben wie im Terminlauf
+const kiMeta = require('./pin-ki-metadaten');
 const txt = require('./pin-text');
 const bildModul = require('./pin-bild');
 const beetModul = require('./pin-beetplan');
@@ -62,6 +80,7 @@ const frueher = Object.fromEntries(vorher.map(e => [e.guid, e]));
 
 const liste = [];
 let erzeugt = 0, vorhanden = 0, fehler = 0;
+let kiNeu = 0, kiSchon = 0, kiUnmoeglich = 0;
 
 /*
  * Ein Eintrag entsteht nur, wenn die Bilddatei danach wirklich existiert. Ein Feed, der auf
@@ -80,10 +99,60 @@ function mitKennung(link, guid) {
   return link + (link.includes('?') ? '&' : '?') + 'utm_content=' + encodeURIComponent(guid);
 }
 
-// Veroeffentlicht = Termin erreicht. Dieselbe Regel wie pinsLesen() in stauden-server.js.
-const istVeroeffentlicht = e => Boolean(e && e.geplant_am && e.geplant_am <= HEUTE);
+/*
+ * Was ausser dem Feed noch an einem Listeneintrag haengt. Wird beim Auslassen eines Pins
+ * mitgemeldet: Bei der Sorte saison baut stauden-server.js aus genau diesem Eintrag die
+ * Landeseite /blueht-im/<slug> bzw. /winterbeet/<slug>, und dieselbe Liste speist den
+ * Sitemap-Block. Ein ausgelassener Saison-Pin nimmt also eine indexierte Adresse mit.
+ */
+const FOLGE_AUSLASSEN = {
+  saison: '    Damit verschwindet auch die Landeseite (/blueht-im/... bzw. /winterbeet/...): '
+        + 'Die Route antwortet danach mit 404, und die Adresse faellt aus der Sitemap.',
+};
 
-async function bauen({ guid, datei, typ, machen, text, extra = {}, erzwingen = false }) {
+// Veroeffentlicht = Termin erreicht. Die Regel steht in pin-sorten.js, weil der Terminlauf
+// dieselbe braucht: Dort entscheidet sie, welcher Pin auch mit --neu seinen Termin behaelt,
+// hier, welcher Text eingefroren bleibt. Zwei Auslegungen waeren ein Pin, dessen Text
+// feststeht, waehrend sein Termin in die Zukunft rutscht.
+const istVeroeffentlicht = e => S.istVeroeffentlicht(e, HEUTE);
+
+/*
+ * liste.json schreiben — am Ende des Laufs UND im Abbruchzweig. Die beiden Faelle
+ * unterscheiden sich in dem, was mit den NICHT bearbeiteten Eintraegen geschieht:
+ *
+ *   vollstaendig=true   Regellauf. Alte Eintraege fallen weg, wenn sie nicht neu entstanden
+ *                       sind — genau so verschwindet ein Pin, dessen Pflanze aus dem Pool
+ *                       gefallen ist. Bei --nur <sorte> werden die uebrigen Sorten aus der
+ *                       alten Liste uebernommen; ohne das loeschte ein "--nur ratgeber" die
+ *                       306 anderen Eintraege, und der Feed lieferte nichts mehr.
+ *   vollstaendig=false  Abbruch. Alles noch nicht Bearbeitete wird unveraendert uebernommen,
+ *                       aber mit frisch gemessener Dateigroesse: Die KI-Kennzeichnung hat die
+ *                       Dateien bis dahin schon verlaengert, und eine zu kleine
+ *                       enclosure-Laenge im Feed ist genau der Schaden, gegen den die
+ *                       Reihenfolge in bauen() geschrieben ist. Ein Eintrag ohne Datei faellt
+ *                       weg — ein Feed-Eintrag ohne Bild wird von Pinterest still uebergangen.
+ */
+function listeSchreiben(vollstaendig) {
+  const drin = new Set(liste.map(e => e.guid));
+  const uebrig = vollstaendig
+    ? (NUR ? vorher.filter(e => e.typ !== NUR) : [])
+    : vorher;
+  let uebernommen = 0;
+  for (const e of uebrig) {
+    if (!e || !e.datei || !e.guid || drin.has(e.guid)) continue;
+    const p = path.join(ZIEL, e.datei);
+    if (!fs.existsSync(p)) continue;
+    liste.push(vollstaendig ? e : { ...e, bytes: fs.statSync(p).size });
+    drin.add(e.guid);
+    uebernommen++;
+  }
+  if (vollstaendig && NUR) console.log(`--nur ${NUR}: ${uebernommen} Eintraege anderer Sorten uebernommen`);
+  if (!vollstaendig) console.error(`Abbruch: ${uebernommen} noch nicht bearbeitete Eintraege aus der alten Liste uebernommen, Dateigroessen neu gemessen.`);
+  liste.sort((a, b) => a.guid.localeCompare(b.guid));
+  fs.writeFileSync(LISTE, JSON.stringify(liste, null, 1));
+}
+
+async function bauen({ guid, datei, typ, machen, text, extra = {}, erzwingen = false, quellen = null }) {
   const pfad = path.join(ZIEL, datei);
   const dawar = fs.existsSync(pfad);
   if (!dawar || NEU || erzwingen) {
@@ -103,15 +172,155 @@ async function bauen({ guid, datei, typ, machen, text, extra = {}, erzwingen = f
     fehler++;
     return;
   }
+
+  /* ── Text und Gegenprobe ZUERST ─────────────────────────────────────────────────────
+   *
+   * Der Text stand bis zum 21.09.2026 hinter dem KI-Block. Er gehoert davor: Er bringt die
+   * Sorte und die KI-Entscheidung mit, gegen die die Kennzeichnung der Datei geprueft wird.
+   * Stand er dahinter, prueft der KI-Block nur seinen eigenen Parameter gegen sich selbst.
+   *
+   * Was schon draussen ist, bleibt wie es ist: Titel, Beschreibung, Pinnwand und vor allem der
+   * Link kommen aus der alten Liste. Pinterest friert den Pin beim Veroeffentlichen ein — ein
+   * geaenderter Text im Feed aendert dort nichts mehr, eine geaenderte URL koennte aber als
+   * neuer Eintrag gelesen werden, und ein neu berechneter Text kann vom liegenden Bild
+   * abweichen. Faellig heisst veroeffentlicht: Der Feed liefert ab dem Tag, Pinterest liest
+   * taeglich.
+   */
   const alt = frueher[guid];
-  // Was schon draussen ist, bleibt wie es ist: Titel, Beschreibung, Pinnwand und vor allem der
-  // Link kommen aus der alten Liste. Pinterest friert den Pin beim Veroeffentlichen ein — ein
-  // geaenderter Text im Feed aendert dort nichts mehr, eine geaenderte URL koennte aber als
-  // neuer Eintrag gelesen werden, und ein neu berechneter Text kann vom liegenden Bild
-  // abweichen. Faellig heisst veroeffentlicht: Der Feed liefert ab dem Tag, Pinterest liest
-  // taeglich.
-  const eingefroren = istVeroeffentlicht(alt) && typeof alt.titel === 'string' && typeof alt.link === 'string';
+  const veroeffentlicht = istVeroeffentlicht(alt);
+  const eingefroren = veroeffentlicht && typeof alt.titel === 'string' && typeof alt.link === 'string';
   const t = eingefroren ? alt : text();
+  const kiSorte = L.istKiPin(typ);
+
+  /* EIN BEFUND NIMMT EINEN UNVEROEFFENTLICHTEN PIN AUS DER LISTE — EINEN VEROEFFENTLICHTEN
+   * NICHT.
+   *
+   * Ohne Listeneintrag gibt es keinen Feed-Eintrag, und bei der Sorte saison haengen zwei
+   * weitere Ausgabepfade an demselben Eintrag (FOLGE_AUSLASSEN). Einen bereits
+   * veroeffentlichten Pin zu streichen hiesse, eine indexierte Adresse abzureissen, waehrend
+   * sein Bild bei Pinterest weiter darauf zeigt. Ein Pin ohne maschinenlesbares Feld ist eine
+   * Luecke; eine tote Landeseite ist ein Schaden. Gemeldet wird beides, ausgelassen nur das
+   * Erste — und der Lauf endet so oder so mit Exitcode 1.
+   */
+  let verwerfen = false;
+  const befund = grund => {
+    fehler++;
+    if (veroeffentlicht) {
+      console.error(`  ! ${datei}: ${grund} Bereits veroeffentlicht — der Eintrag bleibt in der Liste.`);
+      return;
+    }
+    console.error(`  ! ${datei}: ${grund} Pin ausgelassen.`);
+    if (FOLGE_AUSLASSEN[typ]) console.error(FOLGE_AUSLASSEN[typ]);
+    verwerfen = true;
+  };
+
+  /* Die Sorte erreicht die beiden Kennzeichnungen auf zwei Wegen: einmal als `typ` an fertig()
+   * (Satz in der Beschreibung), einmal als `typ` an bauen() (Feld in der Datei). Beide kommen
+   * aus S.TYP, ein Tippfehler ist damit ausgeschlossen — eine Umbenennung auf nur einer Seite
+   * aber nicht. Deshalb wird hier verglichen, statt sich darauf zu verlassen.
+   * Bei einem eingefrorenen Pin stammt `t` aus liste.json: `typ` steht dort seit je, `kiBild`
+   * seit dem 21.09.2026. Fehlt es in einem alten Eintrag, entfaellt dieser eine Vergleich. */
+  if (typeof t.typ === 'string' && t.typ !== typ) {
+    befund(`Sorte im Text ("${t.typ}") und Sorte der Datei ("${typ}") stimmen nicht ueberein.`);
+    if (verwerfen) return;
+  }
+  if (typeof t.kiBild === 'boolean' && t.kiBild !== kiSorte) {
+    befund(`Der Text sagt "${t.kiBild ? 'KI-Bild' : 'kein KI-Bild'}", die Sorte "${typ}" sagt das Gegenteil.`);
+    if (verwerfen) return;
+  }
+
+  /* ── Maschinenlesbare KI-Kennzeichnung ──────────────────────────────────────────────
+   *
+   * DIE STELLE IST NICHT BELIEBIG, DESHALB STEHT DAS HIER:
+   *
+   * (a) AUSSERHALB des Zweigs `if (!dawar || NEU || erzwingen)` weiter oben. Der läuft nur,
+   *     wenn das Bild NEU gebaut wird. Stünde die Kennzeichnung dort, bekämen die bereits
+   *     liegenden Dateien sie NIE — im Normallauf sind das fast alle, darunter sämtliche
+   *     Saison-Raster, die nur bei geänderter Auswahl neu gebaut werden. So werden sie beim
+   *     nächsten Lauf nebenbei nachgerüstet, ohne `--neu` und ohne ein einziges Bild neu zu
+   *     rendern.
+   *
+   * (b) VOR `bytes: fs.statSync(pfad).size` weiter unten. Das Einfügen verlängert die Datei
+   *     um rund 530 Byte. Erst messen und dann schreiben hieße, dass in liste.json eine zu
+   *     kleine enclosure-Länge steht — und die liest Pinterest aus dem Feed.
+   *
+   * (c) NACH der Existenzprüfung, weil kennzeichnen() eine fertige Datei voraussetzt.
+   *
+   * Die Operation ist idempotent (siehe pin-ki-metadaten.js): Ein zweiter Lauf findet das
+   * Feld und rührt die Datei nicht an. Täglich laufen lassen ändert also nach dem ersten Mal
+   * nichts mehr.
+   */
+  if (kiSorte) {
+    // Erst belegen, dann behaupten. Der Sortenname reicht nicht — die Garantie steckt im
+    // Lader (`bild_ki = 1`), nicht im Wort „pflanze". Fehlt der Beleg, geht der Pin gar
+    // nicht erst hinaus: Seine Beschreibung sagt „Bild: KI-erzeugte Illustration.", und ein
+    // Pin, dessen Text etwas behauptet, was wir nicht belegen können, ist schlimmer als ein
+    // fehlender Pin. Ein bereits veroeffentlichter bleibt dagegen in der Liste — dort ist der
+    // Schaden groesser (siehe befund() oben). Der Lauf endet so oder so mit Exitcode 1.
+    const unbelegt = L.kiHerkunftFehler(quellen);
+    if (unbelegt) {
+      befund(`KI-Kennzeichnung nicht belegbar — ${unbelegt}.`);
+      if (verwerfen) return;
+      kiUnmoeglich++;                    // veroeffentlicht: Eintrag bleibt, Feld fehlt
+    } else {
+      /* Ein WIDERSPRUCH verwirft den Pin nicht. Das verlaessliche Feld ist bild_ki, die Lizenz
+       * ist es nicht: id 698 (Bergenia 'Silberlicht') traegt bild_ki=1 und dazu
+       * "Pixabay License" und steht im Pin-Pool. Solche Zeilen gehoeren ins Log und in die
+       * Datenpflege — verworfen wird nur, was UNBELEGT ist. */
+      for (const w of L.kiHerkunftWidersprueche(quellen)) {
+        console.error(`  ~ ${datei}: Bildherkunft widerspruechlich — ${w}`);
+      }
+      try {
+        const r = kiMeta.kennzeichnen(pfad);
+        if (r.status === 'geschrieben') kiNeu++;
+        else if (r.status === 'vorhanden') kiSchon++;
+        else {
+          // Datei bleibt in der Liste: Der Hinweis in der Beschreibung stimmt weiterhin, nur
+          // die maschinenlesbare Fassung fehlt. Das ist eine Lücke, keine Falschaussage —
+          // aber eine, die sichtbar werden muss.
+          console.error(`  ! ${datei}: KI-Kennzeichnung nicht geschrieben (${r.status})`);
+          kiUnmoeglich++;
+          fehler++;
+        }
+      } catch (e) {
+        console.error(`  ! ${datei}: KI-Kennzeichnung: ${e.message}`);
+        kiUnmoeglich++;
+        fehler++;
+      }
+    }
+  } else {
+    /* Die andere Richtung, und sie ist genauso wichtig: Eine KI-Kennzeichnung auf einem Pin,
+     * der keine Illustration zeigt, ist kein überflüssiger Hinweis, sondern eine neue
+     * Falschaussage — maschinenlesbar und damit an Pinterest, Meta und Google gerichtet.
+     * Betrifft Beetplan (gezeichnete Skizze), Ratgeber und Pflege (reine Typografie).
+     * Gefunden wird sie gemeldet, nicht automatisch entfernt: Warum sie dasteht, weiß dieses
+     * Skript nicht, und blind Metadaten aus einer Bilddatei zu schneiden ist genau das
+     * Vorgehen, das wir bei den C2PA-Manifesten ausdrücklich ablehnen. */
+    try {
+      if (kiMeta.lesen(fs.readFileSync(pfad)) === 'ja') {
+        console.error(`  ! ${datei}: trägt eine KI-Kennzeichnung, obwohl die Sorte "${typ}" kein KI-Bild zeigt.`);
+        fehler++;
+      }
+    } catch (e) {
+      console.error(`  ! ${datei}: Prüfung auf falsche KI-Kennzeichnung fehlgeschlagen: ${e.message}`);
+      fehler++;
+    }
+
+    /* Und die Richtung, die Hausregel 2 zuerst nennt: ein KI-Bild OHNE Kennzeichnung. Eine
+     * neue Sorte, die Bilder mit bild_ki=1 zeigt und beim Eintragen in KI_PIN_SORTEN vergessen
+     * wird, ginge sonst ohne BEIDE Kennzeichnungen hinaus — ohne den Satz in der Beschreibung
+     * und ohne das Feld in der Datei —, und kein Lauf meldete etwas. Gefragt wird am Beleg,
+     * nicht am Namen: Sind Quellpflanzen uebergeben und loest keine davon einen Befund aus
+     * (alle bild_ki=1), dann fehlt die Sorte in der Liste.
+     * Die heutigen Nicht-KI-Sorten haben kein Pflanzenbild — der Beetplan zeichnet eine Skizze,
+     * Ratgeber und Pflege sind reine Typografie —, sie uebergeben deshalb begruendet kein
+     * `quellen`, und die Pruefung entfaellt. Sie greift bei der ersten Sorte, die eines hat. */
+    if (quellen && !L.kiHerkunftFehler(quellen)) {
+      console.error(`  ! ${datei}: Alle Quellbilder sind KI-erzeugt (bild_ki=1), aber die Sorte "${typ}" steht nicht in KI_PIN_SORTEN — der Pin ginge ohne beide Kennzeichnungen hinaus.`);
+      fehler++;
+    }
+  }
+
   liste.push({
     guid, typ, datei,
     bild: `${BASIS}/pins/${datei}`,
@@ -120,6 +329,9 @@ async function bauen({ guid, datei, typ, machen, text, extra = {}, erzwingen = f
     link: eingefroren ? alt.link : mitKennung(t.link, guid),
     alt: t.alt,
     board: t.board,
+    // Steht in der Liste, damit der naechste Lauf auch einen eingefrorenen Pin gegenpruefen
+    // kann, ohne seinen Text neu zu rechnen (siehe die Gegenprobe oben).
+    kiBild: typeof t.kiBild === 'boolean' ? t.kiBild : kiSorte,
     bytes: fs.statSync(pfad).size,
     pubDate: alt?.pubDate || new Date().toUTCString(),
     // Einmal vergebener Termin bleibt. Ein Neulauf der Bilder darf einen Pin nicht
@@ -130,29 +342,23 @@ async function bauen({ guid, datei, typ, machen, text, extra = {}, erzwingen = f
 }
 
 (async () => {
-  // ── Einzelpflanzen ─────────────────────────────────────────────────────────
-  // ladePflanzen aus pin-saison bringt die vollständige Auswahlkette mit: bild_ki, eigener
-  // deutscher Name, Beetstaude, hier winterhart, Bilddatei vorhanden.
-  if (!NUR || NUR === 'pflanze') {
-    let pflanzen = saisonModul.ladePflanzen(db);
-    if (LIMIT) pflanzen = pflanzen.slice(0, LIMIT);
-    console.log(`Einzelpflanzen: ${pflanzen.length}`);
-    for (const p of pflanzen) {
-      const slug = txt.slugify(p.name_botanisch);
-      await bauen({
-        guid: `pflanze-${slug}`, datei: `pflanze-${slug}.jpg`, typ: 'pflanze',
-        machen: z => bildModul.pinBild(p, z),
-        text: () => txt.textPflanze(p, giftigkeit),
-      });
-    }
-  }
-
-  // ── Beetpläne ──────────────────────────────────────────────────────────────
-  if (!NUR || NUR === 'beetplan') {
+  /* ── ZUERST ALLES, WAS DEN LAUFENDEN SERVER BRAUCHT ────────────────────────
+   *
+   * Der Beetplan-Pin ist der einzige Inhalt, der nicht aus der Datenbank kommt: Seine Zahlen
+   * stehen auf /beispiele und /beispiel/<slug>, und der Lauf holt sie ueber HTTP. Faellt der
+   * Abruf aus (Server nicht gestartet, anderer Port), wirft holeSeite, und der aeussere catch
+   * beendet den Lauf. Das darf er nur, solange noch keine Datei angefasst ist: Seit die
+   * KI-Kennzeichnung auch liegende Dateien verlaengert, hinterliesse ein Abbruch mittendrin
+   * gewachsene Bilder und eine liste.json mit den alten enclosure-Laengen — genau das, was
+   * die Reihenfolge in bauen() verhindern soll. Deshalb steht der Abruf hier oben, vor der
+   * ersten bauen()-Aufrufstelle.
+   */
+  let beetSeiten = null;
+  if (!NUR || NUR === S.TYP.beetplan) {
     const uebersicht = await beetModul.holeSeite('/beispiele');
     let slugs = [...new Set([...uebersicht.matchAll(/href="\/beispiel\/([a-z-]+)"/g)].map(m => m[1]))];
     if (LIMIT) slugs = slugs.slice(0, LIMIT);
-    console.log(`Beetpläne: ${slugs.length}`);
+    beetSeiten = [];
     for (const slug of slugs) {
       const html = await beetModul.holeSeite(`/beispiel/${slug}`);
       const gelesen = beetModul.ausSeiteLesen(html);
@@ -163,8 +369,67 @@ async function bauen({ guid, datei, typ, machen, text, extra = {}, erzwingen = f
         flaeche: (html.match(/Fläche<\/div>\s*<div[^>]*>([\d.,]+) m²/) || [])[1],
         licht: (html.match(/Licht<\/div>\s*<div[^>]*>([^<]+)/) || [])[1],
       };
+      beetSeiten.push({ b, gelesen });
+    }
+    console.log(`Beetplaene vorbereitet: ${beetSeiten.length} Seite(n) gelesen`);
+  }
+
+  // ── Einzelpflanzen ─────────────────────────────────────────────────────────
+  // ladePflanzen aus pin-saison bringt die vollständige Auswahlkette mit: bild_ki, eigener
+  // deutscher Name, Beetstaude, hier winterhart, Bilddatei vorhanden.
+  if (!NUR || NUR === S.TYP.pflanze) {
+    let pflanzen = saisonModul.ladePflanzen(db);
+    if (LIMIT) pflanzen = pflanzen.slice(0, LIMIT);
+    console.log(`Einzelpflanzen: ${pflanzen.length}`);
+    for (const p of pflanzen) {
+      const slug = txt.slugify(p.name_botanisch);
       await bauen({
-        guid: `beetplan-${slug}`, datei: `beetplan-${slug}.jpg`, typ: 'beetplan',
+        guid: `pflanze-${slug}`, datei: `pflanze-${slug}.jpg`, typ: S.TYP.pflanze,
+        machen: z => bildModul.pinBild(p, z),
+        text: () => txt.textPflanze(p, giftigkeit),
+        quellen: [p],
+      });
+    }
+  }
+
+  /* ── Einzelpflanzen im Winter ───────────────────────────────────────────────
+   *
+   * Zweiter Pin je Pflanze, mit eigenem Bild und eigener Kennung (pflanze-winter-<slug>).
+   * Derselbe Pool, dieselbe Auswahlkette, dieselbe Landeseite — nur zeigt die Faktenzeile
+   * statt der Bluehzeit den Winteraspekt. Die Bluehzeit-Fassung bleibt bestehen.
+   *
+   * Gebaut wird nur fuer Pflanzen, deren `winteraspekt` EXAKT einem Schluessel aus
+   * WINTER_WERT entspricht (pin-saison.js). Wer keinen hat — „unauffaellig" oder ein frei
+   * formulierter Satz ueber das Einziehen —, bekommt keinen: In der Produktion sind das
+   * 126 von 277 Pflanzen des Pools. Die Prosa wird NICHT nach Stichwoertern durchsucht.
+   *
+   * Die Sorte traegt ein KI-Bild und steht deshalb in KI_PIN_SORTEN (pin-layout.js). Ohne
+   * diesen Eintrag ginge sie ohne Kennzeichnung hinaus — weder der Satz in der Beschreibung
+   * noch das Feld in der Datei. Die Gegenprobe darauf laeuft in bauen().
+   */
+  if (!NUR || NUR === S.TYP.pflanzeWinter) {
+    let pflanzen = saisonModul.ladePflanzen(db).filter(p => saisonModul.winterAspekt(p));
+    if (LIMIT) pflanzen = pflanzen.slice(0, LIMIT);
+    console.log(`Einzelpflanzen im Winter: ${pflanzen.length}`);
+    for (const p of pflanzen) {
+      const slug = txt.slugify(p.name_botanisch);
+      await bauen({
+        guid: `${S.TYP.pflanzeWinter}-${slug}`, datei: `${S.TYP.pflanzeWinter}-${slug}.jpg`,
+        typ: S.TYP.pflanzeWinter,
+        machen: z => bildModul.pinBild(p, z, { winter: true }),
+        text: () => txt.textPflanzeWinter(p, giftigkeit),
+        quellen: [p],
+      });
+    }
+  }
+
+  // ── Beetpläne ──────────────────────────────────────────────────────────────
+  // Die Seiten sind oben geholt; hier wird nur noch gebaut.
+  if (beetSeiten) {
+    console.log(`Beetplaene: ${beetSeiten.length}`);
+    for (const { b, gelesen } of beetSeiten) {
+      await bauen({
+        guid: `beetplan-${b.slug}`, datei: `beetplan-${b.slug}.jpg`, typ: S.TYP.beetplan,
         machen: z => beetModul.beetPin(b, z),
         text: () => txt.textBeetplan(b, gelesen.namen.length, gelesen.gift),
       });
@@ -176,13 +441,13 @@ async function bauen({ guid, datei, typ, machen, text, extra = {}, erzwingen = f
   // Der Listeneintrag traegt die sechs Pflanzen und die Adresse der Landeseite: Die Seite
   // unter /blueht-im bzw. /winterbeet liest genau diese IDs, damit sie dieselben sechs zeigt
   // wie das Bild — neu berechnen wuerde bei jeder Datenaenderung stillschweigend abweichen.
-  if (!NUR || NUR === 'saison') {
+  if (!NUR || NUR === S.TYP.saison) {
     const pool = saisonModul.ladePflanzen(db);
     // Veroeffentlichte Saison-Pins werden aus ihren alten IDs wieder aufgebaut, nicht neu
     // berechnet (siehe alleSaisonPins): Ihr Bild liegt bei Pinterest, ihr Link zeigt auf die
     // Seite mit genau diesen sechs.
     const fest = new Map(vorher
-      .filter(e => e.typ === 'saison' && istVeroeffentlicht(e) && Array.isArray(e.pflanzen) && e.pflanzen.length)
+      .filter(e => e.typ === S.TYP.saison && istVeroeffentlicht(e) && Array.isArray(e.pflanzen) && e.pflanzen.length)
       .map(e => [e.guid, e.pflanzen]));
     let { pins, verworfen, hinweise } = saisonModul.alleSaisonPins(pool, { fest });
     if (LIMIT) pins = pins.slice(0, LIMIT);
@@ -213,9 +478,10 @@ async function bauen({ guid, datei, typ, machen, text, extra = {}, erzwingen = f
             standort: alt.standort ?? neu.standort, thema: alt.thema ?? neu.thema, kopf: alt.kopf || neu.kopf, pflanzen: alt.pflanzen }
         : neu;
       await bauen({
-        guid, datei, typ: 'saison', erzwingen: geaendert && !veroeffentlicht,
+        guid, datei, typ: S.TYP.saison, erzwingen: geaendert && !veroeffentlicht,
         machen: z => saisonModul.saisonPin(s, z),
         text: () => txt.textSaison(s, giftigkeit),
+        quellen: s.auswahl.map(x => x.p),
         extra,
       });
     }
@@ -224,7 +490,7 @@ async function bauen({ guid, datei, typ, machen, text, extra = {}, erzwingen = f
   // ── Kombinationen ──────────────────────────────────────────────────────────
   // Je Standort die bestbewertete statt der besten N insgesamt: Sonst entstünden zwanzig
   // Varianten derselben Schattenpflanzung, und Pinterest wertet Fast-Dubletten als Spam.
-  if (!NUR || NUR === 'kombi') {
+  if (!NUR || NUR === S.TYP.kombi) {
     const pool = kombiModul.ladePflanzen(db);
     const jeStandort = {};
     for (const k of kombiModul.findeKombinationen(pool, { anzahl: 200 })) {
@@ -237,9 +503,10 @@ async function bauen({ guid, datei, typ, machen, text, extra = {}, erzwingen = f
     for (const [standort, k] of kombis) {
       const slug = txt.slugify(standort);
       await bauen({
-        guid: `kombi-${slug}`, datei: `kombi-${slug}.jpg`, typ: 'kombi',
+        guid: `kombi-${slug}`, datei: `kombi-${slug}.jpg`, typ: S.TYP.kombi,
         machen: z => kombiModul.kombiPin(k, z),
         text: () => txt.textKombination(k, giftigkeit),
+        quellen: k.pflanzen,
       });
     }
   }
@@ -248,7 +515,7 @@ async function bauen({ guid, datei, typ, machen, text, extra = {}, erzwingen = f
   // Eine Auswertung über den ganzen Bestand, kein Einzelinhalt: "Zu viel Wasser trifft 270 von
   // 692 Stauden" ist eine Zahl, die sonst nirgends steht. Das ist der stärkste Pinterest-Haken,
   // den die Pflegedaten hergeben — und er funktioniert ganzjährig.
-  if (!NUR || NUR === 'pflege') {
+  if (!NUR || NUR === S.TYP.pflege) {
     const { themenMitPflanzen } = require('./pflege-themen');
     const kandidaten = db.prepare(`SELECT name_deutsch, name_botanisch, inhalt_lang FROM pflanzen
       WHERE inhalt_lang IS NOT NULL AND ${PLANBAR_SQL}`).all();
@@ -265,22 +532,19 @@ async function bauen({ guid, datei, typ, machen, text, extra = {}, erzwingen = f
             + `ganzen Bestand — mit den Arten, bei denen du besonders darauf achten musst.`,
     };
     await bauen({
-      guid: 'pflege-haeufige-fehler', datei: 'pflege-haeufige-fehler.jpg', typ: 'pflege',
+      guid: 'pflege-haeufige-fehler', datei: 'pflege-haeufige-fehler.jpg', typ: S.TYP.pflege,
       machen: z => ratgeberModul.ratgeberPin(seite, z),
-      text: () => ({
-        titel: seite.titel,
-        beschreibung: seite.inhalt + ' Kostenlos lesen auf staudenplan.de.',
-        link: 'https://www.staudenplan.de/pflege/haeufige-fehler?utm_source=pinterest&utm_medium=pin',
-        alt: 'Die häufigsten Pflegefehler bei Stauden — Auswertung über den ganzen Bestand',
-        board: 'Staudenwissen',
-      }),
+      // Der Text stand hier bis zum 21.09.2026 als Objektliteral und lief damit an fertig()
+      // vorbei: als einzige Sorte ohne Kuerzung und ohne die gemeinsame KI-Entscheidung.
+      // Titel, Beschreibung, Link, alt und Pinnwand sind Zeichen fuer Zeichen dieselben.
+      text: () => txt.textPflege(seite),
     });
   }
 
   // ── Ratgeber ───────────────────────────────────────────────────────────────
   // Trägt November bis Februar: Der Blühbeginn der 278 pinnbaren Stauden ballt sich im Juni,
   // im Winter gäbe es aus der Pflanzentabelle fast nichts zu zeigen.
-  if (!NUR || NUR === 'ratgeber') {
+  if (!NUR || NUR === S.TYP.ratgeber) {
     let artikel = ratgeberModul.ladeArtikel(db);
     if (LIMIT) artikel = artikel.slice(0, LIMIT);
     console.log(`Ratgeber: ${artikel.length}`);
@@ -288,30 +552,24 @@ async function bauen({ guid, datei, typ, machen, text, extra = {}, erzwingen = f
       const slug = txt.slugify(a.titel);
       const teaser = ratgeberModul.ersterSatz(a.inhalt, 60, 480);
       await bauen({
-        guid: `ratgeber-${slug}`, datei: `ratgeber-${slug}.jpg`, typ: 'ratgeber',
+        guid: `ratgeber-${slug}`, datei: `ratgeber-${slug}.jpg`, typ: S.TYP.ratgeber,
         machen: z => ratgeberModul.ratgeberPin(a, z),
         text: () => txt.textRatgeber(a, teaser),
       });
     }
   }
 
-  /* Bei --nur <sorte> nur DIESE Sorte neu aufbauen und die uebrigen aus der alten Liste
-   * uebernehmen. Ohne das loescht ein "--nur ratgeber" die 306 anderen Eintraege aus der
-   * Liste — der Feed liefert dann nichts mehr, obwohl alle Bilder noch da liegen. */
-  if (NUR) {
-    const behalten = vorher.filter(e => e.typ !== NUR && fs.existsSync(path.join(ZIEL, e.datei)));
-    console.log(`--nur ${NUR}: ${behalten.length} Eintraege anderer Sorten uebernommen`);
-    liste.push(...behalten);
-  }
-
-  liste.sort((a, b) => a.guid.localeCompare(b.guid));
-  fs.writeFileSync(LISTE, JSON.stringify(liste, null, 1));
+  listeSchreiben(true);
 
   const jeBrett = {};
   for (const e of liste) jeBrett[e.board] = (jeBrett[e.board] || 0) + 1;
   const zuGross = liste.filter(e => e.bytes > 20 * 1024 * 1024);
 
   console.log(`\n${liste.length} Pins in der Liste · ${erzeugt} neu · ${vorhanden} unverändert · ${fehler} Fehler`);
+  // Die KI-Kennzeichnung getrennt ausweisen: "0 neu" ist beim zweiten Lauf das erwartete
+  // Ergebnis, beim ersten dagegen der Hinweis, dass nichts geschrieben wurde.
+  console.log(`KI-Kennzeichnung: ${kiNeu} neu geschrieben · ${kiSchon} bereits vorhanden`
+    + (kiUnmoeglich ? ` · ${kiUnmoeglich} NICHT MÖGLICH` : ''));
   for (const [b, n] of Object.entries(jeBrett).sort((x, y) => y[1] - x[1])) {
     console.log(`  ${String(n).padStart(4)}  ${b}`);
   }
@@ -320,4 +578,12 @@ async function bauen({ guid, datei, typ, machen, text, extra = {}, erzwingen = f
   if (zuGross.length) console.log(`\n! ${zuGross.length} Pin(s) über 20 MB — Pinterest lehnt die ab.`);
   console.log(`\nListe: ${LISTE}`);
   if (fehler) process.exitCode = 1;
-})().catch(e => { console.error('Abbruch:', e.stack || e.message); process.exit(1); });
+})().catch(e => {
+  console.error('Abbruch:', e.stack || e.message);
+  // Die Liste muss auch jetzt geschrieben werden: Die bis hierher bearbeiteten Dateien sind um
+  // rund 530 Byte gewachsen, und liste.json traege sonst weiter deren alte Laengen.
+  try { listeSchreiben(false); } catch (schreibfehler) {
+    console.error('Abbruch: liste.json konnte nicht geschrieben werden:', schreibfehler.message);
+  }
+  process.exit(1);
+});

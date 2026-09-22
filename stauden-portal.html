@@ -2805,6 +2805,15 @@
     if (status) status.textContent = '';
   }
 
+  /* Kachelmarke fuer KI-Bilder. Anders als GIFT_LABEL und BLOOM_COLORS steht hier NICHTS,
+   * was synchron gehalten werden muesste: Der Server setzt __KI_MARKE__ beim Ausliefern
+   * dieser Datei durch das fertige Markup aus scripts/bild-herkunft.js (bildMarkeHTML) —
+   * derselbe Weg wie __PFLANZEN_COUNT__ und dieselbe Konstante, die das Lexikon bekommt.
+   * Wortlaut, Farbe und print-color-adjust werden damit an genau einer Stelle gepflegt.
+   * Ob eine Karte ueberhaupt ein Bild zeigt und was im alt-Text steht, sagt das Merkmal
+   * p.bild_herkunft aus der Serverantwort — auch diese Regel wird hier nicht wiederholt. */
+  const KI_MARKE = __KI_MARKE__;
+
   // Beschriftung der Giftstufen. MUSS mit GIFT_REIHENFOLGE/GIFT_LABEL in stauden-server.js
   // synchron bleiben — dieselbe Regel wie bei BLOOM_COLORS. Die Reihenfolge ist die
   // Dringlichkeit: was ein Kind umbringen kann, steht oben.
@@ -4021,6 +4030,15 @@
     return canvas.toDataURL('image/png');
   }
 
+  /* BILDKENNZEICHNUNG: Hier ist bewusst NICHTS zu tun.
+   * Das PDF enthaelt kein einziges Pflanzenfoto - eingebettet wird nur die Beetskizze
+   * (svgToPngDataUrl auf #grafisch-svg, weiter unten), dazu Stueckliste, Kalender und Tipps
+   * als Text. Eine KI-Kennzeichnung im PDF haette also kein Bild, auf das sie sich bezieht,
+   * und waere eine Behauptung ueber etwas, das gar nicht abgedruckt ist.
+   * Der AUSDRUCK der Seite (@media print) ist ein anderer Fall: Er zeigt die Pflanzenkarten
+   * mit Bild, und dort steht die Marke in der Karte selbst (.pflanze-card-top).
+   * Wer hier spaeter Pflanzenfotos in das PDF aufnimmt, muss die Kennzeichnung mitbringen -
+   * das Merkmal steht als p.bild_herkunft an jeder Pflanze des Plans. */
   async function generatePDF() {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
@@ -4326,13 +4344,26 @@
       <div class="em-item"><strong data-meta="kosten">${typeof plan.gesamtkosten_geschaetzt === 'number' ? plan.gesamtkosten_geschaetzt.toFixed(0) + ' €' : plan.gesamtkosten_geschaetzt || '—'}</strong> Richtpreis gesamt</div>
     `;
 
-    // Pflanzenkarten (mit echten Fotos oder farbigem Top)
+    // Pflanzenkarten (mit Pflanzenbild oder farbigem Top)
     const grid = document.getElementById('pflanzen-grid');
     grid.innerHTML = plan.pflanzen.map((p, i) => {
       const c = bloomColor(p.farbe);
       const stars = p.pflege_sterne || 1;
-      const topContent = p.bild_url
-        ? `<img src="${escapeHtml(p.bild_url)}" alt="${escapeHtml(p.name_deutsch)}" style="width:100%;height:100%;object-fit:cover;display:block" loading="lazy" onerror="this.parentElement.innerHTML='<div style=\\'font-size:2.2rem;display:flex;align-items:center;justify-content:center;height:100%\\'>${['🌸','🌺','🌼','🌻','🌹','💐','🌷','🌿','🍃','🌾'][i%10]}</div>'">`
+      /* Bildherkunft. Marke, alt-Zusatz und die Entscheidung, ob ueberhaupt ein Bild
+       * gezeigt wird, kommen alle drei vom Server (scripts/bild-herkunft.js) - hier wird
+       * nur eingesetzt. Fehlt das Merkmal p.bild_herkunft, heisst das "nicht zeigen": eine
+       * Karte mit Bild und ohne Aussage ueber dessen Herkunft waere genau die Luecke, die
+       * geschlossen werden soll. Mit dem Merkmal liegt auch immer eine bild_url vor - beides
+       * entscheidet dieselbe Stelle, deshalb wird hier nicht zusaetzlich auf p.bild_url
+       * geprueft.
+       * Die Marke sitzt IN der Karte (.pflanze-card-top) und nicht in einer Leiste: Der
+       * Ausdruck (@media print) blendet Leisten aus, druckt die Karten mit Bild aber ab.
+       * Der onerror-Ersatz leert .pflanze-card-top ganz - mit dem Bild verschwindet dann
+       * auch die Marke, und das ist richtig so. */
+      const bh = p.bild_herkunft;
+      const kiMarke = (bh && bh.ki) ? KI_MARKE : '';
+      const topContent = bh
+        ? `<img src="${escapeHtml(p.bild_url)}" alt="${escapeHtml(p.name_deutsch + (bh.alt || ''))}" style="width:100%;height:100%;object-fit:cover;display:block" loading="lazy" onerror="this.parentElement.innerHTML='<div style=\\'font-size:2.2rem;display:flex;align-items:center;justify-content:center;height:100%\\'>${['🌸','🌺','🌼','🌻','🌹','💐','🌷','🌿','🍃','🌾'][i%10]}</div>'">${kiMarke}`
         : `<div style="font-size:2.2rem;display:flex;align-items:center;justify-content:center;height:100%">${['🌸','🌺','🌼','🌻','🌹','💐','🌷','🌿','🍃','🌾'][i%10]}</div>`;
       return `<div class="pflanze-card">
         <div class="pflanze-card-top" style="background:linear-gradient(135deg,${hexLighten(c,40)},${c});height:140px;overflow:hidden;position:relative">

@@ -107,6 +107,41 @@ const THEMA = {
   },
 };
 
+/*
+ * DIE EINE ABLEITUNG „WAS MACHT DIESE PFLANZE IM WINTER".
+ *
+ * ZWEI Ausgabepfade stellen dieselbe Frage und bekommen hier dieselbe Antwort: das
+ * Sechser-Raster (zweite Zeile unter der Kachel) und der Winter-Pin der Einzelpflanze
+ * (Faktenzeile im Bild UND Titel plus Beschreibung im Text). Liefen sie auseinander,
+ * behauptete ein Ausgabepfad etwas, das der andere nicht sagt.
+ *
+ * DIE LANDESEITE GEHÖRT NICHT DAZU — OFFENER BEFUND, NICHT ERLEDIGT. Die Saison-Winterpins
+ * zeigen auf /winterbeet/<thema> und tragen ihre Zeilen aus liste.json mit; dort stimmt es.
+ * Die Winterfassung der Einzelpflanze zeigt dagegen auf /pflanze/<slug> (pin-text.js), und
+ * diese Route gibt `winteraspekt` an keiner Stelle aus — nachgesehen, kein Treffer im ganzen
+ * Routenkörper. Sie zeigt stattdessen einen Fließtext-Abschnitt „Überwinterung" aus
+ * inhalt_lang, der mit WINTER_WERT nichts zu tun hat. Der Pin-Titel „<Pflanze> im Winterbeet:
+ * Samenstände bleiben stehen" verspricht damit etwas, das die verlinkte Seite an keiner Stelle
+ * einlöst. Geschlossen wird das in stauden-server.js (ein Abschnitt aus WINTER_WERT auf der
+ * Pflanzenseite); bis dahin steht es hier, damit es niemand für erledigt hält.
+ *
+ * `winteraspekt` wird dabei NUR über die exakten Schlüssel aus WINTER_WERT gelesen. Die Spalte
+ * enthält daneben „unauffällig" (128 Pflanzen) und rund 22 frei formulierte Sätze („die
+ * Pflanze zieht sich im Winter zurück …"). Diese Prosa wird NICHT nach Stichwörtern
+ * durchsucht: Genau so ist im Projekt schon einmal eine Gruppierung von Pflegetexten über
+ * Schlagwörter entstanden, die Arten falsch einsortiert hat. Was nicht exakt in der Liste
+ * steht, fällt weg — eine Pflanze ohne Winterpin ist harmlos, ein falscher Winterpin nicht.
+ */
+const winterSchluessel = p => String((p && p.winteraspekt) || '').trim().toLowerCase();
+const winterAspekt = p => WINTER_WERT[winterSchluessel(p)] || null;
+
+/* Das Winterthema einer Pflanze (Schlüssel von THEMA) — oder null. Die Zuordnung steht in
+ * THEMA[..].werte und wird hier nur umgedreht, damit sie auch für eine einzelne Pflanze
+ * gilt. „blätter halbimmergrün" trägt bewusst kein Thema; solche Pflanzen bekommen einen
+ * Winter-Pin, aber keinen Pflegehinweis, statt einen, der für sie nicht stimmt. */
+const winterThema = p => Object.keys(THEMA).find(k => THEMA[k].werte.includes(winterSchluessel(p))) || null;
+const winterHinweis = p => { const t = winterThema(p); return t ? THEMA[t].hinweis : null; };
+
 const STANDORTE = ['sonne', 'halbschatten', 'schatten'];
 const ORT     = { sonne: 'für die Sonne', halbschatten: 'für den Halbschatten', schatten: 'für den Schatten' };
 const ORT_IN  = { sonne: 'in der Sonne',  halbschatten: 'im Halbschatten',      schatten: 'im Schatten' };
@@ -116,10 +151,23 @@ const MON_SLUG = ['januar', 'februar', 'maerz', 'april', 'mai', 'juni', 'juli', 
 // Ab so vielen gemeinsamen Kacheln gilt eine Fassung als Dublette eines anderen Pins.
 const DOPPEL_AB = 4;
 
+/*
+ * `bild_ki` steht in der WHERE-Bedingung UND in der Spaltenliste. Das ist keine Doppelung:
+ * Die Bedingung wählt aus, die Spalte belegt die Auswahl für spätere Schritte. Aus diesem
+ * Lader stammen die Bilder der Saison-Raster UND der Einzelpflanzen-Pins (pins-erzeugen.js),
+ * und beide bekommen danach eine maschinenlesbare KI-Kennzeichnung ins JPEG geschrieben.
+ * Wer diese Kennzeichnung setzt, muss sie belegen können, statt sie aus dem Sortennamen zu
+ * schließen — siehe kiHerkunftFehler() in pin-layout.js.
+ *
+ * Die Bildspalten kommen als BILD_SPALTEN_SQL aus scripts/bild-herkunft.js, damit diese
+ * Abfrage keines der Herkunftsfelder vergessen kann. `bild_lizenz` gehört dazu: Ohne sie
+ * liefe die Gegenprobe ins Leere — sie prüft bild_ki gegen Lizenz und Dateinamen und kann
+ * einen Widerspruch nur melden, wenn das Feld überhaupt geladen ist (id 698).
+ */
 function ladePflanzen(db) {
   return db.prepare(`SELECT id, name_deutsch, name_botanisch, farbe, licht, feuchtigkeit, bluehzeit,
                             hoehe_cm_max, winteraspekt, bienen_freundlich, heimisch, winterhart_zone, lebensdauer,
-                            lebensbereich, bild_url
+                            lebensbereich, ${L.BILD_SPALTEN_SQL}
                      FROM pflanzen WHERE bild_ki = 1 AND bild_url IS NOT NULL`).all()
            .filter(L.hatDeutschenNamen)
            .filter(L.istBeetpflanze)
@@ -193,7 +241,7 @@ function saisonAuswahl(pflanzen, { monat, standort, versatz = 0, thema = null, m
   let kandidaten;
   if (winter) {
     kandidaten = pflanzen
-      .map(p => { const wert = String(p.winteraspekt || '').trim().toLowerCase(); return { p, wert, aspekt: WINTER_WERT[wert] }; })
+      .map(p => ({ p, wert: winterSchluessel(p), aspekt: winterAspekt(p) }))
       .filter(x => x.aspekt && (!th || th.werte.includes(x.wert)))
       .map(x => ({ p: x.p, zeile2: x.aspekt }));
   } else {
@@ -212,7 +260,10 @@ function saisonAuswahl(pflanzen, { monat, standort, versatz = 0, thema = null, m
       const s = L.spanne(x.p.bluehzeit);
       if (s[0] === monat) punkte += 4;                      // beginnt jetzt
       if (s[1] === monat) punkte += 1;                      // letzter Monat
-      punkte += Math.min(s[1] - s[0], 4) * 0.3;             // lange Blüher sind nützlich
+      // L.dauer() statt s[1] - s[0]: Für jede Spanne innerhalb des Jahres dasselbe Ergebnis
+      // wie bisher, für „Dezember - März" 3 statt -9. Ohne das bekäme die Christrose im März
+      // Minuspunkte dafür, dass sie lange blüht.
+      punkte += Math.min(L.dauer(s), 4) * 0.3;              // lange Blüher sind nützlich
     }
     return { ...x, punkte };
   }).sort((a, b) => b.punkte - a.punkte || a.p.id - b.p.id);
@@ -440,4 +491,6 @@ if (require.main === module) {
   console.log('erzeugt:', ziel, '·', s.winter ? 'Winterfassung' : 'Blühfassung', '·', s.auswahl.map(x => x.p.name_deutsch).join(', '));
 }
 
-module.exports = { ladePflanzen, saisonAuswahl, saisonPin, alleSaisonPins, saisonPfad, saisonKennung, saisonKopf, THEMA, ORT };
+module.exports = { ladePflanzen, saisonAuswahl, saisonPin, alleSaisonPins, saisonPfad,
+                   saisonKennung, saisonKopf, THEMA, ORT, WINTER_WERT,
+                   winterSchluessel, winterAspekt, winterThema, winterHinweis };

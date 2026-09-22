@@ -26,22 +26,46 @@ const enthaelt = (feld, teil) => new RegExp(teil, 'i').test(String(feld || ''));
 /*
  * Farne und blütenlose Arten. Farne über die Gattung, weil „kein Blüteschmuck" nicht bei
  * allen steht.
+ *
+ * ZWEI FRAGEN, DIE BIS ZUM 21.09.2026 EINE WAREN:
+ *
+ *   sagtSelbstKeineBluete(p)  Die Pflanze ist als blütenlos GEFÜHRT — Farn oder ein
+ *                             Blühzeit-Feld, das mit „kein…" beginnt. Das ist eine Aussage.
+ *   !L.spanne(p.bluehzeit)    Die Blühzeit lässt sich nicht in Monate zerlegen. Das ist eine
+ *                             Aussage ODER ein Datenfehler — über die Blüte selbst sagt es
+ *                             nichts.
+ *
+ * Sie führen zu verschiedenen Korrekturen: dort gehört bienen_freundlich auf 0, hier die
+ * Blühzeit nachgetragen. Der frühere Sammelbegriff ohneBluete() hat beides vermengt und ist
+ * deshalb ersatzlos entfallen: Mit ihm meldete die Prüfung „bienenfreundlich, blüht aber gar
+ * nicht" auch Zeilen, über deren Blüte nichts bekannt ist, und begründete das mit „Farne und
+ * Arten ohne Blüteschmuck bieten Bienen nichts". Wer dem folgt, korrigiert das falsche Feld.
+ * Im lokalen Stand sind das die Werte „null" und „keine Blüte" — „null" enthält kein „kein"
+ * und fiel damit nur in den Sammelbegriff. Unlesbare Blühzeiten meldet jetzt ausschließlich
+ * die Prüfung „Blühzeit weder lesbar noch als blütenlos geführt", unter ihrem eigenen Namen.
+ *
+ * Die Prüfung „Blühzeit nicht lesbar" fragte mit der zweiten Fassung nach der ersten und war
+ * dadurch tautologisch tot: `!spanne(p) && !ohneBluete(p)` kann nicht wahr werden, weil
+ * ohneBluete selbst `!spanne(p)` enthält. Sie meldete immer 0 — und genau deshalb ist jahrelang
+ * niemandem aufgefallen, dass L.spanne() jede jahresübergreifende Blühzeit verworfen hat
+ * („Dezember - März", Helleborus niger). Eine Prüfung, die nie anschlägt, sieht aus wie eine
+ * bestandene Prüfung.
  */
 const FARN_GATTUNG = new Set(['Adiantum','Asplenium','Athyrium','Blechnum','Cyrtomium','Dryopteris',
   'Gymnocarpium','Matteuccia','Onoclea','Osmunda','Phyllitis','Polypodium','Polystichum','Woodwardia']);
 const istFarn = p => FARN_GATTUNG.has(String(p.name_botanisch).split(' ')[0]);
-const ohneBluete = p => istFarn(p) || /kein/i.test(String(p.bluehzeit || '')) || !L.spanne(p.bluehzeit);
+const sagtSelbstKeineBluete = p => istFarn(p) || /kein/i.test(String(p.bluehzeit || ''));
 
 const PRUEFUNGEN = [
   {
     name: 'bienenfreundlich, blüht aber gar nicht',
     warum: 'Farne und Arten ohne Blüteschmuck bieten Bienen nichts. Ein Häkchen hier führt jeden in die Irre, der gezielt nach Bienenweiden sucht.',
-    treffer: p => p.bienen_freundlich === 1 && ohneBluete(p),
+    treffer: p => p.bienen_freundlich === 1 && sagtSelbstKeineBluete(p),
   },
   {
     name: 'bienenfreundlich, ist aber ein Gras',
     warum: 'Gräser, Seggen und Binsen werden vom Wind bestäubt und produzieren keinen Nektar.',
-    treffer: p => p.bienen_freundlich === 1 && L.istGras(p) && !ohneBluete(p),
+    treffer: p => p.bienen_freundlich === 1 && L.istGras(p) && !sagtSelbstKeineBluete(p),
   },
   {
     name: 'Mindesthöhe größer als Maximalhöhe',
@@ -49,9 +73,14 @@ const PRUEFUNGEN = [
     treffer: p => p.hoehe_cm_min && p.hoehe_cm_max && p.hoehe_cm_min > p.hoehe_cm_max,
   },
   {
-    name: 'Blühzeit nicht lesbar',
-    warum: 'Der Planer und alle Pin-Sorten rechnen mit Monaten. Was sich nicht zerlegen lässt, fällt still aus jeder Blühfolge heraus.',
-    treffer: p => !L.spanne(p.bluehzeit) && !ohneBluete(p),
+    name: 'Blühzeit weder lesbar noch als blütenlos geführt',
+    warum: 'Der Planer und alle Pin-Sorten rechnen mit Monaten. Was sich nicht zerlegen lässt und auch nicht „kein Blüteschmuck" sagt, fällt still aus jeder Blühfolge heraus — als hätte es die Pflanze nicht gegeben. Betrifft Werte wie „N/A" oder ein leeres Feld.',
+    treffer: p => !L.spanne(p.bluehzeit) && !sagtSelbstKeineBluete(p),
+  },
+  {
+    name: 'Blühzeit läuft über den Jahreswechsel',
+    warum: 'Seit dem 21.09.2026 liest L.spanne() „Dezember - März" als [12, 3] statt als unlesbar — richtig für die Christrose, aber damit ist auch die einzige Sperre gegen VERDREHTE Spannen weggefallen: „September - Juli" ergibt jetzt elf Monate Blüte und setzt die Pflanze in zehn Monatsraster, statt wie vorher still aus jeder Pin-Sorte herauszufallen. Ein gewollter Jahreswechsel und ein Zahlendreher sehen in den Daten gleich aus, der Unterschied steckt in der Absicht. Deshalb wird hier jede Umbruchspanne einmal aufgelistet und einzeln eingestuft.',
+    treffer: p => { const s = L.spanne(p.bluehzeit); return Boolean(s && L.ueberJahreswechsel(s)); },
   },
   {
     name: 'Schattenpflanze in der Steppenheide',

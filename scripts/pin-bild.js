@@ -1,7 +1,14 @@
 /*
  * Erzeugt aus einer Pflanze der Datenbank ein fertiges Pinterest-Bild (1000 × 1500).
  *
- *   node scripts/pin-bild.js <id|botanischer Name> [zielpfad.jpg]
+ *   node scripts/pin-bild.js <id|botanischer Name> [zielpfad.jpg] [--winter]
+ *
+ * ZWEI FASSUNGEN DESSELBEN BILDES (--winter seit 21.09.2026): Die Blühfassung nennt in der
+ * Faktenzeile die Blühzeit, die Winterfassung stattdessen den Winteraspekt („Samenstände
+ * bleiben stehen") und trägt darüber die Zeile WINTERBEET. Der Grund steht in pin-text.js:
+ * Die Einzelpflanzen-Pins bringen die Klicks und schweigen von November bis Februar. Beide
+ * Fassungen zeigen dieselbe Pflanze und dasselbe Foto, deshalb unterscheiden sie sich sichtbar
+ * im Text — zwei fast gleiche Bilder wertet Pinterest als Dublette.
  *
  * Pinterest ist eine Bildsuchmaschine — hochkant im Verhältnis 2:3 ist das Format, das dort
  * überhaupt sichtbar wird. Die vorhandenen Pflanzenbilder sind quer (meist 640 × 427), das
@@ -21,6 +28,9 @@ const path = require('path');
 const fs = require('fs');
 const { giftigkeit } = require('./pflanzen-giftigkeit');
 const L = require('./pin-layout');
+// Die Beschriftung des Winteraspekts kommt aus pin-saison.js (WINTER_WERT) — dieselbe Zeile,
+// die im Sechser-Raster unter der Kachel und auf der Landeseite steht. Keine zweite Liste.
+const saison = require('./pin-saison');
 // Werkzeug und Schriften kommen aus dem geteilten Modul, damit ein Wechsel von
 // ImageMagick 6 auf 7 nur an EINER Stelle nachgezogen werden muss.
 const { MAGICK, FONT, FONT_B } = L;
@@ -45,13 +55,35 @@ function umbrechen(text, maxZeichen) {
   return zeilen;
 }
 
-function pinBild(p, ziel) {
+/*
+ * Die erste Angabe der Faktenzeile.
+ *
+ * Blühfassung: die Blühzeit — ABER NUR, WENN SIE SICH LESEN LÄSST. Bis zum 21.09.2026 stand
+ * hier `p.bluehzeit` ungeprüft. Im Bild von 25 Pflanzen des Pin-Pools stand dadurch „kein
+ * Blüteschmuck", „keine" oder „N/A" als Tatsache neben Höhe und Standort, während der Pin-Text
+ * zu derselben Pflanze die Blühzeit stillschweigend weglässt (pin-text.js prüft L.spanne).
+ * Bild und Text sagten also Verschiedenes, und „N/A" sagt gar nichts. Jetzt entscheidet
+ * dieselbe Prüfung beide Wege: Was sich nicht in Monate zerlegen lässt, steht auch nicht im
+ * Bild. Die Zeile wird dann kürzer, nicht falsch.
+ *
+ * Winterfassung: der Winteraspekt. Fehlt er, wird geworfen statt gedruckt — ein Winter-Pin
+ * ohne Winteraspekt hätte nichts zu sagen, was er nicht schon als Blühfassung sagt.
+ */
+function ersteFakt(p, winter) {
+  if (!winter) return L.spanne(p.bluehzeit) ? p.bluehzeit : null;
+  const aspekt = saison.winterAspekt(p);
+  if (!aspekt) throw new Error('Kein Winteraspekt aus der Werteliste (WINTER_WERT): '
+    + `${p.name_botanisch} — winteraspekt="${p.winteraspekt || ''}"`);
+  return aspekt;
+}
+
+function pinBild(p, ziel, { winter = false } = {}) {
   const quelle = path.join(WURZEL, 'public', p.bild_url.replace(/^\//, ''));
   if (!fs.existsSync(quelle)) throw new Error('Bilddatei fehlt: ' + quelle);
 
   const gift = giftigkeit(p.name_botanisch);
   const hoehe = p.hoehe_cm_min && p.hoehe_cm_max ? `${p.hoehe_cm_min}–${p.hoehe_cm_max} cm` : null;
-  const fakten = [p.bluehzeit, hoehe, (p.licht || '').split('|')[0]].filter(Boolean);
+  const fakten = [ersteFakt(p, winter), hoehe, (p.licht || '').split('|')[0]].filter(Boolean);
 
   const nameZeilen = umbrechen(p.name_deutsch, 24);
   const args = [
@@ -63,6 +95,16 @@ function pinBild(p, ziel) {
   ];
 
   let y = BILD_H + 46;
+
+  // Die Winterfassung sagt oben, worum es geht. Ohne diese Zeile unterschieden sich die beiden
+  // Pins derselben Pflanze nur in einer einzigen Textzeile weit unten — für Pinterest zwei
+  // fast gleiche Bilder, für den Betrachter ein Rätsel.
+  if (winter) {
+    args.push('-font', FONT_B, '-pointsize', '28', '-fill', '#74c69d');
+    args.push('-annotate', `+60+${y}`, 'WINTERBEET');
+    y += 44;
+  }
+
   args.push('-font', FONT_B, '-pointsize', nameZeilen.length > 1 ? '58' : '66', '-fill', 'white');
   for (const z of nameZeilen) { args.push('-annotate', `+60+${y}`, z); y += nameZeilen.length > 1 ? 66 : 74; }
 
@@ -71,8 +113,13 @@ function pinBild(p, ziel) {
   y += 62;
 
   if (fakten.length) {
-    args.push('-font', FONT, '-pointsize', '31', '-fill', '#d8f3dc');
-    args.push('-annotate', `+60+${y + 14}`, fakten.join('   ·   '));
+    // Gemessene statt fester Schriftgröße: „Samenstände bleiben stehen   ·   80 cm   ·
+    // halbschatten" ist deutlich länger als „Juli - September   ·   80 cm   ·   sonne" und
+    // liefe bei festen 31 pt rechts aus dem Bild. passendeGroesse() verkleinert nur, wenn es
+    // nötig ist — kurze Zeilen bleiben bei 31 pt und damit unverändert.
+    const zeile = fakten.join('   ·   ');
+    args.push('-font', FONT, '-pointsize', String(L.passendeGroesse(zeile, FONT, 31, 22, B - 120)), '-fill', '#d8f3dc');
+    args.push('-annotate', `+60+${y + 14}`, zeile);
     y += 56;
   }
 
@@ -97,7 +144,7 @@ function pinBild(p, ziel) {
 
 if (require.main === module) {
   const arg = process.argv[2];
-  if (!arg) { console.error('Aufruf: node scripts/pin-bild.js <id|botanischer Name> [ziel.jpg] [--trotzdem]'); process.exit(1); }
+  if (!arg) { console.error('Aufruf: node scripts/pin-bild.js <id|botanischer Name> [ziel.jpg] [--winter] [--trotzdem]'); process.exit(1); }
   const trotzdem = process.argv.includes('--trotzdem');
   const p = /^\d+$/.test(arg)
     ? db.prepare('SELECT * FROM pflanzen WHERE id = ?').get(Number(arg))
@@ -124,9 +171,11 @@ if (require.main === module) {
     console.error('  --trotzdem gesetzt, wird erzeugt.');
   }
 
-  const ziel = process.argv[3] && !process.argv[3].startsWith('--') ? process.argv[3] : `/tmp/pin-${p.id}.jpg`;
-  pinBild(p, ziel);
-  console.log('erzeugt:', ziel);
+  const winter = process.argv.includes('--winter');
+  const ziel = process.argv[3] && !process.argv[3].startsWith('--') ? process.argv[3]
+             : `/tmp/pin-${winter ? 'winter-' : ''}${p.id}.jpg`;
+  pinBild(p, ziel, { winter });
+  console.log('erzeugt:', ziel, winter ? `· Winterfassung: ${saison.winterAspekt(p)}` : '');
 }
 
-module.exports = { pinBild, umbrechen };
+module.exports = { pinBild, ersteFakt, umbrechen };

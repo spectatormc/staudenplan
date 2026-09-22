@@ -191,6 +191,89 @@ const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
 // ld+json gegen </script>-Ausbruch härten: < in JSON-Strings unschädlich machen.
 const escJsonLd = (obj) => JSON.stringify(obj).replace(/</g, '\\u003c');
 
+// Bildherkunft: EINE Ableitung für alle Ausgabepfade (Kommentarkopf in scripts/bild-herkunft.js).
+// Die Datei ist bewusst frei von DB- und Server-Abhängigkeiten, damit sie auch aus Skripten
+// benutzt werden kann — der Nachschlag in der Datenbank steht hier (pflanzeNachschlagen).
+const {
+  BILD_SPALTEN_SQL,
+  bildHerkunft, bildZeigbar, bildAltZusatz, bildUnterschriftHTML, bildMarkeHTML,
+  bildHerkunftOeffentlich, passtZurBildzeile, bildFelderAusFund,
+} = require('./scripts/bild-herkunft');
+
+/*
+ * Widersprüche zwischen bild_ki, bild_lizenz und Dateiname werden gemeldet, nicht still
+ * aufgelöst: Ein stiller Fix würde genau die Datenfehler verdecken, wegen derer das Feld
+ * bild_lizenz nicht als Quelle taugt (id 698 trägt "Pixabay License" an einem KI-Bild).
+ * Gemeldet wird je Fall einmal pro Prozesslaufzeit — eine Kategorieseite rendert bis zu
+ * 300 Kacheln und würde das Log sonst zuschreiben.
+ */
+const _gemeldeteBildWidersprueche = new Set();
+function herkunft(p) {
+  const h = bildHerkunft(p);
+  if (h.widerspruch) {
+    const name = (p && (p.name_botanisch || p.name_deutsch)) || '?';
+    const key = `${name}|${(p && p.bild_url) || ''}|${h.widerspruch}`;
+    if (!_gemeldeteBildWidersprueche.has(key)) {
+      _gemeldeteBildWidersprueche.add(key);
+      const folge = h.belegt ? '' : ' — das Bild wird deshalb nicht ausgegeben';
+      console.warn(`Bildherkunft widersprüchlich — ${name}: ${h.widerspruch}${folge}`);
+    }
+  }
+  return h;
+}
+/* Die EINE Zulassungsfrage für alle server-gerenderten Bilder: bildZeigbar() aus der
+ * Ableitung, plus die Meldung eines Widerspruchs. Vorher stand an jeder der fünf
+ * SSR-Stellen „bild_url gesetzt UND Herkunft bekannt" ausgeschrieben — eine Verschärfung
+ * hätte fünfmal nachgezogen werden müssen, und die exportierte bildZeigbar() war nirgends
+ * importiert. */
+const zeigbar = (p) => { herkunft(p); return bildZeigbar(p); };
+// Für JSON-Antworten: meldet denselben Widerspruch und liefert das Merkmal, das der
+// Empfänger zum Kennzeichnen braucht ({ ki, text, alt }) — oder null, und das heißt für
+// jeden Empfänger „dieses Bild nicht zeigen".
+const herkunftFuerJson = (p) => { herkunft(p); return bildHerkunftOeffentlich(p); };
+/* Für Templates, die erst im Browser gerendert werden (Lexikon /pflanzen, Planer): Das
+ * Markup der Kachelmarke wird hier EINMAL aus derselben Ableitung erzeugt und als fertige
+ * Zeichenkette in das Client-Skript gesetzt. So stehen Wortlaut UND Aussehen (Farbe,
+ * print-color-adjust) auch dort nicht doppelt im Code. Der alt-Zusatz braucht keine eigene
+ * Konstante mehr: Er reist als bild_herkunft.alt am Datensatz mit. */
+const KI_MARKE_HTML = bildMarkeHTML({ bild_ki: 1 });
+
+/*
+ * EIN Nachschlag für alle Aufrufer.
+ * Die Plan-Anreicherung sucht mit drei abgestuften Mustern (exakt → Gattung+Art → Gattung),
+ * weil das Modell botanische Namen frei bildet ("Nepeta x faassenii"). Jeder SPÄTERE
+ * Nachschlag über denselben Namen muss dieselbe Zeile treffen — sonst stammt das Bild aus
+ * der einen Zeile und die Herkunftsangabe aus einer anderen, und die Kennzeichnung behauptet
+ * etwas über ein fremdes Bild. Deshalb steht die Abfrage hier einmal; die Anreicherung in
+ * /api/plan, loadBeispielPlan und der SSR-Renderer benutzen sie alle.
+ * Rückgabe: { zeile, exakt, artTreffer } oder null.
+ */
+function pflanzeNachschlagen(nameBot) {
+  const name = String(nameBot == null ? '' : nameBot).trim();
+  if (!name) return null;
+  // Hybrid-Marker (× / x) herausfiltern, damit z.B. "Nepeta x faassenii"
+  // auf den DB-Eintrag "Nepeta faassenii" matcht (DB führt Hybride ohne Marker).
+  const tokens = name.split(/\s+/).filter(t => t && t !== 'x' && t !== 'X' && t !== '×');
+  const genus = tokens[0] || '';
+  if (!genus) return null;
+  const binomial = tokens.slice(0, 2).join(' ') || genus;
+  // Bester Treffer zuerst: exakt → gleiche Art (Gattung+Art) → nur Gattung
+  const zeile = db.prepare(
+    `SELECT name_deutsch, name_botanisch, ${BILD_SPALTEN_SQL}, inhalt_lang, preis_stueck_eur
+       FROM pflanzen
+      WHERE name_botanisch = ? OR name_botanisch LIKE ? OR name_botanisch LIKE ?
+      ORDER BY CASE WHEN name_botanisch = ? THEN 0 WHEN name_botanisch LIKE ? THEN 1 ELSE 2 END
+      LIMIT 1`
+  ).get(name, `${binomial}%`, `${genus}%`, name, `${binomial}%`);
+  if (!zeile) return null;
+  // artTreffer: Treffer auf Artebene (exakt oder gleiche Art). Ein reiner Gattungstreffer
+  // ("Salvia") reicht NICHT, um Preis oder Namen zu übernehmen.
+  const artTreffer = Boolean(zeile.name_botanisch) &&
+    binomial.split(' ').length >= 2 &&
+    zeile.name_botanisch.toLowerCase().startsWith(binomial.toLowerCase());
+  return { zeile, exakt: zeile.name_botanisch === name, artTreffer };
+}
+
 // ─── Schema-Migrationen (idempotent, try/catch) ───────────────────────────────
 [
   'ALTER TABLE pflanzen ADD COLUMN feuchtigkeit TEXT',
@@ -211,6 +294,14 @@ const escJsonLd = (obj) => JSON.stringify(obj).replace(/</g, '\\u003c');
   'ALTER TABLE pflanzen ADD COLUMN bild_vorschlag TEXT',
   'ALTER TABLE pflanzen ADD COLUMN bild_geprueft INTEGER DEFAULT 0',
   'ALTER TABLE pflanzen ADD COLUMN bild_check_info TEXT',
+  /* Merker des Arbeitsablaufs: „für diese Pflanze ist schon einmal ein KI-Bild erzeugt
+   * worden" (scripts/generate-ki-bilder.js). Das stand bis 09/2026 in bild_ki — derselben
+   * Spalte, aus der die öffentliche Kennzeichnung gelesen wird (scripts/bild-herkunft.js).
+   * Eine Spalte für zwei einander widersprechende Aussagen: Ein Pixabay-Foto, für das ein
+   * Vorschlag erzeugt (und womöglich abgelehnt) wurde, trug danach auf allen Ausgabepfaden
+   * die Marke „KI-Bild". Seitdem sind die beiden Aussagen getrennt: bild_ki beschreibt das
+   * Bild unter bild_url, bild_ki_versucht den Arbeitsstand. */
+  'ALTER TABLE pflanzen ADD COLUMN bild_ki_versucht INTEGER DEFAULT 0',
   // lebensdauer wird in der RAG-Abfrage gelesen (im SELECT der Kandidatenspalten und als
   // Filter gegen 'einjaehrig'), war aber nie hier eingetragen. Auf einer DB ohne die Spalte antwortet die
   // STARTSEITE mit HTTP 500 ("no such column: lebensdauer") — auf dem Produktivserver ist sie
@@ -1127,6 +1218,13 @@ app.get('/', (req, res) => {
     // planbarCount, nicht pflanzenCount: Alle vier Stellen im Client behaupten „winterharte"
     // bzw. „geprüfte" Stauden (Meta-Beschreibung, og:description, JSON-LD, Fußzeile).
     html = html.replace(/__PFLANZEN_COUNT__/g, planbarCount);
+    /* Das Markup der KI-Kachelmarke kommt aus der gemeinsamen Ableitung, genau wie im
+     * Lexikon (/pflanzen). Vorher stand es in stauden-portal.html Zeichen für Zeichen ein
+     * zweites Mal — wer Wortlaut, Farbe oder print-color-adjust in bild-herkunft.js ändert,
+     * hätte die Planerkarte NICHT mitgeändert, und das ist die Karte, die gedruckt und
+     * geteilt wird. Als JSON-Literal eingesetzt, damit Anführungszeichen im Markup den
+     * Client-Code nicht aufbrechen. */
+    html = html.replace(/__KI_MARKE__/g, JSON.stringify(KI_MARKE_HTML));
 
   // FAQ (targetet reale Search-Console-Queries: "bepflanzungsplan erstellen", "beetplaner
   // online kostenlos", "staudenbeet planen online", "stauden pro m²") — HTML + FAQPage-Schema.
@@ -1818,21 +1916,10 @@ JSON-Format:
     if (Array.isArray(plan.pflanzen)) {
       plan.pflanzen = plan.pflanzen.map(p => {
         const nameBot = (p.name_botanisch || '').trim();
-        // Hybrid-Marker (× / x) herausfiltern, damit z.B. "Nepeta x faassenii"
-        // auf den DB-Eintrag "Nepeta faassenii" matcht (DB führt Hybride ohne Marker).
-        const tokens = nameBot.split(/\s+/).filter(t => t && t !== 'x' && t !== 'X' && t !== '×');
-        const genus = tokens[0] || '';
-        const binomial = tokens.slice(0, 2).join(' ') || genus;
-        let dbP = null;
-        if (genus) {
-          // Bester Treffer zuerst: exakt → gleiche Art (Gattung+Art) → nur Gattung
-          dbP = db.prepare(
-            `SELECT name_botanisch, bild_url, inhalt_lang, preis_stueck_eur FROM pflanzen
-             WHERE name_botanisch = ? OR name_botanisch LIKE ? OR name_botanisch LIKE ?
-             ORDER BY CASE WHEN name_botanisch = ? THEN 0 WHEN name_botanisch LIKE ? THEN 1 ELSE 2 END
-             LIMIT 1`
-          ).get(nameBot, `${binomial}%`, `${genus}%`, nameBot, `${binomial}%`);
-        }
+        // Nachschlag über die gemeinsame Funktion (pflanzeNachschlagen) — nicht als eigene
+        // Abfrage. Bild und Bildherkunft müssen aus DERSELBEN Zeile kommen.
+        const treffer = pflanzeNachschlagen(nameBot);
+        const dbP = treffer ? treffer.zeile : null;
         let pflanzabstand_cm = null, fehler = null;
         if (dbP?.inhalt_lang) {
           try {
@@ -1843,11 +1930,9 @@ JSON-Format:
           } catch {}
         }
         // Preis nur aus DB übernehmen, wenn der Treffer auf Artebene passt (exakt oder gleiche Art).
-        // binomial muss dafür Gattung+Art (>=2 Tokens) haben — ein reiner Gattungsname ("Salvia")
-        // würde sonst den Preis einer beliebigen Fremd-Art derselben Gattung übernehmen.
-        const artTreffer = dbP && dbP.name_botanisch &&
-          binomial.split(' ').length >= 2 &&
-          dbP.name_botanisch.toLowerCase().startsWith(binomial.toLowerCase());
+        // Ein reiner Gattungsname ("Salvia") würde sonst den Preis einer beliebigen Fremd-Art
+        // derselben Gattung übernehmen (artTreffer wird in pflanzeNachschlagen bestimmt).
+        const artTreffer = Boolean(treffer && treffer.artTreffer);
         const preis_stueck_eur = (artTreffer && dbP.preis_stueck_eur != null)
           ? dbP.preis_stueck_eur
           : p.preis_stueck_eur;
@@ -1857,7 +1942,15 @@ JSON-Format:
         // Eisenhut oder Fingerhut in ein Familienbeet setzen, ohne ein Wort dazu — bei
         // 141 giftigen und 22 stark giftigen Arten im Bestand.
         const gift = giftigkeit(nameBot);
-        return { ...p, preis_stueck_eur, kauflink: goLink(nameBot), bild_url: dbP?.bild_url || null,
+        /* Bild und Bildherkunft gehen gemeinsam raus. Der Browser kann die Karte sonst gar
+         * nicht kennzeichnen — er sieht nur eine URL und weiß nicht, ob dahinter ein Foto
+         * oder eine KI-Illustration steht. Abgeleitet wird auf dem Server (eine Regel),
+         * der Browser gibt das Ergebnis nur aus. Die Zulassung entscheidet dieselbe Stelle,
+         * die auch die Kennzeichnung bildet: Ohne belegte Herkunft geht schon die URL nicht
+         * mit, sonst könnte ein anderer Empfänger sie doch anzeigen. */
+        const bildZeile = zeigbar(dbP) ? dbP : null;
+        return { ...p, preis_stueck_eur, kauflink: goLink(nameBot), bild_url: bildZeile?.bild_url || null,
+                 bild_herkunft: bildZeile ? herkunftFuerJson(bildZeile) : null,
                  pflanzabstand_cm, fehler,
                  giftig: gift ? { stufe: gift.stufe, text: gift.text } : null };
       });
@@ -1989,7 +2082,8 @@ app.post('/api/alternativ', alternativLimiter, (req, res) => {
   const COLS = `name_deutsch, name_botanisch, beschreibung, licht, boden, stil,
     bluehzeit, farbe, hoehe_cm_min, hoehe_cm_max, pflege_sterne, preis_stueck_eur,
     bienen_freundlich, heimisch, feuchtigkeit, wuchs, lebensbereich, breite_cm_max,
-    rolle_empfehlung, kombinationspartner, winteraspekt, trockenheitstoleranz, bild_url, inhalt_lang`;
+    rolle_empfehlung, kombinationspartner, winteraspekt, trockenheitstoleranz, inhalt_lang,
+    ${BILD_SPALTEN_SQL}`;
 
   const holen = (where, args) => db.prepare(`SELECT ${COLS} FROM pflanzen
       WHERE ${where} ${exClause} ORDER BY RANDOM() LIMIT 1`).all(...args, ...(exclude || []))[0] || null;
@@ -2027,6 +2121,11 @@ app.post('/api/alternativ', alternativLimiter, (req, res) => {
     pflanze: {
       ...pflanzeOhneInhalt,
       hoehe_cm, fehler,
+      // Die getauschte Pflanze kommt in dieselbe Karte wie die ersetzte und braucht deshalb
+      // dasselbe Herkunftsmerkmal — sonst verlöre genau die Karte ihre Kennzeichnung, die
+      // der Nutzer gerade selbst ausgewechselt hat. Die Prüfung auf bild_url steckt in der
+      // Ableitung (bildZeigbar), sie wird hier nicht noch einmal geschrieben.
+      bild_herkunft: herkunftFuerJson(pflanze),
       kauflink: goLink(pflanze.name_botanisch),
       rolle: rolle || (hoehe_cm >= 80 ? 'Leitstaude' : hoehe_cm >= 40 ? 'Begleitstaude' : 'Füllstaude'),
     }
@@ -3128,9 +3227,71 @@ function pinsLesen() {
 
 const pinBrettSlug = b => slugify(String(b || ''));
 
+/*
+ * Der Deckel des Feeds — und die Reihenfolge, in der er schneidet.
+ *
+ * Begrenzt wird auf FEED_MAX Eintraege je Pinnwand, damit der Feed nicht auf hunderte
+ * Eintraege waechst. Bis 09/2026 stand dort `liste.filter(...).slice(-25)` mit dem
+ * Kommentar "die zuletzt faellig gewordenen" — das war falsch: public/pins/liste.json ist
+ * nach guid sortiert (scripts/pins-erzeugen.js, liste.sort ueber guid), pinsLesen() filtert
+ * nur und sortiert nicht. Der Schnitt griff also ALPHABETISCH. Wer einen Slug am Anfang des
+ * Alphabets hat und spaet faellig wird, stand nie im Feed — und weil die Menge des
+ * Faelligen nur waechst, kam er auch nie wieder hinein.
+ *
+ * Gemessen an der echten liste.json der Produktion (Stand 21.09.2026):
+ *   - von 419 Pins mit Termin erreichten 279 den Feed, 140 NIE (davon 121 Einzelpflanzen).
+ *   - auf "Stauden fuer sonnige Beete" waren 58 Pins faellig, 25 im Feed, 33 verschluckt.
+ *   - nach geplant_am sortiert: jeder Pin erreicht den Feed AN SEINEM TERMIN; 419 von 419
+ *     gilt fuer einen Terminplan, der von Anfang an unter dieser Regel laeuft.
+ *
+ * WAS DIESE AENDERUNG NICHT NACHHOLT: den Rueckstand, der beim Umstieg schon da ist. Wer
+ * heute laenger faellig ist als die juengsten FEED_MAX seiner Pinnwand, rutscht von allein
+ * nie wieder hinein — die Menge des Faelligen waechst nur, und kein Pin verliert sein Datum.
+ * Das ist dasselbe Argument, das oben gegen die alte Regel steht, nur auf den Altbestand
+ * angewandt. Heute sind das 33 Pins auf "Stauden fuer sonnige Beete"; /pinterest weist sie
+ * in der Spalte "heute im Feed" als "(33 aelter)" aus. Wer sie doch veroeffentlichen will,
+ * muss den unveroeffentlichten Teil neu terminieren (scripts/pin-termine.js --neu bzw.
+ * --termin); Veroeffentlichtes bleibt dabei unberuehrt (pin-termine.js:245-255).
+ *
+ * Sortiert wird auf einer Kopie, weil die Eingabe ein FREMDES Array sein kann: pinsGesamt()
+ * gibt seinen zwischengespeicherten Bestand unveraendert heraus — dasselbe Array, aus dem
+ * die Saison-Landeseiten (saisonSeiten()) und die Sitemap ihre Reihenfolge ziehen. Eine
+ * In-Place-Sortierung wuerde deren Reihenfolge ueber Requests hinweg mitaendern. Heute
+ * bekommt feedAuswahl() zwar nur Listen aus pinsLesen(), das bei jedem Aufruf neu liest und
+ * filtert — die Kopie bleibt aber auch dann richtig, wenn ein Aufrufer spaeter pinsGesamt()
+ * direkt uebergibt. Zweites Kriterium ist die guid, damit mehrere Pins desselben Tages eine
+ * feste Reihenfolge haben und der Feed zwischen zwei Abrufen nicht springt.
+ *
+ * VORAUSSETZUNG DIESER REGEL, damit sie nicht unbemerkt ihre Grundlage verliert: Je Pinnwand
+ * werden an EINEM Tag weniger als FEED_MAX Pins faellig. Sonst entscheidet innerhalb dieses
+ * Tages wieder die guid, und die alphabetisch fruehen fallen dauerhaft heraus — mit einem
+ * Stosstag von 40 Pins auf einer Pinnwand erreichten 15 davon den Feed nie. Die
+ * Terminvergabe haelt das ein: hoechstens drei Pins je Tag (PRO_TAG in
+ * scripts/pin-termine.js; die Rechnung dazu bei winterVerteilung() in scripts/pin-sorten.js).
+ * Wer PRO_TAG anhebt, muss hier nachsehen.
+ */
+const FEED_MAX = 25;
+const feedSortiert = (eintraege) => [...eintraege].sort((a, b) =>
+  String(a.geplant_am || '').localeCompare(String(b.geplant_am || '')) ||
+  String(a.guid || '').localeCompare(String(b.guid || '')));
+const feedAuswahl = (eintraege) => feedSortiert(eintraege).slice(-FEED_MAX);
+
 function rssBauen({ titel, beschreibung, eintraege }) {
-  // Älteste zuerst: Pinterest arbeitet den Feed in dieser Richtung ab. Die Datei in derselben
-  // Reihenfolge auszuliefern macht nachvollziehbar, was als Nächstes erscheint.
+  /* Älteste zuerst: Pinterest arbeitet den Feed in dieser Richtung ab.
+   *
+   * „Ältester" heißt hier nach pubDate, und pubDate ist NICHT der Termin, sondern der
+   * Zeitpunkt des ersten Baus — scripts/pins-erzeugen.js schleppt ihn eingefroren mit
+   * (`pubDate: alt?.pubDate || new Date().toUTCString()`). Die Reihenfolge im Feed ist also
+   * die BAUREIHENFOLGE, nicht die Fälligkeit. Der frühere Satz, sie mache „nachvollziehbar,
+   * was als Nächstes erscheint", stimmte damit nicht: ausgewählt wird nach geplant_am
+   * (feedAuswahl), sortiert nach pubDate, und beide können auseinanderlaufen.
+   *
+   * Folgenlos ist das, solange der Feed höchstens FEED_MAX Einträge führt und Pinterest bis
+   * zu 200 Pins am Tag abarbeitet — die Reihenfolge entscheidet dann über nichts. Wer die
+   * beiden Kriterien doch zusammenführen will, sortiert hier mit feedSortiert(); dann gibt
+   * es genau eine Reihenfolge-Ableitung. Das ändert allerdings die Reihenfolge eines
+   * laufenden, extern abgeholten Feeds, deshalb steht es hier als Hinweis und nicht als
+   * stiller Eingriff. */
   const sortiert = [...eintraege].sort((a, b) =>
     (Date.parse(a.pubDate) || 0) - (Date.parse(b.pubDate) || 0) || String(a.guid).localeCompare(String(b.guid)));
 
@@ -3170,16 +3331,43 @@ app.get('/pinterest', (req, res) => {
   const naechster = kommend.map(e => e.geplant_am).sort()[0] || null;
   const ohneTermin = gesamt.filter(e => !e.geplant_am).length;
 
-  // Nach Pinnwand gruppieren — über den GESAMTBESTAND, nicht nur das Fällige. Sonst
-  // verschwindet eine Pinnwand aus der Liste, sobald sie gerade nichts ausliefert.
-  const jeBrett = {};
-  for (const e of gesamt) (jeBrett[e.board] = jeBrett[e.board] || []).push(e);
-  const faelligJeBrett = {};
-  for (const e of alle) faelligJeBrett[e.board] = (faelligJeBrett[e.board] || 0) + 1;
-  const zeilen = Object.entries(jeBrett).sort((a, b) => b[1].length - a[1].length).map(([b, l]) =>
-    `<tr><td>${escHtml(b)}</td><td style="text-align:right">${l.length}</td>
-     <td style="text-align:right">${faelligJeBrett[b] || 0}</td>
-     <td><a href="/pinterest/${pinBrettSlug(b)}.xml">/pinterest/${pinBrettSlug(b)}.xml</a></td></tr>`).join('');
+  /* Nach Pinnwand gruppieren — über den GESAMTBESTAND, nicht nur das Fällige. Sonst
+   * verschwindet eine Pinnwand aus der Liste, sobald sie gerade nichts ausliefert.
+   *
+   * Gruppiert wird nach pinBrettSlug(e.board), also nach DERSELBEN Ableitung wie im Feed
+   * (/pinterest/:datei vergleicht pinBrettSlug(e.board) mit dem Dateinamen) — nicht nach der
+   * rohen Zeichenkette. slugify() bildet Umlaut- und ASCII-Schreibweise auf denselben Slug
+   * ab: „Stauden für sonnige Beete" und „Stauden fuer sonnige Beete" ergeben beide
+   * stauden-fuer-sonnige-beete. Stünden beide Schreibweisen in liste.json — eingefrorene
+   * alte Einträge, eine umbenannte Pinnwand —, zeigte diese Übersicht zwei Zeilen mit je bis
+   * zu FEED_MAX, während der Feed sie zusammenlegt und insgesamt FEED_MAX liefert. Heute
+   * entsteht daraus kein Schaden (pin-text.js vergibt sieben Namen mit sieben Slugs), aber
+   * die Seite soll die Frage so beantworten, wie der Feed sie stellt. Die Klarnamen werden
+   * nur noch zur Anzeige mitgeführt; fallen mehrere auf einen Slug, nennt die Zeile alle. */
+  const jeBrett = {};                       // slug -> { namen:Set, alle:[], faellig:[] }
+  const fach = (e) => {
+    const slug = pinBrettSlug(e.board);
+    if (!jeBrett[slug]) jeBrett[slug] = { namen: new Set(), alle: [], faellig: [] };
+    jeBrett[slug].namen.add(String(e.board || ''));
+    return jeBrett[slug];
+  };
+  for (const e of gesamt) fach(e).alle.push(e);
+  for (const e of alle) fach(e).faellig.push(e);
+  /* „Fällig" und „im Feed" sind zwei verschiedene Zahlen: Der Feed liefert höchstens
+   * FEED_MAX Einträge je Pinnwand. Die Übersicht hat bis 09/2026 nur das Fällige gezählt
+   * und es „heute im Feed" genannt — auf „Stauden für sonnige Beete" standen damit 58 in
+   * der Spalte, während der Feed 25 auslieferte. Beide Zahlen kommen jetzt aus derselben
+   * Funktion wie der Feed selbst, und wo sie auseinandergehen, sagt die Seite es. */
+  for (const g of Object.values(jeBrett)) g.imFeed = feedAuswahl(g.faellig).length;
+  const imFeedGesamt = Object.values(jeBrett).reduce((s, g) => s + g.imFeed, 0);
+  const zeilen = Object.entries(jeBrett).sort((a, b) => b[1].alle.length - a[1].alle.length).map(([slug, g]) => {
+    const faellig = g.faellig.length;
+    const rest = faellig - g.imFeed;
+    return `<tr><td>${escHtml([...g.namen].join(' · '))}</td><td style="text-align:right">${g.alle.length}</td>
+     <td style="text-align:right">${faellig}</td>
+     <td style="text-align:right">${g.imFeed}${rest > 0 ? ` <span style="color:#b45309" title="Deckel von ${FEED_MAX} je Pinnwand: ${rest} Einträge sind länger fällig als die jüngsten ${FEED_MAX} und stehen deshalb nicht mehr im Feed. Diese Änderung holt sie NICHT nach — dafür den unveröffentlichten Teil neu terminieren: node scripts/pin-termine.js --neu">(${rest} älter)</span>` : ''}</td>
+     <td><a href="/pinterest/${escHtml(slug)}.xml">/pinterest/${escHtml(slug)}.xml</a></td></tr>`;
+  }).join('');
   res.set('X-Robots-Tag', 'noindex');
   res.send(`<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
@@ -3191,7 +3379,8 @@ th{background:#1b4332;color:#fff;text-align:left}a{color:#2d6a4f}
 .hinweis{background:#fff;border-left:4px solid #2d6a4f;padding:14px 18px;border-radius:0 8px 8px 0;max-width:70ch}
 </style></head><body>
 <h1>Pinterest-Feeds</h1>
-<p><strong>${gesamt.length} Pins terminiert</strong> · davon <strong>${alle.length}</strong> heute im Feed ·
+<p><strong>${gesamt.length} Pins terminiert</strong> · davon <strong>${alle.length}</strong> heute fällig,
+<strong>${imFeedGesamt}</strong> davon in den Feeds (höchstens ${FEED_MAX} je Pinnwand) ·
 ${kommend.length} noch vor uns${naechster ? `, der nächste am ${escHtml(naechster)}` : ''}.
 ${ohneTermin ? `<br><span style="color:#b45309">${ohneTermin} ohne Termin — die gehen NICHT raus. <code>node scripts/pin-termine.js</code> laufen lassen.</span>` : ''}</p>
 <p style="max-width:70ch;color:#555;font-size:.9rem">Die Feeds liefern absichtlich nur, was fällig ist.
@@ -3199,9 +3388,15 @@ Pinterest würde sonst bis zu 200 Pins am Tag veröffentlichen und wäre in zwei
 Frische-Signal und mit dem Muster, das die Spam-Richtlinie als „wiederholte Inhalte in großen
 Mengen" benennt. Die Termine folgen dem Gartenjahr: <code>node scripts/pin-termine.js --dry-run</code>
 zeigt den Kalender.</p>
-<table><tr><th>Pinnwand</th><th>terminiert</th><th>heute im Feed</th><th>Feed</th></tr>${zeilen}</table>
+<table><tr><th>Pinnwand</th><th>terminiert</th><th>heute fällig</th><th>heute im Feed</th><th>Feed</th></tr>${zeilen}</table>
+<p style="max-width:70ch;color:#555;font-size:.9rem">Je Pinnwand liefert der Feed höchstens ${FEED_MAX}
+Einträge, und zwar die zuletzt fällig gewordenen. Steht in der Spalte „heute im Feed" ein „(n älter)",
+liegen so viele fällige Pins hinter diesem Deckel: Sie sind länger fällig als die jüngsten ${FEED_MAX}
+dieser Pinnwand. <strong>Diese Pins holt der Feed nicht von allein nach</strong> — das Fällige wächst nur,
+also bleiben sie dauerhaft draußen. Wer sie doch veröffentlichen will, terminiert den unveröffentlichten
+Teil neu: <code>node scripts/pin-termine.js --neu</code> (bereits Veröffentlichtes bleibt unberührt).</p>
 <div class="hinweis"><strong>Zuerst der Probelauf:</strong>
-<a href="/pinterest/probe.xml">/pinterest/probe.xml</a> liefert fünf gemischte Pins.
+<a href="/pinterest/probe.xml">/pinterest/probe.xml</a> liefert je Bauart einen Pin.
 Den auf die geheime Testpinnwand legen und 24 Stunden abwarten — erst danach die echten Feeds
 verbinden. Ein falsch angeschlossener Feed produziert hunderte Pins, die einzeln gelöscht
 werden müssen.</div>
@@ -3226,11 +3421,14 @@ app.get('/pinterest/:datei', (req, res) => {
   gesamt = pinsGesamt();                          // liest nur eine echte Liste, sonst []
 
   if (name === 'probe') {
-    // Fünf Stück, bewusst je Sorte eines: Der Probelauf soll alle vier Bauarten einmal durch
-    // Pinterest schicken, nicht fünfmal dieselbe.
-    const jeTyp = {};
-    for (const e of alle) if (!jeTyp[e.typ]) jeTyp[e.typ] = e;
-    const auswahl = Object.values(jeTyp).slice(0, 5);
+    /* Je Bauart ein Stueck: Der Probelauf soll jede Bauart einmal durch Pinterest schicken,
+     * nicht mehrmals dieselbe. Genommen wird je Sorte der ZULETZT faellig gewordene Pin —
+     * dieselbe Auswahlregel wie im echten Feed. Vorher entschied hier die Dateireihenfolge
+     * (alphabetisch nach guid), und ein harter Deckel von fuenf schnitt zwei der inzwischen
+     * sieben Sorten ab, obwohl der Kommentar "alle Bauarten" versprach. */
+    const jeTyp = new Map();
+    for (const e of feedSortiert(alle)) jeTyp.set(e.typ, e);   // spaeter faellig gewinnt
+    const auswahl = [...jeTyp.values()];
     /* Eigene Kennungen fuer den Probelauf. Ob Pinterest eine schon veroeffentlichte guid im
      * naechsten Feed ueberspringt, ist nicht dokumentiert — die Frage steht in Pinterests
      * eigener Community unbeantwortet. Ohne Praefix koennten die Testpins spaeter auf den
@@ -3240,7 +3438,7 @@ app.get('/pinterest/:datei', (req, res) => {
     res.type('application/rss+xml; charset=utf-8');
     return res.send(rssBauen({
       titel: 'Staudenplan.de — Probelauf',
-      beschreibung: 'Fünf Pins zum Prüfen, bevor die echten Feeds verbunden werden.',
+      beschreibung: 'Je ein Pin pro Bauart zum Prüfen, bevor die echten Feeds verbunden werden.',
       eintraege: probe,
     }));
   }
@@ -3257,10 +3455,10 @@ app.get('/pinterest/:datei', (req, res) => {
    * Bot probe.xml NEUNMAL abgeholt und trotzdem nur vier Pins veroeffentlicht — jede Kennung
    * genau einmal. Die stabile guid aus pins-erzeugen.js ist die Voraussetzung dafuer.
    *
-   * Begrenzt auf 25, damit der Feed nicht auf 187 Eintraege waechst.
+   * Wie viele es sind und welche: feedAuswahl() — die letzten FEED_MAX nach FAELLIGKEIT,
+   * nicht nach Dateireihenfolge. Die Begruendung steht dort.
    */
-  const FEED_MAX = 25;
-  const auswahl = alle.filter(e => pinBrettSlug(e.board) === name).slice(-FEED_MAX);
+  const auswahl = feedAuswahl(alle.filter(e => pinBrettSlug(e.board) === name));
   const brett = (gesamt.find(e => pinBrettSlug(e.board) === name) || {}).board;
   if (!brett) return res.status(404).type('text/plain').send('Kein Feed unter diesem Namen.');
 
@@ -3350,7 +3548,8 @@ const saisonKurz = (t, max) => {
 function saisonPflanzen(e) {
   const ids = e.pflanzen.map(x => Number(x.id)).filter(Number.isInteger);
   if (!ids.length) return [];
-  const rows = db.prepare(`SELECT id, name_deutsch, name_botanisch, bild_url, bluehzeit, hoehe_cm_max, licht, feuchtigkeit
+  const rows = db.prepare(`SELECT id, name_deutsch, name_botanisch, bluehzeit, hoehe_cm_max, licht, feuchtigkeit,
+                                  ${BILD_SPALTEN_SQL}
                            FROM pflanzen WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids);
   const nachId = new Map(rows.map(r => [r.id, r]));
   return e.pflanzen.map(x => nachId.has(Number(x.id)) ? { ...nachId.get(Number(x.id)), zeile2: String(x.zeile2 || '') } : null).filter(Boolean);
@@ -3399,8 +3598,18 @@ function saisonSeiteHTML(e, alle) {
     // Markierung auf der Kachel wie im Pin: In einem Raster aus sechs wäre eine Sammelwarnung
     // allein nicht zuzuordnen. Die Sammelwarnung mit Erklärtext steht zusätzlich oben.
     const marke = g ? `<span style="position:absolute;top:10px;left:10px;background:${stark ? '#b23a3a' : '#d9a441'};color:${stark ? '#fff' : '#3d2c00'};font-weight:700;font-size:.72rem;padding:4px 9px;border-radius:6px">${GIFT_LABEL[g.stufe] || '⚠️ Giftig'}</span>` : '';
-    const bild = p.bild_url
-      ? `<img src="${escHtml(p.bild_url)}" alt="${escHtml(p.name_deutsch)} (${escHtml(p.name_botanisch)}) — Illustration" loading="lazy" style="width:100%;height:100%;object-fit:cover">`
+    /* Bildherkunft aus der gemeinsamen Ableitung. Vorher stand hier ein fest verdrahtetes
+     * "— Illustration" im alt-Text — an JEDEM Bild, unabhängig von bild_ki, und ohne
+     * sichtbare Entsprechung auf der Kachel. Jetzt kommen alt-Text und Kachelmarke aus
+     * derselben Quelle und können nicht auseinanderlaufen. Diese Seiten haben Vorrang:
+     * hier kommt der Pinterest-Verkehr an.
+     *
+     * Die Marke steht IM zeigbar()-Zweig, wie an allen anderen Ausgabestellen. Stand sie
+     * daneben, bekam auch der grüne Platzhalter die Marke „KI-Bild": eine Zeile mit
+     * bild_ki=1, aber ohne bild_url, liefert zeigbar()=false und bildMarkeHTML() trotzdem
+     * Markup — die Marke hätte dann an einem Feld gestanden, auf dem gar kein Bild ist. */
+    const bild = zeigbar(p)
+      ? `<img src="${escHtml(p.bild_url)}" alt="${escHtml(p.name_deutsch)} (${escHtml(p.name_botanisch)})${escHtml(bildAltZusatz(p))}" loading="lazy" style="width:100%;height:100%;object-fit:cover">${bildMarkeHTML(p)}`
       : `<div style="width:100%;height:100%;background:linear-gradient(135deg,#d8f3dc,#b7e4c7);display:flex;align-items:center;justify-content:center;font-size:3rem">🌿</div>`;
     return `
       <article style="background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.07);display:flex;flex-direction:column">
@@ -3554,7 +3763,7 @@ app.get('/api/pflanzen', pflanzenLimiter, (req, res) => {
   let pflanzen = db.prepare(`
     SELECT name_deutsch, name_botanisch, licht, farbe, bluehzeit,
            hoehe_cm_min, hoehe_cm_max, stil, pflege_sterne, beschreibung,
-           feuchtigkeit, wuchs, bild_url, bienen_freundlich, heimisch
+           feuchtigkeit, wuchs, bienen_freundlich, heimisch, ${BILD_SPALTEN_SQL}
     FROM pflanzen ORDER BY name_deutsch
   `).all();
   if (q) {
@@ -3565,7 +3774,11 @@ app.get('/api/pflanzen', pflanzenLimiter, (req, res) => {
       (p.stil || '').toLowerCase().includes(q)
     );
   }
-  res.json(pflanzen);
+  // Wer bild_url ausliefert, liefert das Herkunftsmerkmal mit — sonst kann das Lexikon im
+  // Browser (Template in /pflanzen) die Kachel gar nicht kennzeichnen. bild_ki/bild_lizenz
+  // selbst bleiben drin: sie sind die Rohdaten, bild_herkunft ist die Ableitung daraus.
+  // null heißt „nicht zeigen"; die Bedingung dafür steht in bildZeigbar, nicht hier.
+  res.json(pflanzen.map(p => ({ ...p, bild_herkunft: herkunftFuerJson(p) })));
 });
 
 // ─── SEO-Hilfsfunktionen ──────────────────────────────────────────────────────
@@ -3651,10 +3864,43 @@ app.get('/impressum', (req, res) => {
     <p>Vor größeren Pflanzinvestitionen empfehlen wir ausdrücklich die Rücksprache mit einem qualifizierten Fachbetrieb oder Gartengestalter, der die spezifischen Bedingungen vor Ort beurteilen kann.</p>
     <h3>3. Pflanzinformationen und Ratgeber-Inhalte</h3>
     <p>Alle Pflanzbeschreibungen, Wuchshöhen, Standortangaben und Pflegehinweise sind Richtwerte. Tatsächliche Werte können je nach Standort, Klima, Bodenzustand und Pflanzenpflege erheblich abweichen. Insbesondere Angaben zur Winterhärte beziehen sich auf Durchschnittswerte für deutsche Klimazonen — örtliche Frosteinbrüche oder besondere Witterungsereignisse können die Winterhärte einzelner Pflanzen beeinflussen.</p>
-    <h3>4. Externe Links</h3>
+    <p>Teile der Ratgebertexte und der Pflanzenbeschreibungen sind maschinell erstellt und anschließend redaktionell geprüft.</p>
+    <h3>4. Bilder</h3>
+    <!-- Dieser Abschnitt sagt nur zu, was der Code durchsetzt (scripts/bild-herkunft.js):
+         Die Kennzeichnung am Bild erreicht die öffentlichen Seiten, nicht die Bilddateien
+         unter /pins/ und nicht die passwortgeschützte Redaktionsansicht — beides ist hier
+         benannt, statt es offenzulassen. Die Pixabay License wird nur für die Bilder
+         beansprucht, deren Quelle in den Daten wirklich steht; für den Rest wird nichts
+         behauptet.
+
+         ZUR HALTBARKEIT DES LETZTEN SATZES: Hier stand, der Absatz bleibe „auch dann
+         richtig, wenn dieser Altbestand durch eigene KI-Bilder ersetzt wird". Das gilt für
+         die Bilder, die dabei in den Absatz darüber wechseln — NICHT für den Satz, der
+         zurückbliebe. Er behauptet im Präsens, dass es Bilder mit verlorener Quelle GIBT
+         (Stand 21.09.2026: 79 Zeilen mit „lokal gecacht"). Werden sie ersetzt, ist die Menge
+         leer und der Satz beschreibt einen Bestand, den die Website nicht mehr führt.
+
+         Damit das auffällt, statt jahrelang stehenzubleiben, hängen beide betroffenen
+         Stellen an einer Messung: Sie tragen data-beleg="fotos-ohne-quelle", und
+         scripts/check-ki-kennzeichnung.js zählt die Zeilen, auf die der Satz zutrifft
+         (Foto, belegt, aber ohne positiven Quellennachweis — abgeleitet aus
+         bild-herkunft.js, nicht hier nachgebaut). Die Prüfung schlägt in BEIDE Richtungen
+         fehl: Zahl 0 und Satz noch da, oder Zahl > 0 und Satz weg. -->
+    <!-- data-beleg: siehe Kommentar oben. Wer den Satz entfernt, muss nichts weiter tun;
+         wer ihn umformuliert, behält das Attribut. -->
+    <p>Ein Teil der Pflanzenbilder auf dieser Website ist mit künstlicher Intelligenz erzeugt. Diese Bilder sind <strong>Illustrationen der jeweiligen Art und keine Fotografien der konkret gelieferten Pflanze</strong>: Sie zeigen einen typischen Habitus, nicht das Exemplar, das die Gärtnerei versendet. Blütenfarbe, Wuchsform und Blütezeitpunkt können im Garten abweichen. Auf den öffentlichen Seiten dieser Website ist jedes dieser Bilder am Bild selbst als „KI-Bild“ bzw. „KI-erzeugte Illustration“ gekennzeichnet. Zwei Stellen sind davon ausgenommen: die Bilddateien, die wir für Pinterest erzeugen und unter <code>/pins/</code> ausliefern, tragen im Bild selbst keine solche Beschriftung, und die passwortgeschützte Redaktionsansicht zeigt Bildvorschauen ohne Kennzeichnung.</p>
+    <p>Die übrigen Pflanzenbilder sind Fotografien. Soweit in unseren Daten eine Quelle hinterlegt ist, stammen sie von Pixabay und werden unter der Pixabay License verwendet. <span data-beleg="fotos-ohne-quelle">Bei einem Teil des älteren Bestandes ist die ursprüngliche Quelle beim lokalen Zwischenspeichern verloren gegangen; für diese Bilder beanspruchen wir keine Pixabay License und machen auch am Bild bewusst gar keine Quellenangabe — lieber keine Angabe als eine ungeprüfte.</span></p>
+    <h3>5. Externe Links</h3>
     <p>Diese Website enthält Links zu externen Websites Dritter, auf deren Inhalte wir keinen Einfluss haben. Für die Inhalte der verlinkten Seiten ist stets der jeweilige Anbieter verantwortlich. Eine permanente inhaltliche Kontrolle der verlinkten Seiten ist ohne konkrete Anhaltspunkte einer Rechtsverletzung nicht zumutbar.</p>
     <h2>Urheberrecht</h2>
-    <p>Die durch die Seitenbetreiber erstellten Inhalte und Werke auf dieser Website unterliegen dem deutschen Urheberrecht. Die Vervielfältigung, Bearbeitung, Verbreitung und jede Art der Verwertung außerhalb der Grenzen des Urheberrechtes bedürfen der schriftlichen Zustimmung des jeweiligen Autors.</p>
+    <p>Soweit Inhalte dieser Website von den Seitenbetreibern erstellt wurden, unterliegen sie dem deutschen Urheberrecht. Die Vervielfältigung, Bearbeitung, Verbreitung und jede Art der Verwertung außerhalb der Grenzen des Urheberrechtes bedürfen der schriftlichen Zustimmung des jeweiligen Autors.</p>
+    <!-- Muss zu Ziffer 4 passen: Auch hier wird die Pixabay License nur für die Fotografien
+         genannt, die nachweislich von Pixabay stammen — keine Pauschalzuordnung für den
+         Rest. Der Halbsatz über die Bilder ohne hinterlegte Quelle ist derselbe Rest wie in
+         Ziffer 4 und trägt deshalb dieselbe Markierung data-beleg="fotos-ohne-quelle":
+         Beide Stellen fallen zusammen weg, wenn es solche Bilder nicht mehr gibt. Genau das
+         prüft scripts/check-ki-kennzeichnung.js. -->
+    <p>Das gilt ausdrücklich <strong>nicht</strong> für die Inhalte, die nach Ziffer 3 und 4 des Haftungsausschlusses maschinell erzeugt oder von Dritten übernommen wurden: Für die Fotografien, die nach Ziffer 4 von Pixabay stammen, gilt die Pixabay License des jeweiligen Urhebers; <span data-beleg="fotos-ohne-quelle">für Bilder ohne hinterlegte Quelle machen wir keine Lizenzangabe</span>. An den mit künstlicher Intelligenz erzeugten Bildern und Textteilen beanspruchen wir kein Urheberrecht — sie sind keine persönliche geistige Schöpfung im Sinne des § 2 Abs. 2 UrhG.</p>
   </main>
   ${LEGAL_FOOTER}
   </body></html>`);
@@ -4108,7 +4354,11 @@ Für die konkrete Planung mit Pflanzliste, Abständen und Stückzahlen nutze ich
 </body></html>`);
 });
 
-// Neues KI-Bild für live Pflanze als Vorschlag generieren (Pflanze bleibt live)
+/* Neues KI-Bild für eine live Pflanze als Vorschlag generieren (die Pflanze bleibt live).
+ * --keep-live heißt: Die Seite läuft weiter, und sie zeigt weiter das ALTE Bild. An der
+ * Kennzeichnung ändert dieser Aufruf deshalb nichts — der Erzeugungslauf schreibt nur
+ * bild_vorschlag, bild_check_info und den Merker bild_ki_versucht
+ * (scripts/generate-ki-bilder.js). bild_ki wechselt erst beim Übernehmen bzw. Ablehnen. */
 app.post('/api/ki-bild-vorschlag/:id', adminActionLimiter, (req, res) => {
   if (!checkAdminPw(req, res)) return;
   const id = parseInt(req.params.id);
@@ -4123,24 +4373,95 @@ app.post('/api/ki-bild-vorschlag/:id', adminActionLimiter, (req, res) => {
   res.json({ ok: true });
 });
 
-// Bild-Vorschlag übernehmen: wird zum neuen bild_url, Vorschlag wird geleert
+/*
+ * Bild-Vorschlag übernehmen: wird zum neuen bild_url, Vorschlag wird geleert.
+ *
+ * Die Herkunftsfelder werden am NEUEN Bild bestimmt, nicht am alten Zustand. Bis 09/2026
+ * blieb bild_ki hier unangetastet und bild_lizenz wurde allein danach gesetzt, ob die
+ * Pflanze vorher bild_ki=1 hatte. Vorschläge kommen aber aus zwei Quellen:
+ * scripts/generate-ki-bilder.js (erzeugtes Bild, schreibt {"ki":true,…} nach
+ * bild_check_info) und scripts/check-plant-images.js (gefundenes Pixabay-Foto, schreibt
+ * dort nur die gefundene Lizenz). Wurde ein KI-Bild verworfen und durch ein gefundenes Foto
+ * ersetzt, trug dieses Foto danach auf allen Ausgabepfaden die Marke „KI-Bild" — und der
+ * Widerspruchsmelder schwieg, weil dieselbe Zeile die Lizenz vorher auf einen KI-Wert
+ * umgeschrieben hatte.
+ * Abgeleitet wird mit bildFelderAusFund() aus derselben Datei, die die Kennzeichnung liest;
+ * anschließend wird die geschriebene Zeile einmal durch die Leseableitung geschickt, damit
+ * ein verbleibender Widerspruch im Log steht statt am Bild.
+ * Ist zum Fund keine Lizenz bekannt, wird bild_lizenz GELEERT: Die Angabe des alten Bildes
+ * gilt für das neue nicht, und geraten wird nichts — das Bild bekommt dann eben keinen
+ * Herkunftssatz.
+ */
 app.post('/api/bild-approve/:id', adminActionLimiter, (req, res) => {
   if (!checkAdminPw(req, res)) return;
   const id = parseInt(req.params.id);
   if (!id) return res.status(400).json({ error: 'id fehlt' });
-  const p = db.prepare('SELECT bild_vorschlag, bild_ki FROM pflanzen WHERE id=?').get(id);
+  const p = db.prepare('SELECT name_botanisch, bild_vorschlag, bild_check_info FROM pflanzen WHERE id=?').get(id);
   if (!p || !p.bild_vorschlag) return res.status(404).json({ error: 'Kein offener Vorschlag.' });
+  let info = {};
+  try { info = JSON.parse(p.bild_check_info || '{}') || {}; } catch { info = {}; }
+  const felder = bildFelderAusFund({ url: p.bild_vorschlag, lizenz: info.lizenz, ki: info.ki === true });
   db.prepare(
-    `UPDATE pflanzen SET bild_url=?, bild_vorschlag=NULL, bild_check_info=NULL, bild_geprueft=1${p.bild_ki ? ", bild_lizenz='KI-generiert / OpenAI'" : ''} WHERE id=?`
-  ).run(p.bild_vorschlag, id);
+    `UPDATE pflanzen SET bild_url=?, bild_ki=?, bild_lizenz=?, bild_vorschlag=NULL, bild_check_info=NULL, bild_geprueft=1 WHERE id=?`
+  ).run(p.bild_vorschlag, felder.bild_ki, felder.bild_lizenz, id);
+  herkunft({ name_botanisch: p.name_botanisch, bild_url: p.bild_vorschlag, ...felder });
   res.json({ ok: true });
 });
 
-// KI-Bild ablehnen (bild_ki bleibt 1, damit nicht nochmal vorgeschlagen wird)
+/*
+ * Bild-Vorschlag ablehnen: Der Vorschlag wird verworfen, ausgeliefert bleibt das Bild unter
+ * bild_url.
+ *
+ * Die Herkunftsfelder werden deshalb auf GENAU DIESES Bild zurückgestellt — mit derselben
+ * Ableitung wie beim Übernehmen (bildFelderAusFund). Bis 09/2026 stand hier nur
+ * „bild_vorschlag=NULL, bild_check_info=NULL" mit dem Kommentar „bild_ki bleibt 1, damit
+ * nicht nochmal vorgeschlagen wird". Das machte den Fehlzustand des Erzeugungslaufs dauerhaft:
+ * Der Lauf setzte bild_ki=1 zusammen mit dem Vorschlag, das Ablehnen ließ die 1 stehen — und
+ * ein Pixabay-Foto trug von da an auf jedem öffentlichen Ausgabepfad „KI-Bild" bzw.
+ * „KI-erzeugte Illustration", im Widerspruch zum Impressum („Die übrigen Pflanzenbilder sind
+ * Fotografien"). Diese Route repariert solche Zeilen jetzt, statt sie zu zementieren.
+ *
+ * Das „nicht nochmal vorschlagen" steht in bild_ki_versucht und wird dort gesetzt, wo der
+ * Versuch stattfindet (scripts/generate-ki-bilder.js) — nicht in bild_ki. Hier wird es nur
+ * NACHGEZOGEN, und zwar genau dann, wenn der abgelehnte Vorschlag selbst ein KI-Bild war
+ * (bild_check_info: {"ki":true}). Das ist nötig für die Zeilen aus der Zeit vor der neuen
+ * Spalte: Bei ihnen hielt bild_ki=1 den zweiten Versuch ab, und diese 1 wird hier gerade
+ * zurückgenommen — ohne den Nachzug würde der nächste Lauf dieselbe Pflanze erneut
+ * vorschlagen. Ein abgelehnter PIXABAY-Vorschlag (scripts/check-plant-images.js --propose)
+ * ist kein KI-Versuch und lässt den Merker unberührt.
+ *
+ * Wie beim Übernehmen wird die geschriebene Zeile einmal durch die Leseableitung geschickt,
+ * damit ein verbleibender Widerspruch im Log steht statt am Bild (id 698 trägt „Pixabay
+ * License" an einem KI-Bild — der Widerspruch wird gemeldet, nicht still aufgelöst).
+ *
+ * DIE GEGENRICHTUNG, damit das kein halber Rückbau wird: Kann ein echtes KI-Bild hier seine
+ * Kennzeichnung VERLIEREN? Nur, wenn weder bild_lizenz noch Dateiname etwas hergeben. Am
+ * Bestand vom 21.09.2026 (299 Zeilen mit bild_ki=1) gibt es keine solche Zeile: 298 tragen
+ * eine OpenAI-Lizenz, die verbleibende (id 698, „Pixabay License") heißt ki-…-698.jpg und
+ * wird über den Dateinamen erkannt. Eine solche Zeile fiele allerdings NICHT auf: Weil
+ * bildFelderAusFund den Dateinamen selbst auswertet, entsteht hier kein Widerspruch
+ * bild_ki=0/„ki-"-Dateiname, den die Leseableitung melden koennte — sie ginge still durch.
+ * Der Schutz ist also die Messung oben, nicht ein Melder. Aendert sich die Namensgebung der
+ * Bilddateien, ist diese Zeile neu zu pruefen.
+ */
 app.post('/api/ki-bild-ablehnen/:id', adminActionLimiter, (req, res) => {
   if (!checkAdminPw(req, res)) return;
   const id = parseInt(req.params.id);
-  db.prepare("UPDATE pflanzen SET bild_vorschlag=NULL, bild_check_info=NULL WHERE id=?").run(id);
+  if (!id) return res.status(400).json({ error: 'id fehlt' });
+  const p = db.prepare(`SELECT name_botanisch, bild_check_info, ${BILD_SPALTEN_SQL} FROM pflanzen WHERE id=?`).get(id);
+  // Dieselbe Vorbedingung wie beim Uebernehmen: Ohne offenen Vorschlag gibt es nichts
+  // abzulehnen, und die Route soll dann auch nicht bild_ki/bild_lizenz neu schreiben.
+  if (!p || !p.bild_vorschlag) return res.status(404).json({ error: 'Kein offener Vorschlag.' });
+  let info = {};
+  try { info = JSON.parse(p.bild_check_info || '{}') || {}; } catch { info = {}; }
+  const felder = bildFelderAusFund({ url: p.bild_url, lizenz: p.bild_lizenz });
+  // null heißt „stehen lassen" (COALESCE): Nur ein abgelehntes KI-Bild setzt den Merker.
+  const kiVersuch = info.ki === true ? 1 : null;
+  db.prepare(
+    `UPDATE pflanzen SET bild_vorschlag=NULL, bild_check_info=NULL, bild_ki=?, bild_lizenz=?,
+            bild_ki_versucht=COALESCE(?, bild_ki_versucht) WHERE id=?`
+  ).run(felder.bild_ki, felder.bild_lizenz, kiVersuch, id);
+  herkunft({ name_botanisch: p.name_botanisch, bild_url: p.bild_url, ...felder });
   res.json({ ok: true });
 });
 
@@ -4213,7 +4534,7 @@ app.get('/pflanzen', (req, res) => {
   res.send(`<!DOCTYPE html><html lang="de"><head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Stauden suchen & filtern — ${total} winterharte Gartenstauden | Staudenplan.de</title>
-  <meta name="description" content="Alle ${total} winterharten Gartenstauden filtern nach Standort, Blühzeit, Farbe, Höhe, Feuchtigkeit und mehr — mit Fotos, Pflege-Tipps und Kauflink.">
+  <meta name="description" content="Alle ${total} winterharten Gartenstauden filtern nach Standort, Blühzeit, Farbe, Höhe, Feuchtigkeit und mehr — mit Bildern, Pflege-Tipps und Kauflink.">
   <link rel="icon" href="/favicon.ico" sizes="any"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="canonical" href="https://www.staudenplan.de/pflanzen">
   <meta property="og:title" content="Stauden suchen — ${total} winterharte Arten">
@@ -4353,6 +4674,11 @@ app.get('/pflanzen', (req, res) => {
 
   ${SITE_FOOTER}
   <script>
+  // Bildkennzeichnung: Das Markup der Kachelmarke kommt aus der gemeinsamen Ableitung auf
+  // dem Server (scripts/bild-herkunft.js) und wird hier nur noch eingesetzt. Ob eine Kachel
+  // überhaupt ein Bild bekommt und was im alt-Text steht, sagt bild_herkunft je Zeile aus
+  // /api/pflanzen — der Client formuliert keine dieser Regeln selbst.
+  const KI_MARKE = ${JSON.stringify(KI_MARKE_HTML)};
   function imgErr(img){img.parentElement.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:3rem">🌿</div>';}
   let allPflanzen = [];
   const WL_KEY = 'staudenplan_wishlist';
@@ -4449,7 +4775,7 @@ app.get('/pflanzen', (req, res) => {
       return \`<div class="p-card" style="cursor:pointer">
         <a href="/pflanze/\${slug}" style="text-decoration:none;color:inherit;flex:1;display:flex;flex-direction:column">
           <div class="p-card-img">
-            \${p.bild_url ? \`<img src="\${p.bild_url}" alt="\${p.name_deutsch.replace(/"/g,'&quot;')}" loading="lazy" onerror="imgErr(this)">\` : '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:3rem">🌿</div>'}
+            \${p.bild_herkunft ? \`<img src="\${p.bild_url}" alt="\${(p.name_deutsch + (p.bild_herkunft.alt || '')).replace(/"/g,'&quot;')}" loading="lazy" onerror="imgErr(this)">\${p.bild_herkunft.ki ? KI_MARKE : ''}\` : '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:3rem">🌿</div>'}
             <div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.5));padding:6px 10px">
               <span style="background:\${lc};color:#fff;border-radius:4px;padding:1px 7px;font-size:.65rem;font-weight:700">\${lichtKey}</span>
             </div>
@@ -4653,9 +4979,22 @@ app.get('/pflanze/:slug', (req, res) => {
 
   const pflegeSterne = '★'.repeat(pflanze.pflege_sterne || 1) + '☆'.repeat(3 - (pflanze.pflege_sterne || 1));
   const hoehe = (pflanze.hoehe_cm_min && pflanze.hoehe_cm_max) ? `${pflanze.hoehe_cm_min}–${pflanze.hoehe_cm_max} cm` : (pflanze.hoehe_cm_min || pflanze.hoehe_cm_max || '—') + ' cm';
-  const bildAbsolut = (pflanze.bild_url || '').startsWith('http')
+  /* og:image ist ein EIGENER Ausgabepfad: Das Bild reist ohne die Seite zu Pinterest, in
+   * Messenger-Vorschauen und in soziale Netze — dort gibt es weder Kachelmarke noch
+   * Bildunterschrift, nur den alt-Text. Es gilt deshalb dieselbe Zulassung wie für das Bild
+   * auf der Seite: Was die Seite nicht zeigt, weil ihre Herkunft nicht belegt ist, darf auch
+   * die Vorschau nicht zeigen. Vorher entschied hier allein `pflanze.bild_url`, und die
+   * Vorschau verteilte weiter, was die Seite gerade zurückhielt. */
+  const bildZulassung = zeigbar(pflanze);
+  const bildAbsolut = (bildZulassung && pflanze.bild_url.startsWith('http'))
     ? pflanze.bild_url
-    : `https://www.staudenplan.de${pflanze.bild_url || '/images/og-default.jpg'}`;
+    : `https://www.staudenplan.de${bildZulassung ? pflanze.bild_url : '/images/og-default.jpg'}`;
+  /* og:image:alt: Ist es eine KI-Illustration, muss das im alt-Text mitgehen — aus derselben
+   * Ableitung, damit Vorschau und Seite nicht Verschiedenes behaupten. Ohne eigenes Bild
+   * steht hier das Standard-Vorschaubild; dann wird über die Pflanze gar nichts behauptet. */
+  const ogBildAlt = bildZulassung
+    ? `${pflanze.name_deutsch} — ${pflanze.name_botanisch}${bildAltZusatz(pflanze)}`
+    : 'Staudenplan.de — kostenloser Bepflanzungsplaner';
 
   // Mehrfachwerte stehen in der DB pipe-getrennt ("Sonne|Halbschatten"). Der Trenner ist ein
   // internes Speicherformat und hat in der öffentlichen Ausgabe nichts verloren — als Array
@@ -4708,6 +5047,13 @@ app.get('/pflanze/:slug', (req, res) => {
       "alternateName": pflanze.name_deutsch,
       "taxonRank": "Art",
       "description": pflanze.beschreibung || '',
+      /* BEWUSST NICHT geändert: "image" bleibt die nackte URL. Ein ImageObject mit
+       * creditText wäre der naheliegende Platz für die KI-Kennzeichnung in den
+       * strukturierten Daten — aber hier steht der Typ "Taxon" (pending.schema.org), und ob
+       * dessen image-Property ein ImageObject verträgt, ist an dieser Stelle nicht belegt.
+       * Etwas Unbelegtes in die strukturierten Daten zu schreiben, wäre derselbe Fehler wie
+       * das frei erfundene Product/offers, das hier bis 08/2026 stand. Die sichtbare
+       * Kennzeichnung steht in Bildunterschrift, Kachelmarke, alt-Text und og:image:alt. */
       "image": bildAbsolut,
       "additionalProperty": additionalProps,
     },
@@ -4724,7 +5070,7 @@ app.get('/pflanze/:slug', (req, res) => {
 
   // Ähnliche mit Bildern
   const aehnlicheMitBild = db.prepare(`
-    SELECT name_deutsch, name_botanisch, bild_url, bluehzeit, licht FROM pflanzen
+    SELECT name_deutsch, name_botanisch, bluehzeit, licht, ${BILD_SPALTEN_SQL} FROM pflanzen
     WHERE (licht LIKE ? OR stil LIKE ?) AND id != ? ORDER BY RANDOM() LIMIT 6
   `).all(`%${(pflanze.licht||'').split('|')[0]}%`, `%${(pflanze.stil||'').split('|')[0]}%`, pflanze.id);
 
@@ -4825,6 +5171,24 @@ app.get('/pflanze/:slug', (req, res) => {
       .all(`%${pflanze.name_deutsch}%`, `%${genus}%`, `%${lichtKey}%`);
   } catch {}
 
+  /* Bildunterschrift, Kachelmarke und alt-Text der Pflanzenseite kommen alle drei aus
+   * bildHerkunft(). Vorher stand hier ein dreistufiger Ausdruck direkt im Template:
+   * bild_ki → "KI-generiert · OpenAI", sonst Wikimedia → "Foto: <Lizenz>", sonst
+   * "Foto: Pixabay". Der Wikimedia-Zweig traf gemessen KEINE einzige Zeile (toter Code), und
+   * der Else-Zweig war geraten: Er behauptete Pixabay auch für Zeilen, deren bild_lizenz das
+   * gar nicht hergibt. Ohne belegte Herkunft steht jetzt keine Zeile unter dem Bild.
+   * Ist die Herkunft ganz unbekannt (Feld fehlt in der Abfrage), wird das Bild nicht gezeigt —
+   * lieber ein Platzhalter als ein Bild, über das die Seite nichts sagen kann.
+   * escHtml um bild_url und Namen war in der Kachel der "Ähnlichen Stauden" als einziger
+   * Stelle vergessen und ist dort mit nachgezogen. */
+  const heldenBildHtml = zeigbar(pflanze)
+    ? `<div style="position:relative;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.12);aspect-ratio:4/3">
+         <img src="${escHtml(pflanze.bild_url)}" alt="${escHtml(pflanze.name_deutsch)} — ${escHtml(pflanze.name_botanisch)}${escHtml(bildAltZusatz(pflanze))}" style="width:100%;height:100%;object-fit:cover;display:block">
+         ${bildMarkeHTML(pflanze, 'top:10px;right:10px')}
+       </div>
+       ${bildUnterschriftHTML(pflanze)}`
+    : `<div style="border-radius:16px;background:linear-gradient(135deg,#d8f3dc,#b7e4c7);aspect-ratio:4/3;display:flex;align-items:center;justify-content:center;font-size:6rem">🌿</div>`;
+
   const passendArtikelHtml = passendArtikel.length > 0 ? `
     <section style="background:#f0fdf4;border-radius:14px;padding:20px 24px;margin-bottom:24px">
       <h2 style="font-size:1rem;color:#1b4332;margin-bottom:14px;font-weight:700">📚 Weiterführende Ratgeber</h2>
@@ -4846,6 +5210,7 @@ app.get('/pflanze/:slug', (req, res) => {
        lösen relative og:image-Werte nicht gegen die Seiten-URL auf — die Vorschau blieb dadurch
        auf allen Pflanzenseiten leer. Das JSON-LD daneben nutzte längst die absolute Variante. -->
   <meta property="og:image" content="${escHtml(bildAbsolut)}">
+  <meta property="og:image:alt" content="${escHtml(ogBildAlt)}">
   <meta property="og:url" content="https://www.staudenplan.de/pflanze/${slug}">
   <!-- og:type="article", nicht "product": Pinterest und Facebook lesen "product" als Kaufangebot
        und erwarten dann og:price/og:availability — die es hier nicht gibt (siehe Taxon-Kommentar). -->
@@ -4869,16 +5234,7 @@ app.get('/pflanze/:slug', (req, res) => {
 
       <!-- Bild -->
       <div style="flex-shrink:0;width:380px;max-width:100%">
-        ${pflanze.bild_url
-          ? `<div style="border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.12);aspect-ratio:4/3">
-               <img src="${escHtml(pflanze.bild_url)}" alt="${escHtml(pflanze.name_deutsch)} — ${escHtml(pflanze.name_botanisch)}" style="width:100%;height:100%;object-fit:cover;display:block">
-             </div>
-             <p style="font-size:.68rem;color:#bbb;margin-top:6px;text-align:right">${
-               pflanze.bild_ki ? 'KI-generiert · OpenAI'
-               : (pflanze.bild_lizenz || '').includes('Wikimedia') ? `Foto: ${pflanze.bild_lizenz}`
-               : 'Foto: Pixabay'
-             }</p>`
-          : `<div style="border-radius:16px;background:linear-gradient(135deg,#d8f3dc,#b7e4c7);aspect-ratio:4/3;display:flex;align-items:center;justify-content:center;font-size:6rem">🌿</div>`}
+        ${heldenBildHtml}
       </div>
 
       <!-- Info -->
@@ -5076,12 +5432,12 @@ app.get('/pflanze/:slug', (req, res) => {
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px">
         ${aehnlicheMitBild.map(a => `
           <a href="/pflanze/${pflanzeToSlug(a.name_botanisch)}" style="background:#fff;border-radius:12px;text-decoration:none;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.07);transition:transform .12s" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
-            ${a.bild_url
-              ? `<div style="height:90px;overflow:hidden"><img src="${a.bild_url}" alt="${a.name_deutsch}" style="width:100%;height:100%;object-fit:cover" loading="lazy"></div>`
+            ${zeigbar(a)
+              ? `<div style="position:relative;height:90px;overflow:hidden"><img src="${escHtml(a.bild_url)}" alt="${escHtml(a.name_deutsch)}${escHtml(bildAltZusatz(a))}" style="width:100%;height:100%;object-fit:cover" loading="lazy">${bildMarkeHTML(a, 'top:6px;right:6px')}</div>`
               : `<div style="height:90px;background:linear-gradient(135deg,#d8f3dc,#b7e4c7);display:flex;align-items:center;justify-content:center;font-size:2rem">🌿</div>`}
             <div style="padding:10px">
-              <div style="font-size:.82rem;font-weight:700;color:#1b4332;line-height:1.3">${a.name_deutsch}</div>
-              <div style="font-size:.68rem;color:#aaa;font-style:italic">${a.name_botanisch}</div>
+              <div style="font-size:.82rem;font-weight:700;color:#1b4332;line-height:1.3">${escHtml(a.name_deutsch)}</div>
+              <div style="font-size:.68rem;color:#aaa;font-style:italic">${escHtml(a.name_botanisch)}</div>
             </div>
           </a>`).join('')}
       </div>
@@ -5104,11 +5460,15 @@ app.get('/pflanze/:slug', (req, res) => {
 
 // ─── Statische Kategorie-Seiten (SEO) ────────────────────────────────────────
 
+/* Die Raster dieser Seiten sind gemischt: In einer Auswahl stehen KI-Illustrationen und
+ * Pixabay-Fotos nebeneinander. Die Kennzeichnung gehört deshalb auf die einzelne Kachel —
+ * ein Sammelhinweis über dem Raster würde für die Hälfte der Bilder etwas behaupten, was
+ * dort nicht gilt. Vorbild ist die Giftmarkierung auf den Saison-Landeseiten. */
 function kategorieSeitenHTML({ titel, metaDesc, h1, intro, pflanzen, artikelLinks, slug }) {
   const pflanzenHtml = pflanzen.map(p => `
     <a href="/pflanze/${pflanzeToSlug(p.name_botanisch)}" style="background:#fff;border-radius:12px;text-decoration:none;color:inherit;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.07);transition:transform .12s;display:flex;flex-direction:column" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
-      ${p.bild_url
-        ? `<div style="height:120px;overflow:hidden"><img src="${escHtml(p.bild_url)}" alt="${escHtml(p.name_deutsch)}" loading="lazy" style="width:100%;height:100%;object-fit:cover"></div>`
+      ${zeigbar(p)
+        ? `<div style="position:relative;height:120px;overflow:hidden"><img src="${escHtml(p.bild_url)}" alt="${escHtml(p.name_deutsch)}${escHtml(bildAltZusatz(p))}" loading="lazy" style="width:100%;height:100%;object-fit:cover">${bildMarkeHTML(p, 'top:6px;right:6px')}</div>`
         : `<div style="height:120px;background:linear-gradient(135deg,#d8f3dc,#b7e4c7);display:flex;align-items:center;justify-content:center;font-size:3rem">🌿</div>`}
       <div style="padding:12px">
         <div style="font-size:.88rem;font-weight:700;color:#1b4332;line-height:1.3;margin-bottom:3px">${escHtml(p.name_deutsch)}</div>
@@ -5187,7 +5547,7 @@ function kategorieSeitenHTML({ titel, metaDesc, h1, intro, pflanzen, artikelLink
  * behauptet nichts über Winterhärte — diese vier Seiten sind dagegen Empfehlungen.
  */
 app.get('/stauden-fuer-schatten', (req, res) => {
-  const pflanzen = db.prepare(`SELECT name_deutsch, name_botanisch, bild_url, bluehzeit, licht FROM pflanzen WHERE licht LIKE '%Schatten%' AND ${PLANBAR} ORDER BY name_deutsch`).all();
+  const pflanzen = db.prepare(`SELECT name_deutsch, name_botanisch, bluehzeit, licht, ${BILD_SPALTEN_SQL} FROM pflanzen WHERE licht LIKE '%Schatten%' AND ${PLANBAR} ORDER BY name_deutsch`).all();
   let artikel = [];
   try { artikel = db.prepare(`SELECT titel FROM wissen WHERE titel LIKE '%Schatten%' OR inhalt LIKE '%Schattenbeet%' LIMIT 4`).all(); } catch {}
   res.send(kategorieSeitenHTML({
@@ -5202,7 +5562,7 @@ app.get('/stauden-fuer-schatten', (req, res) => {
 });
 
 app.get('/stauden-fuer-sonne', (req, res) => {
-  const pflanzen = db.prepare(`SELECT name_deutsch, name_botanisch, bild_url, bluehzeit, licht FROM pflanzen WHERE licht LIKE '%Sonne%' AND ${PLANBAR} ORDER BY name_deutsch`).all();
+  const pflanzen = db.prepare(`SELECT name_deutsch, name_botanisch, bluehzeit, licht, ${BILD_SPALTEN_SQL} FROM pflanzen WHERE licht LIKE '%Sonne%' AND ${PLANBAR} ORDER BY name_deutsch`).all();
   let artikel = [];
   try { artikel = db.prepare(`SELECT titel FROM wissen WHERE titel LIKE '%sonn%' OR titel LIKE '%Kiesgarten%' OR titel LIKE '%trocken%' LIMIT 4`).all(); } catch {}
   res.send(kategorieSeitenHTML({
@@ -5217,7 +5577,7 @@ app.get('/stauden-fuer-sonne', (req, res) => {
 });
 
 app.get('/pflegeleichte-stauden', (req, res) => {
-  const pflanzen = db.prepare(`SELECT name_deutsch, name_botanisch, bild_url, bluehzeit, licht, pflege_sterne FROM pflanzen WHERE pflege_sterne = 1 AND ${PLANBAR} ORDER BY name_deutsch`).all();
+  const pflanzen = db.prepare(`SELECT name_deutsch, name_botanisch, bluehzeit, licht, pflege_sterne, ${BILD_SPALTEN_SQL} FROM pflanzen WHERE pflege_sterne = 1 AND ${PLANBAR} ORDER BY name_deutsch`).all();
   let artikel = [];
   try { artikel = db.prepare(`SELECT titel FROM wissen WHERE titel LIKE '%pflegeleicht%' OR inhalt LIKE '%pflegeleicht%' LIMIT 4`).all(); } catch {}
   res.send(kategorieSeitenHTML({
@@ -5232,7 +5592,7 @@ app.get('/pflegeleichte-stauden', (req, res) => {
 });
 
 app.get('/bienenfreundliche-stauden', (req, res) => {
-  const pflanzen = db.prepare(`SELECT name_deutsch, name_botanisch, bild_url, bluehzeit, licht FROM pflanzen WHERE bienen_freundlich = 1 AND ${PLANBAR} ORDER BY name_deutsch`).all();
+  const pflanzen = db.prepare(`SELECT name_deutsch, name_botanisch, bluehzeit, licht, ${BILD_SPALTEN_SQL} FROM pflanzen WHERE bienen_freundlich = 1 AND ${PLANBAR} ORDER BY name_deutsch`).all();
   let artikel = [];
   try { artikel = db.prepare(`SELECT titel FROM wissen WHERE titel LIKE '%Bien%' OR titel LIKE '%Insekt%' OR inhalt LIKE '%Trachtpflanze%' LIMIT 4`).all(); } catch {}
   res.send(kategorieSeitenHTML({
@@ -5365,7 +5725,7 @@ app.get('/staudenbeet-planen', (req, res) => {
 });
 
 app.get('/stauden-kombinieren', (req, res) => {
-  const pflanzen = db.prepare(`SELECT name_deutsch, name_botanisch, bild_url, bluehzeit, licht FROM pflanzen ORDER BY RANDOM() LIMIT 48`).all();
+  const pflanzen = db.prepare(`SELECT name_deutsch, name_botanisch, bluehzeit, licht, ${BILD_SPALTEN_SQL} FROM pflanzen ORDER BY RANDOM() LIMIT 48`).all();
   let artikel = [];
   try { artikel = db.prepare(`SELECT titel FROM wissen WHERE titel LIKE '%kombin%' OR titel LIKE '%Kombination%' OR titel LIKE '%Schichten%' OR titel LIKE '%Farbgest%' LIMIT 5`).all(); } catch {}
   res.send(kategorieSeitenHTML({
@@ -5612,7 +5972,7 @@ app.get('/ratgeber/:slug', (req, res) => {
     ? `https://www.staudenplan.de/og/ratgeber-${slug}.jpg`
     : 'https://www.staudenplan.de/images/og-default.jpg';
 
-  const passendePflanzen = db.prepare('SELECT name_deutsch, name_botanisch, bild_url, bluehzeit, licht FROM pflanzen ORDER BY RANDOM()').all()
+  const passendePflanzen = db.prepare(`SELECT name_deutsch, name_botanisch, bluehzeit, licht, ${BILD_SPALTEN_SQL} FROM pflanzen ORDER BY RANDOM()`).all()
     .filter(p => artikelWoerter.includes(p.name_deutsch.toLowerCase()) || artikelWoerter.includes((p.name_botanisch || '').split(' ')[0].toLowerCase()))
     .slice(0, 4);
 
@@ -5660,7 +6020,7 @@ app.get('/ratgeber/:slug', (req, res) => {
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px">
         ${passendePflanzen.map(p => `
           <a href="/pflanze/${pflanzeToSlug(p.name_botanisch)}" style="background:#fff;border-radius:10px;text-decoration:none;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.07);transition:transform .12s" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
-            ${p.bild_url ? `<div style="height:80px;overflow:hidden"><img src="${escHtml(p.bild_url)}" alt="${escHtml(p.name_deutsch)}" loading="lazy" style="width:100%;height:100%;object-fit:cover"></div>` : `<div style="height:80px;background:linear-gradient(135deg,#d8f3dc,#b7e4c7);display:flex;align-items:center;justify-content:center;font-size:2rem">🌿</div>`}
+            ${zeigbar(p) ? `<div style="position:relative;height:80px;overflow:hidden"><img src="${escHtml(p.bild_url)}" alt="${escHtml(p.name_deutsch)}${escHtml(bildAltZusatz(p))}" loading="lazy" style="width:100%;height:100%;object-fit:cover">${bildMarkeHTML(p, 'top:5px;right:5px')}</div>` : `<div style="height:80px;background:linear-gradient(135deg,#d8f3dc,#b7e4c7);display:flex;align-items:center;justify-content:center;font-size:2rem">🌿</div>`}
             <div style="padding:10px">
               <div style="font-size:.82rem;font-weight:700;color:#1b4332">${escHtml(p.name_deutsch)}</div>
               <div style="font-size:.7rem;color:#aaa;font-style:italic">${escHtml(p.name_botanisch)}</div>
@@ -5920,7 +6280,37 @@ function loadBeispielPlan(slug) {
     const umbenannt = new Map();
     for (const pf of (plan.pflanzen || [])) {
       try {
-        const akt = db.prepare('SELECT name_deutsch, preis_stueck_eur FROM pflanzen WHERE name_botanisch = ?').get(pf.name_botanisch);
+        /* Derselbe Nachschlag wie in der Plan-Anreicherung (pflanzeNachschlagen) — aber Name
+         * und Preis übernimmt weiterhin nur der EXAKTE Treffer. pflanzeNachschlagen findet
+         * notfalls die Gattung; deren Name und Preis gehören zu einer anderen Art und hätten
+         * im Plan nichts verloren. Für das Bild gilt dasselbe: Beim exakten Treffer kommen
+         * Pfad UND Herkunft aus dieser Zeile, sonst muss der eingefrorene Pfad mit der
+         * gefundenen Zeile übereinstimmen (siehe unten). */
+        const treffer = pflanzeNachschlagen(pf.name_botanisch);
+        const akt = (treffer && treffer.exakt) ? treffer.zeile : null;
+        /* Herkunftsmerkmal für /api/beispiel-plan/:slug und für die SSR-Karten. Die
+         * JSON-Datei trägt nur bild_url; wer sie abruft, könnte ohne dieses Feld gar nicht
+         * kennzeichnen.
+         *
+         * Beim EXAKTEN Treffer wird der Bildpfad genauso aus der Datenbank nachgezogen wie
+         * Name und Preis darunter — und die Herkunft kommt dann aus derselben Zeile. Sonst
+         * verlor die Kachel ihr Bild, sobald der eingefrorene Pfad in
+         * scripts/beispiel-plan-*.json vom aktuellen DB-Wert abwich: Die strenge Probe
+         * passtZurBildzeile() verlangt Gleichheit der Pfade, und bildherkunftAusDb() im
+         * SSR-Renderer verweigerte das Bild ganz. Für diese acht Seiten gibt es kein
+         * Unveränderlichkeits-Argument — Name und Preis folgen der Datenbank ja auch.
+         * Für /plan/:id (wirklich verschickte Pläne) bleibt die strenge Probe gültig; die
+         * steht in bildherkunftAusDb und ist hier nicht berührt.
+         *
+         * Führt die Zeile gar kein Bild mehr, fällt auch der eingefrorene Pfad weg: Bild und
+         * Aussage über das Bild kommen aus derselben Zeile oder gar nicht. */
+        if (akt) {
+          pf.bild_herkunft = herkunftFuerJson(akt);
+          pf.bild_url = pf.bild_herkunft ? akt.bild_url : null;
+        } else {
+          pf.bild_herkunft = (treffer && passtZurBildzeile(pf, treffer.zeile))
+            ? herkunftFuerJson(treffer.zeile) : null;
+        }
         if (akt && akt.name_deutsch && akt.name_deutsch !== pf.name_deutsch) {
           umbenannt.set(pf.name_deutsch, akt.name_deutsch);
           pf.name_deutsch = akt.name_deutsch;
@@ -6480,6 +6870,53 @@ function renderGrafischSSR(pflanzen, flaeche, opts) {
   </div>`;
 }
 
+/*
+ * Bildherkunft für eine Pflanze aus einem Plan — IMMER frisch aus der Datenbank.
+ *
+ * renderBeispielPlanSSR bedient zwei Aufrufer mit sehr verschiedener Datenlage:
+ *   /beispiel/:slug → eingefrorene JSON-Datei aus scripts/ (Live-Nachschlag in loadBeispielPlan)
+ *   /plan/:id       → rohes plan_json aus geteilte_plaene, ursprünglich vom Browser geschickt
+ * Im zweiten Fall steht in den Plänen, die vor dieser Änderung geteilt wurden, gar kein
+ * bild_ki — und `undefined` ist falsy, die Kachel bekäme also still die Kennzeichnung
+ * "kein KI-Bild". In den Plänen danach stünde ein Wert, den der Absender geschickt hat.
+ * Beides taugt nicht als Quelle, deshalb wird hier grundsätzlich nachgeschlagen, und zwar
+ * mit derselben Funktion wie die Anreicherung (pflanzeNachschlagen): Ein eigener Nachschlag
+ * über name_botanisch könnte eine ANDERE Zeile treffen als die, aus der das Bild stammt.
+ * Übernommen wird nur, wenn die gefundene Zeile dasselbe Bild führt. Sonst verweigert der
+ * Renderer das Bild und zeigt den Platzhalter — lieber kein Bild als eines, über dessen
+ * Herkunft die Seite nichts sagen kann. Der Fall wird gemeldet, nicht stillschweigend
+ * geschluckt.
+ *
+ * Das Melden selbst muss den Pfad /plan/:id aushalten: Dort stammen name_botanisch und
+ * bild_url unverändert aus plan_json, also aus dem Browser (/api/plan-teilen vereinheitlicht
+ * nur die Zahlenfelder). Ein einziger Aufruf kann deshalb hunderte erfundene Namen
+ * mitbringen. Beide Werte werden vor Schlüssel und Meldung gekürzt und von Zeilenumbrüchen
+ * befreit — sonst ließen sich Logzeilen fälschen —, und das Set wird wie der
+ * sharedPlanHtmlCache begrenzt, damit es im pm2-Dauerlauf nicht unbegrenzt wächst.
+ * _gemeldeteBildWidersprueche (oben) braucht das nicht: herkunft() wird dort nur mit Zeilen
+ * aus der Datenbank aufgerufen. Genau das ist die Voraussetzung — wer die Funktion einmal
+ * mit Fremdeingabe aufruft, muss dort dasselbe vorsehen.
+ */
+const _gemeldeteBildLuecken = new Set();
+const LOG_KURZ = (s) => String(s == null ? '' : s).replace(/[\r\n\t]+/g, ' ').slice(0, 80);
+function bildherkunftAusDb(p) {
+  if (!p || !p.bild_url) return null;
+  const treffer = pflanzeNachschlagen(p.name_botanisch);
+  if (!treffer || !passtZurBildzeile(p, treffer.zeile)) {
+    const name = LOG_KURZ(p.name_botanisch) || '?';
+    const url = LOG_KURZ(p.bild_url);
+    const key = `${name}|${url}`;
+    if (!_gemeldeteBildLuecken.has(key)) {
+      if (_gemeldeteBildLuecken.size >= 500) _gemeldeteBildLuecken.clear();
+      _gemeldeteBildLuecken.add(key);
+      console.warn(`Bild im Plan ohne belegbare Herkunft, wird nicht angezeigt — ${name}: ${url}`);
+    }
+    return null;
+  }
+  if (!zeigbar(treffer.zeile)) return null;
+  return { zeile: treffer.zeile, marke: bildMarkeHTML(treffer.zeile), altZusatz: bildAltZusatz(treffer.zeile) };
+}
+
 // quelle: landet als Plausible-Property am Kaufklick, damit sichtbar wird, welche Fläche verkauft.
 function renderBeispielPlanSSR(plan, flaeche, grafikOpts, quelle = '') {
   if (!plan || !plan.pflanzen) return '';
@@ -6548,8 +6985,12 @@ function renderBeispielPlanSSR(plan, flaeche, grafikOpts, quelle = '') {
     const st = Math.max(0, Math.min(Math.floor(Number(p.pflege_sterne) || 1), 3));
     const stars = '★'.repeat(st) + '☆'.repeat(3 - st);
     const preis = ((p.preis_stueck_eur||0) * (p.stueckzahl||1)).toFixed(2);
-    const imgTop = p.bild_url
-      ? `<img src="${escHtml(safeUrl(p.bild_url))}" alt="${escHtml(p.name_deutsch)}" style="width:100%;height:100%;object-fit:cover;display:block" loading="lazy">`
+    /* Kennzeichnung IN der Karte, nicht in einer Leiste darüber: Der Ausdruck
+     * (stauden-portal.html, @media print) blendet Leisten aus und druckt die Pflanzenkarten
+     * mit Bild. Ein Hinweis in einer Leiste wäre auf Papier verschwunden, das Bild nicht. */
+    const hb = bildherkunftAusDb(p);
+    const imgTop = hb
+      ? `<img src="${escHtml(safeUrl(p.bild_url))}" alt="${escHtml(p.name_deutsch)}${escHtml(hb.altZusatz)}" style="width:100%;height:100%;object-fit:cover;display:block" loading="lazy">${hb.marke}`
       : `<div style="font-size:2.2rem;display:flex;align-items:center;justify-content:center;height:100%">${emojis[i%10]}</div>`;
     const kaufHref = p.name_botanisch ? goLink(p.name_botanisch) : safeUrl(p.kauflink || '/');
     return `<div class="pflanze-card">
@@ -6605,6 +7046,16 @@ function renderBeispielPlanSSR(plan, flaeche, grafikOpts, quelle = '') {
   </div>`;
 }
 
+/*
+ * ACHTUNG, hier ist bild_ki BEWUSST nicht ergaenzt.
+ * Die beiden Abfragen hier bringen KEIN Bild auf die Seite. /beispiel/:slug benutzt das
+ * Ergebnis nur fuer zwei Dinge: fuer die 404-Pruefung ("Keine Pflanzen gefunden") und fuer
+ * die Artenzahl im Steckbrief. Die Bilder der acht Beispielseiten kommen aus den
+ * eingefrorenen Dateien scripts/beispiel-plan-*.json und werden in renderBeispielPlanSSR
+ * ausgegeben; dort schlaegt bildherkunftAusDb die Herkunft nach.
+ * Wer hier bild_ki ergaenzt, aendert an der Ausgabe nichts und taeuscht nur vor, die Stelle
+ * sei erledigt.
+ */
 function getPflanzenFuerBeispiel(slug, licht, feuchtigkeiten) {
   const ids = BEISPIEL_PFLANZEN_IDS[slug];
   if (ids && ids.length) {
@@ -6662,7 +7113,7 @@ app.get('/beispiele', (req, res) => {
 ${NAV_LINKS}</head><body style="font-family:system-ui,sans-serif;background:#f6faf7;margin:0">
 <div style="background:linear-gradient(135deg,#1b4332,#2d6a4f);padding:48px 20px 36px;text-align:center;color:#fff">
   <h1 style="font-size:clamp(1.6rem,4vw,2.2rem);font-weight:800;margin-bottom:10px">Staudenbeet Beispiele mit Pflanznamen</h1>
-  <p style="opacity:.85;max-width:560px;margin:0 auto 24px;font-size:1rem;line-height:1.6">8 fertige Bepflanzungsbeispiele für verschiedene Standorte — mit konkreter Pflanzliste, Fotos und Pflanztipps.</p>
+  <p style="opacity:.85;max-width:560px;margin:0 auto 24px;font-size:1rem;line-height:1.6">8 fertige Bepflanzungsbeispiele für verschiedene Standorte — mit konkreter Pflanzliste, Bildern und Pflanztipps.</p>
   <a href="/" style="display:inline-block;background:#fff;color:#1b4332;padding:12px 28px;border-radius:30px;font-weight:800;text-decoration:none;font-size:.95rem">🌿 Eigenen Plan erstellen →</a>
 </div>
 <div style="max-width:960px;margin:0 auto;padding:40px 16px">
@@ -6934,25 +7385,67 @@ app.post('/admin/update-wissen', async (req, res) => {
 
 // ─── Quiz ─────────────────────────────────────────────────────────────────────
 
+/*
+ * DER FRAGENVORRAT — eine Ableitung für die Auswahl der Fragen UND für die Zahl, die die
+ * Seite nennt.
+ *
+ * Eine Bilderfrage braucht ein Bild. Bis 09/2026 wählte /api/quiz-fragen allein über
+ * „bild_url IS NOT NULL" aus; seit der Verschärfung in bild-herkunft.js (`belegt`) kann die
+ * Ausgabe ein Bild aber zurückhalten, dessen Herkunft nicht belastbar ist. Die Folge war eine
+ * Frage „Wie heißt diese Staude?" mit vier Antworten und OHNE Bild — reines Raten. Die Lücke
+ * gehört nicht in den Client (der blendet nur aus, was er nicht zeigen darf), sondern in die
+ * Auswahl: Wer nicht gezeigt werden darf, taugt nicht als Frage. Entschieden wird das mit
+ * derselben Funktion, die auch kennzeichnet (herkunftFuerJson → bildZeigbar), damit die
+ * Bedingung an keiner zweiten Stelle steht.
+ *
+ * Die Zahl in public/quiz.html („Pflanzenbilder aus … winterharten Stauden") kommt aus
+ * genau dieser Liste — vorher stand dort eine getippte 700 ohne Ableitung.
+ */
+function quizVorrat() {
+  const alle = db.prepare(`
+    SELECT id, name_deutsch, name_botanisch, ${BILD_SPALTEN_SQL}
+    FROM pflanzen
+    WHERE status='live' AND bild_url IS NOT NULL AND bild_url != ''
+  `).all();
+  return alle.filter(p => herkunftFuerJson(p));
+}
+
+/* Fisher-Yates. NICHT .sort(() => Math.random() - .5): Ein Vergleichs-Komparator, der
+ * zufällig antwortet, ist kein Mischen — die Sortierung ruft ihn nur für einen Teil der
+ * Paare auf, und das Ergebnis ist je nach Sortierverfahren deutlich ungleich verteilt.
+ * Vorher besorgte SQLite das Mischen (ORDER BY RANDOM()); seit die Zulassung in Node
+ * entschieden wird (quizVorrat), muss es hier richtig gemacht werden. */
+function mischen(liste) {
+  const a = [...liste];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
 app.get('/api/quiz-fragen', (req, res) => {
   try {
     const n = Math.min(parseInt(req.query.n) || 10, 20);
-    const alle = db.prepare(`
-      SELECT id, name_deutsch, name_botanisch, bild_url
-      FROM pflanzen
-      WHERE status='live' AND bild_url IS NOT NULL AND bild_url != ''
-      ORDER BY RANDOM()
-      LIMIT ?
-    `).all(n * 3); // mehr holen für wrong options
+    /* Gemischt wird jetzt in Node statt mit ORDER BY RANDOM(): Die Zulassung entscheidet
+     * bildZeigbar(), und das ist keine SQL-Bedingung. Ein LIMIT vor dem Filter könnte
+     * weniger als n Fragen übriglassen; der Vorrat ist mit gut 700 Zeilen klein genug,
+     * ihn ganz zu lesen. */
+    const vorrat = mischen(quizVorrat());
 
     const fragen = [];
-    for (let i = 0; i < Math.min(n, alle.length); i++) {
-      const richtig = alle[i];
-      const falsche = alle.filter((_, j) => j !== i).sort(() => Math.random() - .5).slice(0, 3);
-      const optionen = [richtig, ...falsche].sort(() => Math.random() - .5);
+    for (let i = 0; i < Math.min(n, vorrat.length); i++) {
+      const richtig = vorrat[i];
+      const falsche = mischen(vorrat.filter((_, j) => j !== i)).slice(0, 3);
+      const optionen = mischen([richtig, ...falsche]);
       fragen.push({
         id: richtig.id,
         bild_url: richtig.bild_url,
+        // Das Quiz zeigt genau ein Bild pro Frage. Ohne dieses Merkmal könnte die Seite
+        // nicht sagen, ob darauf ein Foto oder eine KI-Illustration zu sehen ist. Dass es
+        // hier nie null ist, hat quizVorrat() schon entschieden — die Bedingung wird nicht
+        // noch einmal formuliert.
+        bild_herkunft: herkunftFuerJson(richtig),
         richtig: richtig.name_deutsch,
         botanisch: richtig.name_botanisch,
         optionen: optionen.map(p => p.name_deutsch)
@@ -6964,9 +7457,19 @@ app.get('/api/quiz-fragen', (req, res) => {
   }
 });
 
+/* public/quiz.html liegt unter public/ und wäre über den statischen Ausleger auch direkt
+ * unter /quiz.html erreichbar — MIT unersetztem Platzhalter. Deshalb dieselbe Adresse: Der
+ * zweite Ausgabepfad wird auf den ersten umgeleitet, statt eine zweite Fassung der Seite
+ * auszuliefern. (stauden-portal.html hat das Problem nicht: die Datei liegt außerhalb von
+ * public/.) */
+app.get('/quiz.html', (req, res) => res.redirect(301, '/quiz'));
+
 app.get('/quiz', (req, res) => {
   let html;
   try { html = require('fs').readFileSync(path.join(__dirname, 'public/quiz.html'), 'utf8'); } catch { return res.status(404).send('quiz.html nicht gefunden'); }
+  // Wie das Portal seine __PFLANZEN_COUNT__ ersetzt: die genannte Zahl und der tatsächliche
+  // Vorrat kommen aus einer Ableitung, damit die Seite nicht mehr verspricht, als sie zeigt.
+  html = html.replace(/__QUIZ_POOL__/g, String(quizVorrat().length));
   res.send(html);
 });
 

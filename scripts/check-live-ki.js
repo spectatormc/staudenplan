@@ -31,7 +31,11 @@ console.log(`\n=== Brauchen Fix (live + externe URL oder kein Bild): ${needFix.l
 for (const p of needFix) console.log(`  [${p.id}] ${p.name_deutsch} | url=${p.bild_url} | vorschlag=${p.bild_vorschlag}`);
 
 // Plants in staging that should be live (were originally live)
-const stagingWithKi = rows.filter(r => r.status === 'staging' && r.bild_ki === 1 && r.bild_vorschlag);
+// Erkannt wird der offene Vorschlag an bild_vorschlag, NICHT an bild_ki: Seit der Korrektur
+// vom 21.09.2026 setzt scripts/generate-ki-bilder.js beim Vorschlag kein bild_ki mehr (die
+// Spalte sagt jetzt nur noch, ob das AUSGELIEFERTE Bild KI-erzeugt ist). Mit der alten
+// Bedingung hätte diese Zählung ab sofort stumm 0 gemeldet.
+const stagingWithKi = rows.filter(r => r.status === 'staging' && r.bild_vorschlag);
 console.log(`\n=== Staging mit KI-Vorschlag (ursprünglich live): ${stagingWithKi.length} ===`);
 for (const p of stagingWithKi) console.log(`  [${p.id}] ${p.name_deutsch}`);
 

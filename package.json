@@ -10,9 +10,14 @@
     "check:env:strict": "node scripts/check-env-preflight.js --strict",
     "check:smoke": "node scripts/check-api-smoke.js",
     "check:security": "node test_security.js",
+    "check:ki": "node scripts/check-ki-kennzeichnung.js",
+    "check:pins": "node scripts/check-pin-deckung.js",
+    "check:pin-meta": "node scripts/check-pin-metadaten.js",
+    "check:selbsttest": "node scripts/check-ki-kennzeichnung.js --selbsttest && node scripts/check-pin-deckung.js --selbsttest && node scripts/check-pin-metadaten.js --selbsttest",
     "ci:relaxed": "npm run check:env",
     "ci:strict": "npm run check:env:strict",
-    "ci:smoke": "npm run check:smoke"
+    "ci:smoke": "npm run check:smoke && npm run check:selbsttest",
+    "ci:daten": "npm run check:ki && npm run check:pins && npm run check:pin-meta"
   },
   "dependencies": {
     "@resvg/resvg-js": "^2.6.2",
