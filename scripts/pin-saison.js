@@ -164,6 +164,19 @@ const DOPPEL_AB = 4;
  * liefe die Gegenprobe ins Leere — sie prüft bild_ki gegen Lizenz und Dateinamen und kann
  * einen Widerspruch nur melden, wenn das Feld überhaupt geladen ist (id 698).
  */
+/* Verzoegerter Zugriff auf winterbild-auftrag.js.
+ *
+ * Jenes Modul requirt dieses zurueck (es prueft seine Aspektliste gegen WINTER_WERT). Ein
+ * require am Dateianfang waere deshalb ein Ring. Beim AUFRUF ist die Gegenseite fertig
+ * geladen, also wird hier geholt statt oben. Denselben Weg nimmt die Spaltenliste in
+ * ladePflanzen(); der Helfer buendelt beides an einer Stelle, statt das require im Code zu
+ * verstreuen. */
+let _winterAuftrag = null;
+function winterAuftrag() {
+  if (!_winterAuftrag) _winterAuftrag = require('./winterbild-auftrag');
+  return _winterAuftrag;
+}
+
 function ladePflanzen(db) {
   /* Das Winterbild (bild_winter_url) gehört in DIESE Spaltenliste, weil aus diesem Lader die
    * Pflanzen der Winter-Pins stammen (pins-erzeugen.js, Sorte pflanze-winter). Fehlte die
@@ -179,7 +192,7 @@ function ladePflanzen(db) {
    * NICHT in BILD_SPALTEN_SQL aufgenommen: Das ist die Spaltenliste der Bildherkunft für die
    * WEBSITE-Ausgabepfade (scripts/bild-herkunft.js). Das Winterbild erscheint dort nirgends,
    * nur im Pin. Die Begründung steht ausführlich bei der Migration in stauden-server.js. */
-  const { WINTERBILD_SPALTE } = require('./winterbild-auftrag');
+  const { WINTERBILD_SPALTE } = winterAuftrag();
   return db.prepare(`SELECT id, name_deutsch, name_botanisch, farbe, licht, feuchtigkeit, bluehzeit,
                             hoehe_cm_max, winteraspekt, bienen_freundlich, heimisch, winterhart_zone, lebensdauer,
                             lebensbereich, ${L.BILD_SPALTEN_SQL}, ${WINTERBILD_SPALTE}
@@ -432,6 +445,8 @@ function saisonPin(s, ziel, { guid = saisonKennung(s).guid } = {}) {
   // Was wirklich ins Raster gezeichnet wird — eingesammelt in der Schleife, die es zeichnet,
   // nicht ein zweites Mal aus s.auswahl abgeleitet.
   const gezeichnet = [];
+  // Nachgezaehlt statt angenommen: Wie viele der sechs Kacheln zeigen wirklich ein Winterbild?
+  let winterbilder = 0;
   const args = ['-size', `${B}x${H}`, `xc:${GRUEN}`, '-gravity', 'northwest'];
   const innen = B - 120;
   const kopf = saisonKopf(s);
@@ -447,7 +462,23 @@ function saisonPin(s, ziel, { guid = saisonKennung(s).guid } = {}) {
   // so bleibt bei sechs Pflanzen genug Platz für die Bilder selbst.
   s.auswahl.forEach((x, i) => {
     const sx = (i % 2) * SPALTE, sy = KOPF + Math.floor(i / 2) * ZEILE;
-    const quelle = path.join(WURZEL, 'public', x.p.bild_url.replace(/^\//, ''));
+    /* WINTERRASTER ZEIGEN DIE PFLANZE IM WINTER.
+     *
+     * Bis zum 22.09.2026 zeichnete auch das Raster "Struktur im Winterbeet" die Pflanzen in
+     * Bluete — dieselbe Abweichung wie beim Einzelpin, nur sechsfach und unter einer
+     * Ueberschrift, die ausdruecklich vom Winter spricht.
+     *
+     * Der Rueckfall auf das Bluehbild bleibt erlaubt (nicht jede Pflanze hat ein Winterbild),
+     * aber winterBildQuelle() wirft, wenn der Lader die Spalte gar nicht mitgebracht hat —
+     * sonst waere der Rueckfall still und das Raster saehe aus wie vorher.
+     *
+     * Bereits veroeffentlichte Winterraster sind davon nicht betroffen: Ihre Dateien werden
+     * nicht neu gebaut (erzwingen in pins-erzeugen.js ist "geaendert && !veroeffentlicht"),
+     * und was bei Pinterest steht, aendert sich ohnehin nicht mehr. */
+    const wq = s.winter ? winterAuftrag().winterBildQuelle(x.p) : null;
+    if (wq && wq.eigen) winterbilder++;
+    const bildUrl = wq ? wq.url : x.p.bild_url;
+    const quelle = path.join(WURZEL, 'public', String(bildUrl).replace(/^\//, ''));
     const datei = `/tmp/pin-saison-${x.p.id}-${i}.png`;
     execFileSync(L.MAGICK, [quelle, '-resize', `${SPALTE}x${ZEILE}^`, '-gravity', 'center',
                              '-extent', `${SPALTE}x${ZEILE}`, datei], { stdio: 'pipe' });
@@ -455,6 +486,15 @@ function saisonPin(s, ziel, { guid = saisonKennung(s).guid } = {}) {
     args.push('-draw', `image over ${sx},${sy} 0,0 "${datei}"`);
     gezeichnet.push(x.p.id);
   });
+
+  /* Ein Winterraster, das ueberwiegend Bluehbilder zeigt, ist kein Fehler — aber es ist auch
+   * nicht das, was die Ueberschrift verspricht. Gemeldet wird deshalb, sobald eine Kachel
+   * zurueckfaellt; ein Zaehler, den niemand ausgibt, waere dieselbe tote Zusage wie ein
+   * Kommentar ohne Code. */
+  if (s.winter && winterbilder < s.auswahl.length) {
+    console.error(`  ~ ${saisonKennung(s).guid}: ${winterbilder} von ${s.auswahl.length} Kacheln mit Winterbild,`
+      + ' die uebrigen zeigen das Bluehbild.');
+  }
 
   s.auswahl.forEach((x, i) => {
     const sx = (i % 2) * SPALTE, sy = KOPF + Math.floor(i / 2) * ZEILE;
