@@ -165,9 +165,24 @@ const DOPPEL_AB = 4;
  * einen Widerspruch nur melden, wenn das Feld überhaupt geladen ist (id 698).
  */
 function ladePflanzen(db) {
+  /* Das Winterbild (bild_winter_url) gehört in DIESE Spaltenliste, weil aus diesem Lader die
+   * Pflanzen der Winter-Pins stammen (pins-erzeugen.js, Sorte pflanze-winter). Fehlte die
+   * Spalte hier, sähe in pin-bild.js jede Pflanze aus wie eine ohne Winterbild: Der Rückfall
+   * auf bild_url griffe bei allen 163 Winter-Pins, ohne eine einzige Meldung, und die
+   * bezahlten Bilder lägen ungenutzt auf der Platte. Genau deshalb unterscheidet
+   * winterBildQuelle() „Feld nicht geladen" von „Feld leer" und wirft im ersten Fall.
+   *
+   * Der Name der Spalte kommt aus winterbild-auftrag.js — erst HIER geholt, nicht am
+   * Dateianfang: Jenes Modul requirt dieses (für WINTER_WERT), ein Require am Kopf wäre ein
+   * Ring. Beim Aufruf ist es fertig geladen.
+   *
+   * NICHT in BILD_SPALTEN_SQL aufgenommen: Das ist die Spaltenliste der Bildherkunft für die
+   * WEBSITE-Ausgabepfade (scripts/bild-herkunft.js). Das Winterbild erscheint dort nirgends,
+   * nur im Pin. Die Begründung steht ausführlich bei der Migration in stauden-server.js. */
+  const { WINTERBILD_SPALTE } = require('./winterbild-auftrag');
   return db.prepare(`SELECT id, name_deutsch, name_botanisch, farbe, licht, feuchtigkeit, bluehzeit,
                             hoehe_cm_max, winteraspekt, bienen_freundlich, heimisch, winterhart_zone, lebensdauer,
-                            lebensbereich, ${L.BILD_SPALTEN_SQL}
+                            lebensbereich, ${L.BILD_SPALTEN_SQL}, ${WINTERBILD_SPALTE}
                      FROM pflanzen WHERE bild_ki = 1 AND bild_url IS NOT NULL`).all()
            .filter(L.hatDeutschenNamen)
            .filter(L.istBeetpflanze)
@@ -200,8 +215,20 @@ function saisonKennung(s) {
 
 /*
  * Überschrift, Unterzeile und Einordnungssatz — dieselben Worte auf dem Bild, im Feed-Text und
- * auf der Landeseite. Das Bild zeigt die Pflanzen blühend, denn andere Bilder gibt es nicht;
- * deshalb sagt die Winter-Unterzeile, was die Pflanze NACH der Blüte tut, nicht „ohne Blüte".
+ * auf der Landeseite. Das Bild zeigt die Pflanzen blühend; deshalb sagt die Winter-Unterzeile,
+ * was die Pflanze NACH der Blüte tut, nicht „ohne Blüte".
+ *
+ * DER ZWEITE AUSGABEPFAD DESSELBEN PROBLEMS — OFFENER BEFUND, NICHT ERLEDIGT (22.09.2026):
+ * „denn andere Bilder gibt es nicht" stimmt seit diesem Tag nicht mehr. Ein Teil der Pflanzen
+ * hat ein eigenes Winterbild (Spalte bild_winter_url, scripts/winterbilder-erzeugen.js). Die
+ * EINZELPFLANZEN-Winterpins benutzen es (pin-bild.js, Wintermodus); die Sechser-Raster hier
+ * NICHT — saisonPin() zeichnet weiterhin x.p.bild_url in jede Kachel. Das ist bewusst so
+ * gelassen und kein Versehen: Ein Winterraster wäre sonst gemischt, solange nicht alle sechs
+ * Pflanzen ein Winterbild haben, und mehrere dieser Raster sind bereits veröffentlicht — ihr
+ * Bild liegt bei Pinterest, ihre Landeseite zeigt genau diese Auswahl. Wer das nachzieht,
+ * muss beides zugleich lösen (Deckung des Winterbild-Bestands je Raster, und nur
+ * unveröffentlichte Raster anfassen). Bis dahin bleibt die Unterzeile richtig, weil sie vom
+ * Zustand NACH der Blüte spricht und nicht behauptet, das Bild zeige ihn.
  */
 function saisonKopf(s) {
   const th = s.thema ? THEMA[s.thema] : null;
@@ -478,6 +505,17 @@ function saisonPin(s, ziel, { guid = saisonKennung(s).guid } = {}) {
   return ziel;
 }
 
+/* module.exports steht VOR dem CLI-Block, nicht dahinter.
+ *
+ * scripts/winterbild-auftrag.js requirt diese Datei zurueck (um die Aspektliste gegen
+ * WINTER_WERT zu pruefen), und ladePflanzen() requirt es seinerseits. Stand die Zuweisung
+ * hinter dem CLI-Block, bekam der Rueckweg ein noch leeres Exportobjekt — und ein direkter
+ * Aufruf von "node scripts/pin-saison.js --liste" brach mit TypeError ab, waehrend derselbe
+ * Code ueber pins-erzeugen.js lief. Wer den Block wieder nach unten schiebt, bricht das CLI. */
+module.exports = { ladePflanzen, saisonAuswahl, saisonPin, alleSaisonPins, saisonPfad,
+                   saisonKennung, saisonKopf, THEMA, ORT, WINTER_WERT,
+                   winterSchluessel, winterAspekt, winterThema, winterHinweis };
+
 if (require.main === module) {
   const argv = process.argv.slice(2);
   const opt = n => { const i = argv.indexOf('--' + n); return i < 0 ? null : argv[i + 1]; };
@@ -507,6 +545,3 @@ if (require.main === module) {
   console.log('erzeugt:', ziel, '·', s.winter ? 'Winterfassung' : 'Blühfassung', '·', s.auswahl.map(x => x.p.name_deutsch).join(', '));
 }
 
-module.exports = { ladePflanzen, saisonAuswahl, saisonPin, alleSaisonPins, saisonPfad,
-                   saisonKennung, saisonKopf, THEMA, ORT, WINTER_WERT,
-                   winterSchluessel, winterAspekt, winterThema, winterHinweis };

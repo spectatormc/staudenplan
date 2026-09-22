@@ -6,9 +6,18 @@
  * ZWEI FASSUNGEN DESSELBEN BILDES (--winter seit 21.09.2026): Die Blühfassung nennt in der
  * Faktenzeile die Blühzeit, die Winterfassung stattdessen den Winteraspekt („Samenstände
  * bleiben stehen") und trägt darüber die Zeile WINTERBEET. Der Grund steht in pin-text.js:
- * Die Einzelpflanzen-Pins bringen die Klicks und schweigen von November bis Februar. Beide
- * Fassungen zeigen dieselbe Pflanze und dasselbe Foto, deshalb unterscheiden sie sich sichtbar
- * im Text — zwei fast gleiche Bilder wertet Pinterest als Dublette.
+ * Die Einzelpflanzen-Pins bringen die Klicks und schweigen von November bis Februar.
+ *
+ * SEIT DEM 22.09.2026 ZEIGT DIE WINTERFASSUNG AUCH EIN ANDERES BILD — wenn es eines gibt.
+ * Bis dahin unterschieden sich die beiden Pins nur im Text: Das Bild zeigte in beiden Fällen
+ * die Pflanze in BLÜTE, während der Winterpin von Samenständen und Gräserstruktur sprach.
+ * Die Spalte bild_winter_url trägt jetzt ein eigenes, im Ruhezustand erzeugtes Bild
+ * (scripts/winterbilder-erzeugen.js); welches der beiden benutzt wird, entscheidet
+ * winterBildQuelle() in scripts/winterbild-auftrag.js — die Blühfassung fasst es nie an.
+ * Solange eine Pflanze kein Winterbild hat, bleibt es beim Blühbild, also beim Stand von
+ * vorher. Dass sich die beiden Pins auch ohne Winterbild sichtbar unterscheiden, bleibt
+ * deshalb wichtig (Zeile WINTERBEET, andere Faktenzeile): zwei fast gleiche Bilder wertet
+ * Pinterest als Dublette.
  *
  * Pinterest ist eine Bildsuchmaschine — hochkant im Verhältnis 2:3 ist das Format, das dort
  * überhaupt sichtbar wird. Die vorhandenen Pflanzenbilder sind quer (meist 640 × 427), das
@@ -31,6 +40,9 @@ const L = require('./pin-layout');
 // Die Beschriftung des Winteraspekts kommt aus pin-saison.js (WINTER_WERT) — dieselbe Zeile,
 // die im Sechser-Raster unter der Kachel und auf der Landeseite steht. Keine zweite Liste.
 const saison = require('./pin-saison');
+// Welche Bilddatei die Winterfassung benutzt, entscheidet winterBildQuelle() — dieselbe
+// Stelle, die auch den Bildauftrag und den Dateinamen der Winterbilder führt.
+const WA = require('./winterbild-auftrag');
 // Werkzeug und Schriften kommen aus dem geteilten Modul, damit ein Wechsel von
 // ImageMagick 6 auf 7 nur an EINER Stelle nachgezogen werden muss.
 const { MAGICK, FONT, FONT_B } = L;
@@ -79,11 +91,20 @@ function ersteFakt(p, winter) {
 
 /*
  * BEIDE EINZELPFLANZEN-SORTEN LAUFEN HIER DURCH: 'pflanze' und 'pflanze-winter' (Schalter
- * 'winter'). Sie zeigen dieselbe Bilddatei derselben Pflanze und unterscheiden sich nur in
- * der Faktenzeile — der Bildkommentar traegt deshalb in beiden Faellen dieselbe eine ID, und
- * das ist richtig so: Auf dem Bild ist genau diese eine Pflanze zu sehen. Auseinander haelt
- * die beiden die 'guid', die der Stapellauf hereinreicht (pflanze-<slug> bzw.
- * pflanze-winter-<slug>).
+ * 'winter'). Sie zeigen DIESELBE PFLANZE, seit dem 22.09.2026 aber nicht mehr zwingend
+ * dieselbe Datei: Die Winterfassung nimmt bild_winter_url, wenn es eines gibt.
+ *
+ * FUER DEN BILDKOMMENTAR AENDERT DAS NICHTS, und das ist der Punkt: Er haelt fest, WELCHE
+ * PFLANZEN auf dem Bild zu sehen sind, nicht welche Datei benutzt wurde. Auf dem Winterbild
+ * ist dieselbe eine Pflanze zu sehen wie auf dem Bluehbild, also steht dort dieselbe eine ID.
+ * scripts/check-pin-deckung.js haelt diese ID gegen die Pflanzennamen der Beschreibung — die
+ * Rechnung geht damit unveraendert auf. Nachgerechnet und nicht nur angenommen: Die ID kommt
+ * aus p.id (unten, beim Zeichnen eingesammelt), der Name in der Beschreibung aus
+ * p.name_deutsch (pin-text.js, textPflanzeWinter) — beides aus derselben Zeile, unabhaengig
+ * davon, welche Bilddatei in die Bildflaeche gelaufen ist.
+ *
+ * Auseinander haelt die beiden Pins die 'guid', die der Stapellauf hereinreicht
+ * (pflanze-<slug> bzw. pflanze-winter-<slug>).
  *
  * 'guid' wird hereingereicht und nicht hier gebildet: Die Kennung entsteht in
  * pins-erzeugen.js, ein Nachbau waere eine zweite Fassung derselben Regel. Ohne sie traegt
@@ -91,7 +112,14 @@ function ersteFakt(p, winter) {
  * nur keine vertauschte Datei erkennen. Aufbau: bildKommentarArgs() in pin-layout.js.
  */
 function pinBild(p, ziel, { winter = false, guid = null } = {}) {
-  const quelle = path.join(WURZEL, 'public', p.bild_url.replace(/^\//, ''));
+  /* Die Bildwahl. In der Blühfassung ist es immer bild_url — die Spalte bild_winter_url wird
+   * dort nicht einmal gelesen, denn das Bild der Pflanzenseite ändert sich durch sie nicht.
+   * In der Winterfassung antwortet winterBildQuelle(): das Winterbild, sonst bild_url.
+   * Der Rückfall ist dort AUSDRÜCKLICH und nicht still — fehlt die Spalte in der Abfrage,
+   * wirft die Funktion, statt jede Pflanze wie eine ohne Winterbild aussehen zu lassen. */
+  const bild = winter ? WA.winterBildQuelle(p) : { url: p.bild_url, eigen: false };
+  if (!bild.url) throw new Error('Kein Bildpfad hinterlegt: ' + p.name_botanisch);
+  const quelle = path.join(WURZEL, 'public', String(bild.url).replace(/^\//, ''));
   if (!fs.existsSync(quelle)) throw new Error('Bilddatei fehlt: ' + quelle);
 
   const gift = giftigkeit(p.name_botanisch);
@@ -193,7 +221,12 @@ if (require.main === module) {
   const ziel = process.argv[3] && !process.argv[3].startsWith('--') ? process.argv[3]
              : `/tmp/pin-${winter ? 'winter-' : ''}${p.id}.jpg`;
   pinBild(p, ziel, { winter });
-  console.log('erzeugt:', ziel, winter ? `· Winterfassung: ${saison.winterAspekt(p)}` : '');
+  /* Welche Bilddatei benutzt wurde, steht in der Meldung — sonst sieht ein Winter-Pin mit
+   * Bluehbild genauso aus wie einer mit Winterbild, und der Rueckfall bliebe unbemerkt. */
+  const bild = winter ? WA.winterBildQuelle(p) : { url: p.bild_url, eigen: false };
+  console.log('erzeugt:', ziel, winter
+    ? `· Winterfassung: ${saison.winterAspekt(p)} · Bild: ${bild.url}${bild.eigen ? ' (eigenes Winterbild)' : ' (Bluehbild — noch kein Winterbild erzeugt)'}`
+    : '');
 }
 
 module.exports = { pinBild, ersteFakt, umbrechen };

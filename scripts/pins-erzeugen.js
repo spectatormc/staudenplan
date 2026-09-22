@@ -95,6 +95,7 @@ const db = new Database(process.env.DB_PFAD || path.join(WURZEL, 'stauden.db'), 
 const { giftigkeit } = require('./pflanzen-giftigkeit');
 const L = require('./pin-layout');
 const S = require('./pin-sorten');        // Sortennamen und „veröffentlicht": dieselben wie im Terminlauf
+const WA = require('./winterbild-auftrag'); // Aspektliste, Spaltenname, winterBildQuelle()
 const kiMeta = require('./pin-ki-metadaten');
 const txt = require('./pin-text');
 const bildModul = require('./pin-bild');
@@ -535,16 +536,64 @@ async function bauen({ guid, datei, typ, machen, text, extra = {}, erzwingen = f
   if (!NUR || NUR === S.TYP.pflanzeWinter) {
     let pflanzen = saisonModul.ladePflanzen(db).filter(p => saisonModul.winterAspekt(p));
     if (LIMIT) pflanzen = pflanzen.slice(0, LIMIT);
-    console.log(`Einzelpflanzen im Winter: ${pflanzen.length}`);
+    /* NACHGEZAEHLT, NICHT ANGENOMMEN: Wie viele dieser Pins zeigen wirklich ein Winterbild?
+     * Der Rueckfall auf das Bluehbild ist erlaubt (nicht jede Pflanze hat schon eines), aber
+     * er darf nicht unbemerkt die Regel werden — etwa wenn winterbilder-erzeugen.js mit
+     * --limit lief oder auf halber Strecke abbrach. Ohne diese Zahl saehe ein Lauf mit 12
+     * Winterbildern genauso aus wie einer mit 163. */
+    let mitWinterbild = 0;
+    for (const p of pflanzen) { try { if (WA.winterBildQuelle(p).eigen) mitWinterbild++; } catch { /* Spalte nicht geladen — meldet winterBildQuelle an der Bildstelle */ } }
+    console.log(`Einzelpflanzen im Winter: ${pflanzen.length}` + ` · davon mit eigenem Winterbild: ${mitWinterbild}` + (mitWinterbild < pflanzen.length ? ` · ${pflanzen.length - mitWinterbild} noch mit Bluehbild` : ''));
+    const winterDateien = [];
     for (const p of pflanzen) {
       const slug = txt.slugify(p.name_botanisch);
+      const datei = `${S.TYP.pflanzeWinter}-${slug}.jpg`;
+      const guid = `${S.TYP.pflanzeWinter}-${slug}`;
+      winterDateien.push({ p, datei, guid });
       await bauen({
-        guid: `${S.TYP.pflanzeWinter}-${slug}`, datei: `${S.TYP.pflanzeWinter}-${slug}.jpg`,
+        guid, datei,
         typ: S.TYP.pflanzeWinter,
         machen: (z, kennung) => bildModul.pinBild(p, z, { winter: true, guid: kennung }),
         text: () => txt.textPflanzeWinter(p, giftigkeit),
         quellen: [p],
       });
+    }
+
+    /* DIE LUECKE, DIE SONST STILL BLIEBE: Ein Winterbild in der Datenbank wandert nicht von
+     * selbst in die Pin-Datei. Die JPEGs sind fertige Dateien, keine Ansicht auf die
+     * Datenbank, und ohne --neu-unveroeffentlicht bleibt eine liegende Datei stehen. Wer also
+     * scripts/winterbilder-erzeugen.js laufen laesst und danach nur den gewoehnlichen Lauf
+     * macht, hat 163 bezahlte Bilder auf der Platte und unveraenderte Pins — ohne eine
+     * einzige Meldung.
+     *
+     * Gemessen wird am Ende des Laufs, also am Ergebnis: Ist die Pin-Datei aelter als das
+     * Winterbild, ist sie vor ihm gebaut worden und zeigt das Bluehbild.
+     *
+     * KEIN Fehler und kein Exitcode 1: Der Pin ist dadurch nicht falsch — er sagt ueber das
+     * Bild nichts, was nicht stimmt, und zeigt genau das, was er vor dieser Pipeline gezeigt
+     * hat. Er ist nur nicht besser geworden. Gemeldet gehoert es trotzdem, laut und mit dem
+     * Befehl dazu. */
+    const veraltet = winterDateien.filter(({ p, datei, guid }) => {
+      /* Veroeffentlichte Pins bleiben aussen vor: Ihre Datei liegt bei Pinterest, sie wird
+       * bewusst nicht mehr angefasst — sie hier zu melden hiesse, einen Befehl zu empfehlen,
+       * der genau sie auslaesst. Heute betrifft das keinen einzigen (fruehester Wintertermin
+       * 01.11.2026), spaeter schon. */
+      if (istVeroeffentlicht(frueher[guid])) return false;
+      // Spaltenname aus der gemeinsamen Quelle: Wird sie je umbenannt, ziehen pin-saison.js,
+      // winterbilder-erzeugen.js und check-plant-images.js automatisch mit — diese Zeile laese
+      // dann still undefined, und die Meldung verstummte, statt zu melden.
+      const winterUrl = String(p[WA.WINTERBILD_SPALTE] || '').trim();
+      if (!winterUrl) return false;
+      const bild = path.join(WURZEL, 'public', winterUrl.replace(/^\//, ''));
+      const pin = path.join(ZIEL, datei);
+      if (!fs.existsSync(bild) || !fs.existsSync(pin)) return false;
+      return fs.statSync(pin).mtimeMs < fs.statSync(bild).mtimeMs;
+    });
+    if (veraltet.length) {
+      console.error(`  ~ ${veraltet.length} Winter-Pin(s) sind aelter als das Winterbild ihrer Pflanze und zeigen`);
+      console.error('    deshalb weiterhin das Bluehbild. Neu bauen (laesst veroeffentlichte Pins unangetastet):');
+      console.error('      node scripts/pins-erzeugen.js --nur pflanze-winter --neu-unveroeffentlicht');
+      console.error(`    Betroffen: ${veraltet.slice(0, 5).map(x => x.p.name_deutsch).join(', ')}${veraltet.length > 5 ? ', …' : ''}`);
     }
   }
 

@@ -10,6 +10,8 @@
 //   --limit=20         Max N Pflanzen prüfen
 //   --min-konfidenz=0.7 Schwellenwert (default 0.7)
 //   --only-bad         Zeigt am Ende nur die schlechten Bilder
+//   --vorschlag        Beurteilt bild_vorschlag statt des ausgelieferten Bildes (schreibt nie)
+//   --winter           Beurteilt bild_winter_url mit einem eigenen Maßstab (schreibt nie)
 //
 // Ergebnis wird nach /tmp/check-images.log geschrieben (zusätzlich zur Konsole).
 // Kosten: ~0.003 € pro Bild (GPT-4o Vision, kleines Bild, kurze Antwort)
@@ -25,11 +27,31 @@ const args        = process.argv.slice(2);
 const DRY_RUN     = args.includes('--dry-run');
 /* --vorschlag prüft das Bild unter bild_vorschlag statt das ausgelieferte unter bild_url.
  * Gedacht für den Ablauf „erzeugen → prüfen → übernehmen": Der Vorschlag wird beurteilt,
- * BEVOR er live geht, statt danach. Der Modus schreibt nie (kein --fix, kein --propose) —
- * er beurteilt nur, und über das Übernehmen entscheidet scripts/bild-vorschlag-uebernehmen.js. */
+ * BEVOR er live geht, statt danach. Der Modus schreibt nie (durchgesetzt in NUR_LESEN, siehe
+ * unten) — er beurteilt nur, und über das Übernehmen entscheidet
+ * scripts/bild-vorschlag-uebernehmen.js. */
 const VORSCHLAG   = args.includes('--vorschlag');
-const FIX         = args.includes('--fix') && !args.includes('--dry-run') && !VORSCHLAG;
-const PROPOSE     = args.includes('--propose') && !FIX && !DRY_RUN && !VORSCHLAG;
+/* --winter prüft das WINTERBILD unter bild_winter_url (seit 22.09.2026). Gebaut wie
+ * --vorschlag: ein anderes Bild derselben Pflanze, ein Modus, der nie schreibt.
+ *
+ * ER BRAUCHT ABER EINEN ANDEREN MASSSTAB, und das ist der eigentliche Punkt. Beurteilt wird
+ * hier gegen ein Wikipedia-Referenzbild derselben Art — und das zeigt die Pflanze in der
+ * Regel im SOMMER und in Blüte. Ein RICHTIGES Winterbild (trockener Grashorst, Samenstand,
+ * bronzefarbene Rosette) fiele gegen diese Referenz durch, gerade weil es richtig ist: Die
+ * Blütenfarbe fehlt, und genau nach ihr fragt der Maßstab des Normalfalls an erster Stelle.
+ * Eine Prüfung, die Richtiges verwirft, ist so schädlich wie eine, die Falsches durchwinkt —
+ * sie wird abgeschaltet, und dann prüft niemand mehr etwas. Der Wintermodus sagt dem Modell
+ * deshalb ausdrücklich, dass Bild 2 den Ruhezustand zeigt, nennt ihm den erwarteten
+ * Winteraspekt aus WINTER_WERT und nimmt die Blütenfarbe als Kriterium heraus. */
+const WINTER      = args.includes('--winter');
+/* Beide Modi beurteilen ein Bild, das NICHT unter bild_url ausgeliefert wird. Sie dürfen
+ * deshalb nichts schreiben — auch nicht bild_geprueft: Dieses Feld sagt „das ausgelieferte
+ * Bild ist angesehen worden", und angesehen wurde hier ein anderes. Eine Zusage, die der
+ * Code nicht durchsetzt, ist keine; bis zum 22.09.2026 stand sie nur im Kommentar, während
+ * --vorschlag zusammen mit --ids bild_geprueft setzte. */
+const NUR_LESEN   = VORSCHLAG || WINTER;
+const FIX         = args.includes('--fix') && !args.includes('--dry-run') && !NUR_LESEN;
+const PROPOSE     = args.includes('--propose') && !FIX && !DRY_RUN && !NUR_LESEN;
 const STAGING_ONLY= args.includes('--staging');
 const LIVE_ONLY   = args.includes('--live');
 const ONLY_BAD    = args.includes('--only-bad');
@@ -52,17 +74,32 @@ const UPDATE_BILD      = db.prepare('UPDATE pflanzen SET bild_url = ?, bild_lize
 const UPDATE_VORSCHLAG = db.prepare("UPDATE pflanzen SET bild_vorschlag = ?, bild_check_info = ?, status = 'staging' WHERE id = ?");
 const UPDATE_GEPRUEFT  = db.prepare('UPDATE pflanzen SET bild_geprueft = 1 WHERE id = ?');
 
+/* Die Aspektliste und den Spaltennamen holt nur der Wintermodus — und erst hier, nicht am
+ * Dateikopf: scripts/winterbild-auftrag.js lädt pin-saison.js und damit die Suche nach
+ * ImageMagick und den Schriften. Ein Skript, das nie ein Bild zeichnet, soll sich die nicht
+ * im Normalfall einhandeln. Die deutsche Beschriftung des Winteraspekts („Samenstände bleiben
+ * stehen") kommt aus WINTER_WERT — dieselbe Zeile, die im Pin steht, den dieses Bild
+ * bebildert. Zwei Fassungen davon wären zwei Maßstäbe. */
+const winterbild = WINTER ? require('./winterbild-auftrag') : null;
+const saison     = WINTER ? require('./pin-saison') : null;
+
 // ── Pflanzenliste aufbauen ─────────────────────────────────────────────────────
-let where = VORSCHLAG
-  ? "bild_vorschlag IS NOT NULL AND bild_vorschlag != '' AND name_deutsch != 'Test-Pflanze'"
-  : "bild_url IS NOT NULL AND name_deutsch != 'Test-Pflanze'";
+const BILD_SPALTE = WINTER ? winterbild.WINTERBILD_SPALTE : VORSCHLAG ? 'bild_vorschlag' : 'bild_url';
+/* Der Normalfall lässt eine leere Zeichenkette in bild_url ausdrücklich stehen (so war es und
+ * so bleibt es): Ein Bild, das nicht lädt, ist genau der Fall, den --propose ersetzen soll.
+ * Die beiden Nebenbilder gibt es dagegen entweder oder gar nicht — eine leere Zeichenkette
+ * heißt dort „nicht erzeugt" und ist nichts zu beurteilen. */
+let where = BILD_SPALTE === 'bild_url'
+  ? "bild_url IS NOT NULL AND name_deutsch != 'Test-Pflanze'"
+  : `${BILD_SPALTE} IS NOT NULL AND ${BILD_SPALTE} != '' AND name_deutsch != 'Test-Pflanze'`;
 if (IDS && IDS.length)  where += ` AND id IN (${IDS.join(',')})`;
 else if (STAGING_ONLY)  where += " AND status = 'staging'";
 else if (LIVE_ONLY)     where += " AND (status IS NULL OR status = 'live')";
 
 let pflanzen = db.prepare(`
   SELECT id, name_deutsch, name_botanisch, status, farbe,
-         ${VORSCHLAG ? 'bild_vorschlag AS bild_url' : 'bild_url'}
+         ${WINTER ? 'winteraspekt,' : ''}
+         ${BILD_SPALTE === 'bild_url' ? 'bild_url' : `${BILD_SPALTE} AS bild_url`}
   FROM pflanzen WHERE ${where}
   ORDER BY id
 `).all();
@@ -111,19 +148,81 @@ async function getWikipediaRef(nameBotanisch) {
 }
 
 // ── GPT-4o Vision: passt das Bild zur Pflanze? ───────────────────────────────
+/* Die Aspektliste im Winterprompt kommt aus WINTER_WERT, sie wird nicht getippt. Die
+ * getippte Fassung war schon beim Schreiben auseinandergelaufen: fuenf Eintraege statt sechs,
+ * es fehlte das halbimmergruene Laub. Ein neuer Eintrag in WINTER_WERT wandert so von selbst
+ * in den Massstab, statt still zu fehlen. */
+const ASPEKT_LISTE = Object.values(saison.WINTER_WERT).join(' / ');
+
 async function checkImage(pflanze) {
   const imageSource = await getImageDataUrl(pflanze.bild_url);
   if (!imageSource) return { passt: false, konfidenz: 0, was_gezeigt: 'Bild nicht ladbar', grund: 'Datei fehlt oder nicht erreichbar' };
 
   const kandidatContent = { type: 'image_url', image_url: { url: imageSource, detail: 'low' } };
-  const farbenHinweis   = pflanze.farbe ? ` Typische Blütenfarbe laut Datenbank: ${pflanze.farbe}.` : '';
+  /* Im Wintermodus KEIN Farbhinweis: Auf einem richtigen Winterbild ist keine Blüte zu sehen,
+   * die Farbe wäre also ein Kriterium, das nur gegen das Bild sprechen kann. Stattdessen
+   * bekommt das Modell den erwarteten Winteraspekt — das, was auf dem Bild zu sehen sein SOLL
+   * und was der Pin daneben behauptet. */
+  const farbenHinweis   = (!WINTER && pflanze.farbe) ? ` Typische Blütenfarbe laut Datenbank: ${pflanze.farbe}.` : '';
+  /* Fehlt der Aspekt, wird keiner erfunden — das Modell erfährt stattdessen, dass die
+   * Datenbank dazu nichts sagt. Vorkommen kann das
+   * nur, wenn jemand bild_winter_url von Hand gesetzt hat — der Erzeuger verlangt einen
+   * Schlüssel aus WINTER_WERT. Ein geratener Aspekt wäre ein Maßstab, den die Daten nicht
+   * hergeben, und er würde ein richtiges Bild verwerfen. */
+  const winterAspekt    = WINTER ? saison.winterAspekt(pflanze) : null;
+  const aspektSatz      = winterAspekt
+    ? ` Laut Datenbank ist im Winter zu sehen: ${winterAspekt}.`
+    : ' Welcher Winteraspekt zu erwarten ist, steht nicht in der Datenbank.';
 
   // Wikipedia-Referenz holen (intern, nie angezeigt)
   const wikiUrl = await getWikipediaRef(pflanze.name_botanisch);
   const hatReferenz = !!wikiUrl;
 
   let messages;
-  if (hatReferenz) {
+  if (WINTER) {
+    /* Der Wintermaßstab. Zwei Fassungen, je nachdem ob es eine Referenz gibt — dieselbe
+     * Aufteilung wie im Normalfall darunter. Gefragt wird nach Plausibilität, nicht nach
+     * Übereinstimmung: Ein Winterbild KANN dem Sommerbild nicht gleichen, sonst wäre es
+     * falsch. Die Blütenfarbe ist ausdrücklich kein Kriterium. */
+    const prompt = hatReferenz
+      ? `Du bist Pflanzenexperte. Bild 1 ist ein verifiziertes Wikipedia-Referenzbild der Pflanze "${pflanze.name_deutsch}" (botanisch: ${pflanze.name_botanisch}) — es zeigt sie in der Regel im SOMMER und in Blüte.
+
+Bild 2 soll dieselbe Art im winterlichen RUHEZUSTAND zeigen (Dezember, deutscher Garten).${aspektSatz}
+
+Beurteile: Ist Bild 2 plausibel diese Art im Winter?
+Kriterien: Wuchsform und Habitus, Silhouette, Größenverhältnisse, Form der Stängel und Samenstände, Blattform und Blattstellung NUR soweit im Winter überhaupt noch Laub vorhanden ist, und ob der gezeigte Winteraspekt zu dem passt, der erwartet wird (${ASPEKT_LISTE}).
+
+WICHTIG:
+- Die Blütenfarbe ist KEIN Kriterium. Ein richtiges Winterbild hat keine Blüten.
+- Dass Bild 2 anders aussieht als Bild 1, ist ERWARTET und für sich kein Grund für passt=false.
+- passt=false, wenn eine andere Gattung zu sehen ist, wenn Bild 2 trotz Winter blüht oder frisch austreibt, wenn der gezeigte Winteraspekt dem erwarteten widerspricht, oder wenn ein Tier / eine Landschaft / keine Pflanze gezeigt wird.`
+      : `Du bist Pflanzenexperte. Dieses Bild soll die Pflanze "${pflanze.name_deutsch}" (botanisch: ${pflanze.name_botanisch}) im winterlichen RUHEZUSTAND zeigen (Dezember, deutscher Garten).${aspektSatz}
+
+Beurteile: Ist das plausibel diese Art im Winter?
+Kriterien: Wuchsform und Habitus, Silhouette, Form der Stängel und Samenstände, Blattform und Blattstellung NUR soweit im Winter überhaupt noch Laub vorhanden ist, und ob der gezeigte Winteraspekt zu dem passt, der erwartet wird.
+
+WICHTIG:
+- Die Blütenfarbe ist KEIN Kriterium. Ein richtiges Winterbild hat keine Blüten.
+- passt=false, wenn eine andere Gattung zu sehen ist, wenn die Pflanze trotz Winter blüht oder frisch austreibt, wenn der gezeigte Winteraspekt dem erwarteten widerspricht, oder wenn ein Tier / eine Landschaft / keine Pflanze gezeigt wird.`;
+
+    const antwortForm = `
+
+Antworte NUR mit diesem JSON (kein Markdown):
+{
+  "passt": true oder false,
+  "konfidenz": 0.0 bis 1.0,
+  "was_gezeigt": "<was im Winterbild zu sehen ist, in 1 Satz>",
+  "grund": "<warum das plausibel diese Art im Winter ist oder nicht, in 1-2 Sätzen>"
+}
+
+Zur Konfidenz: Sie sagt, wie sicher du dir bei der ART bist — NICHT, wie ungewohnt der
+Ruhezustand aussieht. Dass eine Pflanze im Winter schwerer zu bestimmen ist als in Blüte,
+senkt die Konfidenz NICHT. konfidenz=1.0 wenn du sicher bist, 0.5 wenn unsicher.`;
+    const inhalt = [{ type: 'text', text: prompt + antwortForm }];
+    if (hatReferenz) inhalt.push({ type: 'image_url', image_url: { url: wikiUrl, detail: 'low' } });
+    inhalt.push(kandidatContent);
+    messages = [{ role: 'user', content: inhalt }];
+  } else if (hatReferenz) {
     const refContent = { type: 'image_url', image_url: { url: wikiUrl, detail: 'low' } };
     const prompt = `Du bist Pflanzenexperte. Bild 1 ist ein verifiziertes Wikipedia-Referenzbild der Pflanze "${pflanze.name_deutsch}" (botanisch: ${pflanze.name_botanisch}).${farbenHinweis}
 
@@ -164,10 +263,18 @@ Regeln:
   const res = await openai.chat.completions.create({
     model: 'gpt-4o',
     messages,
-    max_tokens: 200,
+    // Der Winterprompt verlangt eine Begruendung; reisst die Antwort ab, scheitert JSON.parse
+    // und der catch unten liefert passt:false/konfidenz:0 — ein richtiges Bild landete dann unter
+    // "SCHLECHTE BILDER". Deshalb mehr Platz, und der Abbruch wird unten als Fehler gemeldet.
+    max_tokens: WINTER ? 320 : 200,
     temperature: 0,
   });
 
+  if (res.choices[0].finish_reason === 'length') {
+    // Kein Urteil, sondern ein abgeschnittener Satz. Als 'passt=false' zu werten hiesse, ein
+    // moeglicherweise richtiges Bild wegen der Antwortlaenge zu verwerfen.
+    throw new Error('Antwort des Modells abgeschnitten (max_tokens) — kein Urteil moeglich');
+  }
   try {
     const text = res.choices[0].message.content.trim().replace(/^```json\s*/,'').replace(/```$/,'');
     return JSON.parse(text);
@@ -291,8 +398,14 @@ async function fetchReplacement(nameDeutsch, nameBotanisch, farbe) {
 async function main() {
   try { fs.writeFileSync(LOG_FILE, ''); } catch {} // Log leeren
 
-  const modus = DRY_RUN ? '[DRY RUN]' : FIX ? '[FIX-MODUS]' : PROPOSE ? '[VORSCHLAG-MODUS]' : '[NUR PRÜFEN]';
+  const modus = WINTER ? '[WINTERBILDER · NUR PRÜFEN]'
+              : DRY_RUN ? '[DRY RUN]' : FIX ? '[FIX-MODUS]' : PROPOSE ? '[VORSCHLAG-MODUS]' : '[NUR PRÜFEN]';
   log(`\n=== Bildprüfung mit GPT-4o Vision ${modus} ===`);
+  if (WINTER) {
+    log(`Geprüft wird ${BILD_SPALTE} — das Bild, das der Winter-Pin zeigt. Maßstab: plausibel diese Art`);
+    log('im Ruhezustand (Wuchsform, Blattform, Silhouette, Winteraspekt). Blütenfarbe zählt nicht.');
+    log('Dieser Modus schreibt nichts — auch bild_geprueft nicht.');
+  }
   log(`Pflanzen: ${pflanzen.length} | Min-Konfidenz: ${MIN_KONF} | ${STAGING_ONLY ? 'Nur Staging' : LIVE_ONLY ? 'Nur Live' : 'Alle'}`);
   log(`Geschätzte Kosten: ~${(pflanzen.length * 0.006).toFixed(2)} € (${pflanzen.length} × ~0.006 € mit Wikipedia-Referenz)\n`);
 
@@ -361,8 +474,10 @@ async function main() {
       ergebnisse.ok.push({ ...p, result });
     }
 
-    // Als geprüft markieren (für manuelle Nachkontrolle via --ids)
-    if (IDS) UPDATE_GEPRUEFT.run(p.id);
+    /* Als geprüft markieren (für manuelle Nachkontrolle via --ids) — aber nur im Normalfall.
+     * bild_geprueft ist eine Aussage über das AUSGELIEFERTE Bild; in --vorschlag und --winter
+     * wurde ein anderes angesehen. Siehe NUR_LESEN oben. */
+    if (IDS && !NUR_LESEN) UPDATE_GEPRUEFT.run(p.id);
 
     // Rate-Limit: GPT-4o Vision ~60 req/min, wir bleiben auf 30/min
     await new Promise(r => setTimeout(r, 2000));
@@ -385,7 +500,20 @@ async function main() {
     ergebnisse.fehler.forEach(p => log(`  ⚠️  [${p.id}] ${p.name_deutsch} — ${p.fehler}`));
   }
 
-  if (!FIX && !PROPOSE && ergebnisse.schlecht.length > 0 && !DRY_RUN) {
+  /* Der Wintermodus bekommt einen EIGENEN Hinweis. Der Rat unten — „Pixabay-Vorschläge
+   * speichern" — wäre hier grob falsch: Ein Ersatz von Pixabay ist ein fremdes Foto und
+   * käme als Winterbild niemals in Frage (bild_winter_url nimmt nur selbst erzeugte
+   * Dateien an, siehe istWinterbildPfad in scripts/winterbild-auftrag.js). Ein schlechtes
+   * Winterbild wird neu erzeugt, nicht ersetzt. */
+  if (WINTER && ergebnisse.schlecht.length > 0) {
+    const ids = ergebnisse.schlecht.map(p => p.id).join(',');
+    log(`\nTipp: Diese Winterbilder neu erzeugen (kostet ~${(ergebnisse.schlecht.length * winterbild.KOSTEN_JE_BILD).toFixed(2)} $):`);
+    log(`  node scripts/winterbilder-erzeugen.js --ids=${ids}`);
+    log(`  oder mit dem anderen Bildauftrag: --ids=${ids} --fassung=b`);
+    log('Danach erneut prüfen — und erst dann die Pins neu bauen.');
+  }
+
+  if (!FIX && !PROPOSE && !NUR_LESEN && ergebnisse.schlecht.length > 0 && !DRY_RUN) {
     log(`\nTipp: Pixabay-Vorschläge speichern (manuelle Freigabe unter /checking):`);
     log(`  node scripts/check-plant-images.js --propose${STAGING_ONLY ? ' --staging' : LIVE_ONLY ? ' --live' : ''}`);
     log(`  oder direkt ersetzen mit --fix`);

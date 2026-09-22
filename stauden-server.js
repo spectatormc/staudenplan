@@ -302,6 +302,31 @@ function pflanzeNachschlagen(nameBot) {
    * die Marke „KI-Bild". Seitdem sind die beiden Aussagen getrennt: bild_ki beschreibt das
    * Bild unter bild_url, bild_ki_versucht den Arbeitsstand. */
   'ALTER TABLE pflanzen ADD COLUMN bild_ki_versucht INTEGER DEFAULT 0',
+  /* Das WINTERBILD der Pflanze (seit 22.09.2026, scripts/winterbilder-erzeugen.js).
+   *
+   * Wozu: Die Pin-Sorte pflanze-winter spricht von Winterstruktur und zeigte dasselbe Bild
+   * wie der Bluehzeit-Pin — die Pflanze in Bluete. Es gab je Pflanze nur ein Bild. Diese
+   * Spalte traegt das zweite, das die Pflanze im winterlichen Ruhezustand zeigt.
+   *
+   * NUR DIE URL, KEINE LIZENZSPALTE DANEBEN. Ein Winterbild ist per Konstruktion immer selbst
+   * erzeugt: Es entsteht ausschliesslich in scripts/winterbilder-erzeugen.js und kann gar
+   * nicht von Pixabay oder Wikimedia kommen. Ein bild_winter_lizenz waere deshalb eine zweite
+   * Wahrheit ueber denselben Sachverhalt — und genau daran haengt in diesem Projekt schon ein
+   * Befund (id 698 traegt bild_ki=1 und dazu "Pixabay License"). Die Zusage wird nicht nur
+   * behauptet, sondern durchgesetzt: istWinterbildPfad() in scripts/winterbild-auftrag.js
+   * laesst im Ausgabepfad nur Dateien zu, die als ki-winter-…-<id>.jpg erzeugt wurden.
+   *
+   * scripts/bild-herkunft.js WIRD NICHT ANGEFASST, und das ist kein Vergessen: Diese Datei
+   * leitet die Kennzeichnung des Bildes ab, das auf der WEBSITE ausgeliefert wird (bild_url) —
+   * Lexikon, Planer, Quiz, Landeseiten, geteilte Plaene. Das Winterbild erscheint dort an
+   * keiner Stelle; es wird nur in das Pin-JPEG gezeichnet (scripts/pin-bild.js, Wintermodus),
+   * und dieser Pin traegt seine KI-Kennzeichnung ohnehin schon — Fusszeile "Illustration",
+   * Satz in der Beschreibung, IPTC-Feld DigitalSourceType. Die Kennzeichnung wuerde durch das
+   * Winterbild also weder falsch noch unvollstaendig. bild_winter_url in BILD_SPALTEN_SQL
+   * aufzunehmen zoege die Spalte in jede Website-Abfrage, wo sie niemand liest, und liesse sie
+   * wie einen Teil der Herkunftsableitung aussehen. Wer das spaeter "nachzieht", macht es
+   * schlechter, nicht besser. */
+  'ALTER TABLE pflanzen ADD COLUMN bild_winter_url TEXT',
   // lebensdauer wird in der RAG-Abfrage gelesen (im SELECT der Kandidatenspalten und als
   // Filter gegen 'einjaehrig'), war aber nie hier eingetragen. Auf einer DB ohne die Spalte antwortet die
   // STARTSEITE mit HTTP 500 ("no such column: lebensdauer") — auf dem Produktivserver ist sie
