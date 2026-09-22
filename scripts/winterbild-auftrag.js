@@ -214,6 +214,23 @@ function winterBildQuelle(p) {
   }
   const winter = String(q[WINTERBILD_SPALTE] || '').trim();
   if (!winter) return { url: q.bild_url, eigen: false };
+  /* EINE KOLLISION, DIE DER PFADTEST ALLEIN NICHT SIEHT.
+   *
+   * istWinterbildPfad() erkennt ein Winterbild am Praefix ki-winter- und an der Id. Heisst die
+   * Pflanze selbst "Winter-…", traegt schon ihr BLUEHBILD dieses Muster: Pflanze 346
+   * (Winter-Alpenveilchen) hat bild_url = /images/pflanzen/ki-winter-alpenveilchen-346.jpg.
+   * Der Pfadtest laesst es durch, und das Raster zeigte dann unter "Struktur im Winterbeet"
+   * wieder die Bluete — genau der Zustand, gegen den diese Spalte gebaut wurde.
+   *
+   * Den Praefix umzubenennen waere die groessere Aenderung (163 Dateien und ebenso viele
+   * Spaltenwerte). Der Fall ist auch praeziser zu fassen: Das Winterbild einer Pflanze ist nie
+   * ihr eigenes bild_url. Betroffen waeren heute zwei Zeilen (346, 433), morgen jede neue
+   * Staude mit "Winter" im Namen. */
+  if (q.bild_url && winter === String(q.bild_url).trim()) {
+    throw new Error(`${WINTERBILD_SPALTE} zeigt auf das Bluehbild dieser Pflanze selbst `
+      + `("${winter}") — das ist kein Winterbild. Tritt auf, wenn der Pflanzenname mit `
+      + '"Winter" beginnt und der Pfadtest deshalb nicht unterscheiden kann.');
+  }
   if (!istWinterbildPfad(winter, q.id)) {
     throw new Error(`${WINTERBILD_SPALTE} ist kein selbst erzeugtes Winterbild dieser Pflanze: `
       + `"${winter}" (erwartet ${WINTERBILD_ORDNER}${WINTERBILD_PRAEFIX}…-${q.id}.jpg). `
