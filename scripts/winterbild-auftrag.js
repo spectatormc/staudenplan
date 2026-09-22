@@ -51,13 +51,26 @@ const { slugify } = require('./pin-sorten');
 
 /* Was im Winter ZU SEHEN ist. Englisch, weil der Bildauftrag englisch ist; die deutsche
  * Beschriftung kommt unveraendert aus WINTER_WERT (pin-saison.js). */
+/* DER ASPEKTSATZ SAGT DEN ZUSTAND, NICHT DIE FORM.
+ *
+ * Die erste Fassung vom 22.09.2026 schrieb die Gestalt vor: "seed heads on stiff standing
+ * stems", "dry blades and flower plumes". Das ueberschrieb die Art. Von 163 Bildern hat die
+ * Vision-Pruefung 36 verworfen, und die Stichproben gaben ihr recht: Das Japanische Blutgras
+ * (Imperata cylindrica 'Red Baron', 40 cm, bluehl bei uns praktisch nie) bekam die Federwedel
+ * eines Pampasgrases, weil der Auftrag "flower plumes" bestellte; die Blauraute (Perovskia,
+ * duenne silbrige Stiele) bekam dichte Kugeln, weil "seed heads" ohne Formangabe zur
+ * generischen Dolde wurde. Betroffen waren alle fuenf Aspekte, nicht nur die Graeser.
+ *
+ * Es ist dieselbe Falle wie bei den Pflegetexten im August: eine Gruppenbeschreibung, die
+ * fuer den Einzelfall nicht stimmt. Der Satz beschreibt jetzt den ZUSTAND (abgebluetet,
+ * trocken, wintergruen) und verweist fuer die GESTALT ausdruecklich auf die Art. */
 const ASPEKT = {
-  'samenstand dekorativ': 'The plant has finished flowering: dry, brown and beige seed heads on stiff standing stems, no petals left, foliage withered. The dried seed heads are the subject.',
-  'gräser struktur': 'The ornamental grass is dormant: straw-coloured and golden-brown dry blades and flower plumes, still upright and arching, no green growth. The dry winter silhouette is the subject.',
-  'blätter immergrün': 'The plant is evergreen and keeps its foliage through winter: firm green leaves, no flowers, surrounded by the bare dormant garden.',
-  'rosetten wintergrün': 'The plant overwinters as a flat evergreen rosette of leaves close to the ground, no flowers, no tall stems.',
-  'blätter halbimmergrün': 'The plant is semi-evergreen in winter: a low mound of leathery leaves, some tinged bronze or reddish from the cold, no flowers.',
-  'struktur': 'The plant is dormant but keeps its structure: dry standing stems and remains of foliage, no flowers.',
+  'samenstand dekorativ': 'The plant has finished flowering and now stands dry: no petals left, foliage withered or gone. Its seed heads are brown and beige and keep exactly the shape, size and arrangement that THIS species forms — do not give it the seed heads of a different plant, and do not make them showier than they are.',
+  'gräser struktur': 'The ornamental grass is dormant: dry blades in straw, tan and golden-brown, no green growth, at the height and in the growth habit typical of THIS species. Show flowering or seed stalks ONLY if this species really carries them through winter — many garden grasses carry none, or only sparse ones. Do not add large decorative plumes.',
+  'blätter immergrün': 'The plant is evergreen and keeps its foliage through winter: firm leaves in exactly the leaf shape, size and arrangement of THIS species, no flowers, surrounded by the bare dormant garden.',
+  'rosetten wintergrün': 'The plant overwinters as a flat rosette of leaves close to the ground, in the leaf shape and size of THIS species, no flowers and no tall stems.',
+  'blätter halbimmergrün': 'The plant is semi-evergreen in winter: a low mound of its own leaves, some tinged bronze or reddish from the cold, in the leaf shape of THIS species, no flowers.',
+  'struktur': 'The plant is dormant but keeps its structure: dry standing stems and remains of foliage in the form THIS species actually takes, no flowers.',
 };
 
 /* Die Gegenprobe beim Laden — siehe Kopf. Gemeldet werden die Schluessel selbst, damit die
