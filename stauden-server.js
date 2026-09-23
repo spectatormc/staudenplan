@@ -828,13 +828,13 @@ function getPflanzenkandidaten(licht, boden, stil, standortBeschr, kindersicher 
    */
   const gelockerteRollen = new Set();
 
-  if (leit.length    < 3) { leit    = roleQuery(LICHT_WHERE, LICHT_ARGS, LEIT_F,    8);  aufgegeben.add('Bodentyp').add('Gartenstil'); gelockerteRollen.add('hohe Leitstauden'); }
-  if (begleit.length < 5) { begleit = roleQuery(LICHT_WHERE, LICHT_ARGS, BEGLEIT_F, 15); aufgegeben.add('Bodentyp').add('Gartenstil'); gelockerteRollen.add('mittelhohe Begleitstauden'); }
-  if (fuell.length   < 3) { fuell   = roleQuery(LICHT_WHERE, LICHT_ARGS, FUELL_F,   10); aufgegeben.add('Bodentyp').add('Gartenstil'); gelockerteRollen.add('niedrige Füllstauden'); }
+  if (leit.length    < 3) { leit    = roleQuery(LICHT_WHERE, LICHT_ARGS, LEIT_F,    8);  aufgegeben.add('Bodentyp').add('Gartenstil'); gelockerteRollen.add('hohen Leitstauden'); }
+  if (begleit.length < 5) { begleit = roleQuery(LICHT_WHERE, LICHT_ARGS, BEGLEIT_F, 15); aufgegeben.add('Bodentyp').add('Gartenstil'); gelockerteRollen.add('mittelhohen Begleitstauden'); }
+  if (fuell.length   < 3) { fuell   = roleQuery(LICHT_WHERE, LICHT_ARGS, FUELL_F,   10); aufgegeben.add('Bodentyp').add('Gartenstil'); gelockerteRollen.add('niedrigen Füllstauden'); }
 
-  if (leit.length    < 2) { leit    = roleQuery(LAST_WHERE, LAST_ARGS, LEIT_F,    8);  aufgegeben.add('Bodenfeuchte'); gelockerteRollen.add('hohe Leitstauden'); }
-  if (begleit.length < 3) { begleit = roleQuery(LAST_WHERE, LAST_ARGS, BEGLEIT_F, 15); aufgegeben.add('Bodenfeuchte'); gelockerteRollen.add('mittelhohe Begleitstauden'); }
-  if (fuell.length   < 2) { fuell   = roleQuery(LAST_WHERE, LAST_ARGS, FUELL_F,   10); aufgegeben.add('Bodenfeuchte'); gelockerteRollen.add('niedrige Füllstauden'); }
+  if (leit.length    < 2) { leit    = roleQuery(LAST_WHERE, LAST_ARGS, LEIT_F,    8);  aufgegeben.add('Bodenfeuchte'); gelockerteRollen.add('hohen Leitstauden'); }
+  if (begleit.length < 3) { begleit = roleQuery(LAST_WHERE, LAST_ARGS, BEGLEIT_F, 15); aufgegeben.add('Bodenfeuchte'); gelockerteRollen.add('mittelhohen Begleitstauden'); }
+  if (fuell.length   < 2) { fuell   = roleQuery(LAST_WHERE, LAST_ARGS, FUELL_F,   10); aufgegeben.add('Bodenfeuchte'); gelockerteRollen.add('niedrigen Füllstauden'); }
 
   // Deduplizieren und zusammenführen (Leit → Begleit → Füll)
   const seen = new Set();
