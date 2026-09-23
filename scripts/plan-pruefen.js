@@ -46,11 +46,46 @@ const FLAECHE_JE_ART = 0.55;
 // erschlägt die Fläche optisch. Bei einem 2,5-m²-Beet (Kante rund 1,6 m) sind das 120 cm.
 const HOEHE_ZU_KANTE = 0.75;
 
-// Pflanzdichte je m². Unter 4 bleibt der Boden auf Jahre offen (Unkraut), über 12 stehen die
-// Stauden sich gegenseitig im Weg. Die Spanne ist weit, weil Bodendecker und Leitstauden
-// völlig verschieden dicht stehen.
-const DICHTE_MIN = 4;
-const DICHTE_MAX = 12;
+/* Pflanzdichte je m² — NACH DER GEWÄHLTEN STUFE, nicht pauschal.
+ *
+ * Hier standen bis zum 23.09.2026 zwei feste Zahlen: unter 4 zu dünn, über 12 zu dicht. Das
+ * Formular bietet aber drei Stufen an und nennt je Karte eine eigene Spanne — „Locker
+ * 2–3 Pfl./m²". Ein Kunde, der locker wählte und 2,5 bekam, löste damit zwangsläufig den
+ * Befund „Unter 4 bleibt der Boden jahrelang offen" aus: Die Seite beanstandete, was sie
+ * selbst angeboten hatte.
+ *
+ * DIE ZAHLEN SPIEGELN DIE AUSWAHLKARTEN in stauden-portal.html (2–3 / 3–5 / 6–8), mit etwas
+ * Luft nach aussen für die Rundung. Wer dort eine Spanne ändert, ändert sie hier mit — und
+ * umgekehrt. Aus demselben Satz Zahlen kommen drei Dinge: die Vorgabe im Prompt, die
+ * deterministische Korrektur danach und dieser Befund.
+ *
+ * `ziel` ist die Mitte, an der die Korrektur ausrichtet; `min`/`max` ist das Band, innerhalb
+ * dessen nichts gemeldet und nichts korrigiert wird. */
+const DICHTE_STUFEN = {
+  locker: { ziel: 2.5, min: 2,   max: 4  },
+  normal: { ziel: 4,   min: 3,   max: 6  },
+  dicht:  { ziel: 7,   min: 5.5, max: 10 },
+};
+const DICHTE_STANDARD = 'normal';
+
+/** Der NAME der Stufe, die tatsächlich gilt. Unbekanntes fällt auf „normal" — und der
+ *  Befundtext muss dann auch „normal" nennen, nicht den unbekannten Wert: Sonst begründet
+ *  er die Zahlen mit einer Stufe, nach der gar nicht gerechnet wurde. */
+function dichteStufeName(stufe) {
+  const k = String(stufe == null ? '' : stufe).trim().toLowerCase();
+  return DICHTE_STUFEN[k] ? k : DICHTE_STANDARD;
+}
+
+/** Die Dichtewerte zur gewählten Stufe. Unbekannte Stufe → „normal", nie geraten. */
+function dichteStufe(stufe) {
+  return DICHTE_STUFEN[dichteStufeName(stufe)];
+}
+
+/** Wie viele Pflanzen gehören auf diese Fläche? Einzige Ableitung im Projekt. */
+function dichteZielFuer(flaeche, stufe) {
+  const f = zahl(flaeche);
+  return f ? Math.round(f * dichteStufe(stufe).ziel) : null;
+}
 
 /* Feuchte-Ansprüche, die einander ausschliessen. Wer für die eine Gruppe giesst, schadet der
  * anderen — das ist der Befund, an dem die Gärtnerei den Plan mit dem Enzian festgemacht hat.
@@ -197,15 +232,23 @@ function planPruefen(plan, anfrage = {}) {
   }
 
   // ── 3. Pflanzdichte ────────────────────────────────────────────────────────────────────
+  // Gemessen wird gegen die Spanne der GEWÄHLTEN Stufe. Ohne Angabe gilt „normal", wie im
+  // Formular vorausgewählt.
   if (flaeche && gesamtStueck) {
+    const stufe = dichteStufe(anfrage.dichte);
+    const wieGewaehlt = dichteStufeName(anfrage.dichte);
     const dichte = gesamtStueck / flaeche;
-    if (dichte < DICHTE_MIN) {
+    if (dichte < stufe.min) {
       melde('dichte', 'weich',
         `${mZahl(dichte)} Pflanzen je m² (${gesamtStueck} auf ${mZahl(flaeche)} m²). `
-        + `Unter ${DICHTE_MIN} bleibt der Boden jahrelang offen und verkrautet.`);
-    } else if (dichte > DICHTE_MAX) {
+        + `Für die Stufe „${wieGewaehlt}" sind ${mZahl(stufe.min)} bis ${mZahl(stufe.max)} vorgesehen; `
+        + `darunter bleibt der Boden jahrelang offen und verkrautet.`,
+        { jeM2: dichte, ziel: stufe.ziel, richtung: 'zu_duenn' });
+    } else if (dichte > stufe.max) {
       melde('dichte', 'weich',
-        `${mZahl(dichte)} Pflanzen je m². Über ${DICHTE_MAX} stehen die Stauden sich im Weg.`);
+        `${mZahl(dichte)} Pflanzen je m². Für die Stufe „${wieGewaehlt}" sind höchstens `
+        + `${mZahl(stufe.max)} vorgesehen; darüber stehen die Stauden sich im Weg.`,
+        { jeM2: dichte, ziel: stufe.ziel, richtung: 'zu_dicht' });
     }
   }
 
@@ -289,6 +332,72 @@ if (typeof require !== 'undefined' && require.main === module && process.argv.in
   ok(r15.hart === 0, `Anfrage 15 hat KEINE harten Befunde (${r15.hart}) — der Plan war fachlich in Ordnung`);
   ok(r15.befunde.some(b => b.regel === 'dichte'), 'Anfrage 15: die niedrige Dichte faellt als weicher Befund auf');
 
+  /*
+   * DIE DICHTE IN BEIDE RICHTUNGEN UND JE STUFE. Geprueft wurde bis zum 23.09.2026 nur der
+   * untere Zweig ueber Anfrage 15; der obere hatte keinen einzigen Testfall, und die Stufen
+   * gab es noch nicht. Der wichtigste Fall ist der dritte: Wer „locker" waehlt und 2,5
+   * Pflanzen je m² bekommt, hat genau das bestellt — und bekam trotzdem den Befund.
+   */
+  const dichtePlan = (stueckGesamt) => ({ pflanzen: [
+    { name_deutsch: 'A', hoehe_cm_max: 60, stueckzahl: Math.round(stueckGesamt / 2), feuchtigkeit: 'normal', lebensbereich: 'Freifläche' },
+    { name_deutsch: 'B', hoehe_cm_max: 40, stueckzahl: Math.round(stueckGesamt / 2), feuchtigkeit: 'normal', lebensbereich: 'Freifläche' },
+  ] });
+  const dichteBefund = (stueckGesamt, flaeche, stufe) =>
+    planPruefen(dichtePlan(stueckGesamt), { gartenflaeche: flaeche, dichte: stufe })
+      .befunde.find(b => b.regel === 'dichte') || null;
+
+  ok(dichteBefund(200, 10, 'normal'), '20 Pflanzen je m² werden als zu dicht gemeldet (oberer Zweig)');
+  ok(dichteBefund(200, 10, 'normal').richtung === 'zu_dicht', 'der obere Zweig meldet richtung=zu_dicht');
+  ok(!dichteBefund(25, 10, 'locker'), '2,5 Pflanzen je m² bei Stufe „locker" sind KEIN Befund — genau das wurde gewaehlt');
+  ok(dichteBefund(25, 10, 'normal'), 'dieselben 2,5 Pflanzen je m² bei Stufe „normal" sind ein Befund');
+  ok(!dichteBefund(70, 10, 'dicht'), '7 Pflanzen je m² bei Stufe „dicht" sind kein Befund');
+  ok(dichteBefund(70, 10, 'locker'), 'dieselben 7 Pflanzen je m² bei Stufe „locker" sind ein Befund');
+  ok(dichteBefund(25, 10, 'fantasiestufe') && dichteBefund(25, 10, 'fantasiestufe').text.includes('normal'),
+     'eine unbekannte Stufe faellt auf „normal" zurueck, statt geraten zu werden');
+  ok(dichteZielFuer(80, 'normal') === 320 && dichteZielFuer(80, 'locker') === 200 && dichteZielFuer(80, 'dicht') === 560,
+     'dichteZielFuer rechnet die Stufen richtig um (80 m² → 320 / 200 / 560)');
+
+  /*
+   * GRUPPENGROESSE — vorher ohne jeden Testfall. Sie greift, wenn mehr als ein Drittel der
+   * Arten in weniger als drei Exemplaren steht; Leitstauden sind ausgenommen, weil dort das
+   * Einzelstueck gewollt ist.
+   */
+  const rGruppen = planPruefen({ pflanzen: [
+    { name_deutsch: 'Leitstaude einzeln', hoehe_cm_max: 120, stueckzahl: 1, rolle: 'Leitstaude', feuchtigkeit: 'normal' },
+    { name_deutsch: 'Einzelstueck 1', hoehe_cm_max: 40, stueckzahl: 1, rolle: 'Füllstaude', feuchtigkeit: 'normal' },
+    { name_deutsch: 'Einzelstueck 2', hoehe_cm_max: 40, stueckzahl: 2, rolle: 'Füllstaude', feuchtigkeit: 'normal' },
+    { name_deutsch: 'Einzelstueck 3', hoehe_cm_max: 40, stueckzahl: 1, rolle: 'Füllstaude', feuchtigkeit: 'normal' },
+    { name_deutsch: 'Gruppe', hoehe_cm_max: 40, stueckzahl: 9, rolle: 'Füllstaude', feuchtigkeit: 'normal' },
+  ] }, { gartenflaeche: 4 });
+  ok(rGruppen.befunde.some(b => b.regel === 'gruppen'), 'drei von fünf Arten als Einzelstueck werden als Sammlung gemeldet');
+  ok(!planPruefen({ pflanzen: [
+    { name_deutsch: 'Leitstaude einzeln', hoehe_cm_max: 120, stueckzahl: 1, rolle: 'Leitstaude', feuchtigkeit: 'normal' },
+    { name_deutsch: 'Gruppe A', hoehe_cm_max: 40, stueckzahl: 5, rolle: 'Füllstaude', feuchtigkeit: 'normal' },
+    { name_deutsch: 'Gruppe B', hoehe_cm_max: 40, stueckzahl: 5, rolle: 'Füllstaude', feuchtigkeit: 'normal' },
+  ] }, { gartenflaeche: 4 }).befunde.some(b => b.regel === 'gruppen'),
+     'die einzelne Leitstaude allein loest den Gruppenbefund NICHT aus');
+
+  /*
+   * DER L×B-ZWEIG von kanteFuer() — der Grund, aus dem die Kante nicht mehr geraten wird.
+   * Ohne Testfall waere er nach dem naechsten Umbau still wieder die Wurzel aus der Flaeche.
+   */
+  const schmal = { gartenflaeche: 2.56, beetLaenge: 4.0, beetBreite: 0.64 };
+  const quadratisch = { gartenflaeche: 2.56 };
+  const hoch = { pflanzen: [{ name_deutsch: 'Hoch', hoehe_cm_max: 100, stueckzahl: 3, feuchtigkeit: 'normal' }] };
+  ok(kanteFuer(schmal).gemessen === true && Math.abs(kanteFuer(schmal).kante - 0.64) < 1e-9,
+     'mit L×B ist die kurze Kante gemessen (0,64 m), nicht gewurzelt');
+  ok(kanteFuer(quadratisch).gemessen === false && Math.abs(kanteFuer(quadratisch).kante - 1.6) < 1e-9,
+     'ohne L×B bleibt die Wurzel aus der Flaeche (1,6 m) — und sie gilt als geschaetzt');
+  ok(maxHoeheFuer(2.56, kanteFuer(schmal).kante) === 48 && maxHoeheFuer(2.56) === 120,
+     'die Endhoehengrenze folgt der Kante: 48 cm bei 0,64 m, 120 cm bei angenommenem Quadrat');
+  ok(planPruefen(hoch, schmal).befunde.some(b => b.regel === 'endhoehe')
+     && !planPruefen(hoch, quadratisch).befunde.some(b => b.regel === 'endhoehe'),
+     'eine 100-cm-Staude ist auf 0,64 m Kante ein Befund, auf 1,6 m nicht');
+  ok(planPruefen(hoch, schmal).befunde.find(b => b.regel === 'endhoehe').text.includes('0,64 m kurzer Kante'),
+     'der Kundentext nennt die gemessene Kante');
+  ok(!planPruefen(hoch, { gartenflaeche: 0.41 }).befunde.find(b => b.regel === 'endhoehe').text.includes('Kante'),
+     'ohne gemessene Kante wird im Kundentext KEINE Kante genannt');
+
   // Ein unauffaelliger Plan darf gar nichts melden.
   const rGut = planPruefen({ pflanzen: [
     { name_deutsch: 'A', hoehe_cm_max: 60, stueckzahl: 5, feuchtigkeit: 'normal', lebensbereich: 'Freifläche' },
@@ -338,5 +447,6 @@ if (typeof require !== 'undefined' && require.main === module && process.argv.in
  * Deshalb sind die Zeile oben (require.main) und diese hier typgeprueft statt roh. */
 if (typeof module !== 'undefined' && module.exports) module.exports = {
   planPruefen, lbAusschluss, maxArtenFuer, maxHoeheFuer, kanteFuer,
-  GRUPPE_MIN, FLAECHE_JE_ART, HOEHE_ZU_KANTE, DICHTE_MIN, DICHTE_MAX,
+  dichteStufe, dichteStufeName, dichteZielFuer,
+  GRUPPE_MIN, FLAECHE_JE_ART, HOEHE_ZU_KANTE, DICHTE_STUFEN, DICHTE_STANDARD,
   LB_UNVERTRAEGLICH, LB_POL_TROCKEN, LB_POL_NASS };

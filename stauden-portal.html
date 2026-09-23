@@ -1687,9 +1687,9 @@
   <!-- Pflanzendichte -->
   <div class="dichte-toggle">
     <span>Pflanzendichte:</span>
-    <button class="dichte-btn" onclick="setDichte(0.6,this)">🌿 Locker</button>
-    <button class="dichte-btn active" onclick="setDichte(1,this)">🌿 Normal</button>
-    <button class="dichte-btn" onclick="setDichte(1.5,this)">🌿 Dicht</button>
+    <button class="dichte-btn" onclick="setDichte('locker',this)">🌿 Locker</button>
+    <button class="dichte-btn active" onclick="setDichte('normal',this)">🌿 Normal</button>
+    <button class="dichte-btn" onclick="setDichte('dicht',this)">🌿 Dicht</button>
   </div>
 
   <!-- Tab Navigation -->
@@ -2824,7 +2824,9 @@ __PREIS_SPANNE_JS__
    * gerade erst herbeifuehrte. Ein stehengebliebener Befund ist schlechter als keiner. */
   (function () {
 __PLAN_PRUEFEN_JS__
-    window.planPruefen = planPruefen;
+    window.planPruefen    = planPruefen;
+    window.dichteZielFuer = dichteZielFuer;
+    window.dichteStufe    = dichteStufe;
   })();
 
   /* Bildet die Befunde der Art 'pruefung' neu und laesst 'notplan' und 'gelockert' stehen —
@@ -2848,7 +2850,10 @@ __PLAN_PRUEFEN_JS__
             lebensbereich: p.lebensbereich || null,
           })) },
         { gartenflaeche: formData.gartenflaeche,
-          beetLaenge: formData.beetLaenge, beetBreite: formData.beetBreite });
+          beetLaenge: formData.beetLaenge, beetBreite: formData.beetBreite,
+          // Ohne die Stufe misst der Browser gegen „normal", der Server aber gegen die
+          // gewaehlte — und dieselbe Zahl waere je nach Ansicht ein Befund oder keiner.
+          dichte: formData.dichte });
     } catch (e) {
       // Eine Pruefung darf den Plan melden, aber nie verhindern — dieselbe Regel wie auf
       // dem Server. Im Zweifel bleiben die alten Befunde weg statt falsch stehen.
@@ -4299,9 +4304,31 @@ __PLAN_PRUEFEN_JS__
   let _baseStueck = null;
   let _dichteFaktor = 1;
 
-  function setDichte(factor, btn) {
+  /*
+   * DIE DREI KNÖPFE SIND DIE DREI STUFEN, nicht drei Faktoren.
+   *
+   * Bis zum 23.09.2026 hießen sie 0,6 × / 1 × / 1,5 × auf das, was zurückkam. Das hatte zwei
+   * Folgen: Erstens hing das Ergebnis davon ab, wie dicht das Modell zufällig geplant hatte
+   * — „Dicht" auf einem dünnen Plan blieb dünn. Zweitens wusste die Schlussprüfung im
+   * Browser nicht, wogegen sie messen soll: `formData.dichte` stand weiter auf der
+   * ursprünglich gewählten Stufe, und ein Klick auf „Dicht" löste dann den Befund
+   * „zu dicht für die Stufe normal" aus — über eine Einstellung, die der Kunde gerade
+   * selbst vorgenommen hat.
+   *
+   * Jetzt rechnet der Knopf auf die Zielzahl der Stufe (dichteZielFuer, dieselbe Funktion wie
+   * Prompt, Serverkorrektur und Prüfung) und setzt `formData.dichte` mit. `_dichteFaktor`
+   * bleibt als Zahl erhalten — alternativVorschlagen() rechnet die Basis damit zurück.
+   */
+  function setDichte(stufe, btn) {
     if (!_baseStueck || !currentPlan) return;
+    const basis = currentPlan.pflanzen.reduce((s, p, i) =>
+      p.rolle === 'Geophyt' ? s : s + (_baseStueck[i] || 0), 0);
+    const ziel = (typeof window.dichteZielFuer === 'function')
+      ? window.dichteZielFuer(formData.gartenflaeche, stufe) : null;
+    const factor = (ziel && basis > 0) ? ziel / basis
+                 : (stufe === 'locker' ? 0.6 : stufe === 'dicht' ? 1.5 : 1);   // ohne Fläche: wie bisher
     _dichteFaktor = factor;
+    formData.dichte = stufe;
     document.querySelectorAll('.dichte-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     currentPlan.pflanzen.forEach((p, i) => {
@@ -4435,7 +4462,11 @@ __PLAN_PRUEFEN_JS__
       _baseStueck = plan.pflanzen.map(p => p.stueckzahl);
       _dichteFaktor = 1;
     }
-    const aktiverIndex = _dichteFaktor < 1 ? 0 : _dichteFaktor > 1 ? 2 : 1;
+    /* Der aktive Knopf folgt der gewählten STUFE, nicht mehr dem Faktor. Seit die Knöpfe auf
+     * eine Zielzahl rechnen, kann der Faktor auch bei „normal" über oder unter 1 liegen —
+     * etwa wenn das Modell zu dünn geplant hatte und der Server nachgezogen hat. Dann wäre
+     * der falsche Knopf markiert gewesen. */
+    const aktiverIndex = { locker: 0, normal: 1, dicht: 2 }[String(formData.dichte || 'normal')] ?? 1;
     document.querySelectorAll('.dichte-btn').forEach((b,i) => b.classList.toggle('active', i===aktiverIndex));
 
     document.getElementById('ergebnis-subtitle').textContent =

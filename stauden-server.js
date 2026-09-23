@@ -19,7 +19,8 @@ const { giftigkeit, istKindersicher, kindersicherGrund } = require('./scripts/pf
  * ergeben. Die Grenzen gehen VOR dem Modelllauf als harte Vorgabe in den Prompt und werden
  * NACHHER geprueft — aus derselben Datei, damit ein Plan nicht an der Vorgabe scheitert,
  * der er gefolgt ist. lbAusschluss() filtert ausserdem schon die Kandidatenliste. */
-const { planPruefen, lbAusschluss, maxArtenFuer, maxHoeheFuer, kanteFuer } = require('./scripts/plan-pruefen');
+const { planPruefen, lbAusschluss, maxArtenFuer, maxHoeheFuer, kanteFuer,
+        dichteStufe, dichteStufeName, dichteZielFuer } = require('./scripts/plan-pruefen');
 /* Preise als Spanne statt als Betrag. Dieselbe Datei wird beim Ausliefern von
  * stauden-portal.html in die Seite eingesetzt (__PREIS_SPANNE_JS__) — der Browser rechnet
  * die Plansumme nach jedem Dichte-Klick neu und muss dabei dieselbe Spanne bilden. */
@@ -1280,8 +1281,10 @@ function buildNotplan({ kandidaten, geophytenKandidaten, geophyten, gartenflaech
     return { p, rolle, n: Math.max(1, n) };
   });
 
-  const ppm2 = dichte === 'locker' ? 2.5 : dichte === 'dicht' ? 7 : 4;
-  const ziel = Math.round(flaeche * ppm2);
+  /* Dieselbe Ableitung wie im Prompt und in der Schlusspruefung. Hier stand bis zum
+   * 23.09.2026 eine zweite Kopie der Tabelle (2,5 / 4 / 7) — der Notplan ist ein eigener
+   * Ausgabepfad, und zwei Tabellen laufen frueher oder spaeter auseinander. */
+  const ziel = dichteZielFuer(flaeche, dichte);
   const summe = roh.reduce((s, r) => s + r.n, 0);
   const faktor = summe > 0 ? ziel / summe : 1;
 
@@ -2257,12 +2260,19 @@ app.post('/api/plan', planHartLimiter, planLimiter, async (req, res) => {
 ENDHÖHE: Keine Art über ${maxHoehe} cm Endhöhe. Die kürzeste Beetkante ${kanteGemessen ? 'ist' : 'liegt bei'} rund ${beetKante.toFixed(1)} m; was höher wird, erschlägt die Fläche optisch.`
     : '';
 
+  /* Die Zahlen kommen aus scripts/plan-pruefen.js — dieselben, mit denen hinterher geprüft
+   * und, falls nötig, korrigiert wird. Standen sie hier ein zweites Mal, würde der Plan
+   * irgendwann genau an der Vorgabe scheitern, der er gefolgt ist. */
+  const dichteZiel = dichteZielFuer(flaecheGeprueft, dichte);
   const dichteAnweisung = (() => {
-    const ppm2 = dichte === 'locker' ? 2.5 : dichte === 'dicht' ? 7 : 4;
-    const ziel = Math.round(gartenflaeche * ppm2);
-    if (dichte === 'locker') return `Pflanzdichte: locker (2–3 Pflanzen/m²). Gesamtziel ca. ${ziel} Pflanzen für ${gartenflaeche} m². Großzügige Abstände, etwas offener Boden sichtbar.`;
-    if (dichte === 'dicht') return `Pflanzdichte: dicht (6–8 Pflanzen/m²). Gesamtziel ca. ${ziel} Pflanzen für ${gartenflaeche} m². Lückenlose Flächendeckung, kein freier Boden.`;
-    return `Pflanzdichte: normal (3–5 Pflanzen/m²). Gesamtziel ca. ${ziel} Pflanzen für ${gartenflaeche} m². Gute Flächendeckung mit natürlicher Wirkung.`;
+    const st = dichteStufe(dichte);
+    const name = dichteStufeName(dichte);
+    const zusatz = name === 'locker' ? 'Großzügige Abstände, etwas offener Boden sichtbar.'
+                 : name === 'dicht'  ? 'Lückenlose Flächendeckung, kein freier Boden.'
+                 : 'Gute Flächendeckung mit natürlicher Wirkung.';
+    return `Pflanzdichte: ${name} (${st.min}–${st.max} Pflanzen/m²). GESAMTZAHL: ${dichteZiel} Pflanzen `
+      + `für ${gartenflaeche} m² — das ist die Summe aller Stückzahlen, nicht die Artenzahl. `
+      + `Bei wenigen Arten heißt das entsprechend große Gruppen je Art. ${zusatz}`;
   })();
 
   const klimaregion = getKlimaregion(plz);
@@ -2525,6 +2535,52 @@ JSON-Format:
         }
       }
 
+      /*
+       * PFLANZDICHTE DETERMINISTISCH NACHZIEHEN — dieselbe Begründung wie bei der
+       * Budget-Kappung darunter: Das Modell hält die Vorgabe von sich aus nicht ein.
+       *
+       * GEMESSEN AM 23.09.2026 über den Livebetrieb, Stufe „normal", Ziel 4 Pflanzen je m²:
+       *     2,56 m² → +30 %      10 m² →  -5 %      40 m² → -19 %
+       *        5 m² → +20 %      20 m² → -12 %      80 m² → -64 %
+       * Auf kleinen Beeten trifft das Modell die Zahl, auf grossen bricht sie weg: Es wählt
+       * je Art eine „vernünftig aussehende" Stückzahl von 15 bis 25, unabhängig davon, wie
+       * viel Fläche zu füllen ist. Auf 80 m² kamen 116 Pflanzen statt 320 — 1,4 je m², und
+       * die Stufe „dicht" änderte daran fast nichts (2,3 statt 7). Ein Beet mit 1,4 Pflanzen
+       * je m² steht drei Jahre offen und verkrautet; das ist der Mangel, den eine
+       * Gärtnerei als Erstes sieht.
+       *
+       * SKALIERT WIRD, NICHT NEU GEWÄHLT: Die Verhältnisse zwischen den Arten bleiben, wie
+       * das Modell sie gesetzt hat — es ist dieselbe Rechnung, die der Dichteschalter im
+       * Browser macht. Arten hinzuzufügen oder zu streichen wäre ein Eingriff in die
+       * Gestaltung hinter dem Rücken des Kunden.
+       *
+       * Nur AUSSERHALB des Bandes der gewählten Stufe. Wer „locker" wählt und 2,5 bekommt,
+       * hat genau das bestellt.
+       *
+       * VOR der Budget-Kappung, damit das Budget die letzte Instanz bleibt: Wer 300 € für
+       * 80 m² angibt, bekommt ein dünnes Beet und den weichen Dichtebefund dazu — das ist
+       * dann wahr und nicht zu beheben.
+       */
+      const dichteStauden = () => plan.pflanzen.filter(p => (p.rolle || '') !== 'Geophyt');
+      if (dichteZiel && Array.isArray(plan.pflanzen) && plan.pflanzen.length) {
+        const st = dichteStufe(dichte);
+        const ist = dichteStauden().reduce((s, p) => s + (Number(p.stueckzahl) || 0), 0);
+        const jeM2 = ist / flaecheGeprueft;
+        if (ist > 0 && (jeM2 < st.min || jeM2 > st.max)) {
+          const faktor = dichteZiel / ist;
+          for (const p of dichteStauden()) {
+            const roh = Math.round((Number(p.stueckzahl) || 1) * faktor);
+            // Leitstauden behalten ihre Mindestmenge von 3 (Profipraxis, dieselbe Regel wie
+            // im Browser nach einem Tausch). Unter 1 geht nichts.
+            p.stueckzahl = Math.max((p.rolle || '') === 'Leitstaude' ? 3 : 1, roh);
+          }
+          const neu = dichteStauden().reduce((s, p) => s + (Number(p.stueckzahl) || 0), 0);
+          console.warn('dichte nachgezogen: %d → %d Pflanzen auf %s m² (%s je m² → %s, Stufe %s, Ziel %d)',
+            ist, neu, flaecheGeprueft, jeM2.toFixed(1), (neu / flaecheGeprueft).toFixed(1),
+            dichteStufeName(dichte), dichteZiel);
+        }
+      }
+
       // Gesamtkosten serverseitig aus (DB-)Preisen × Stückzahl — konsistent mit dem Frontend,
       // kein frei erfundener Modell-String mehr.
       const gesamt = () => plan.pflanzen.reduce((s, p) => s + (p.preis_stueck_eur || 0) * (p.stueckzahl || 1), 0);
@@ -2617,7 +2673,7 @@ JSON-Format:
               lebensbereich: f.lebensbereich || null,
             };
           }) },
-        { gartenflaeche: flaecheGeprueft, beetLaenge, beetBreite }
+        { gartenflaeche: flaecheGeprueft, beetLaenge, beetBreite, dichte }
       );
     } catch (e) {
       console.warn('plan pruefung nicht gelaufen:', e.message);
@@ -3085,6 +3141,30 @@ app.post('/api/anfrage', anfrageLimiter, async (req, res) => {
       ).join('\n')
     : '  — keine Pflanzenliste vorhanden';
 
+  /*
+   * DIE HINWEISE REISEN MIT. Bis zum 23.09.2026 blieben sie auf dem Bildschirm zurück.
+   *
+   * Der Plan liegt mit `_hinweise` im gespeicherten ki_plan — es hätte nur ausgelesen werden
+   * müssen. Der Betreiber bekam also einen Lead mit einem Plan, in dem zehn Arten auf 2,6 m²
+   * stehen, ohne den Satz, der das einordnet, und sagte auf dieser Grundlage etwas zu. Die
+   * Mail ist genau der Weg, auf dem der Plan zu einem Menschen gelangt, der danach handelt —
+   * dasselbe Argument, aus dem die Giftwarnung ins PDF gezogen wurde.
+   *
+   * Die BESTÄTIGUNGSMAIL an den Kunden bekommt nur die fachlichen Befunde (`pruefung`). Die
+   * Herkunft des Plans und die gelockerten Angaben standen bereits auf dem Bildschirm, als er
+   * ihn abgeschickt hat; sie hier zu wiederholen macht die Mail länger, nicht ehrlicher.
+   */
+  const planHinweise = Array.isArray(ki_plan?._hinweise) ? ki_plan._hinweise : [];
+  const hinweisBlock = (liste, ueberschrift) => liste.length
+    ? `\n${ueberschrift}\n` + liste.map(h =>
+        `  • ${h.art === 'pruefung' ? 'Fachlicher Hinweis: ' : ''}${String(h.text || '').replace(/\s+/g, ' ')}`
+      ).join('\n') + '\n'
+    : '';
+  const hinweiseFuerBetreiber = hinweisBlock(planHinweise,
+    'Hinweise, die der Planer zu diesem Plan ausgegeben hat:');
+  const hinweiseFuerKunde = hinweisBlock(planHinweise.filter(h => h.art === 'pruefung'),
+    'Fachliche Hinweise zu Ihrem Plan (standen auch auf der Ergebnisseite):');
+
   // Ein Empfänger, ein Zweck: Bis zum 23.09.2026 war dieser Text an eine Gärtnerei adressiert
   // und bat sie um ein Angebot; der Betreiber bekam denselben Wortlaut als Durchschlag. Die
   // Weiterleitung ist eingestellt, also ist der Text jetzt das, was er tatsächlich ist — die
@@ -3112,7 +3192,7 @@ Gartenparameter:
 
 Gewünschte Pflanzen:
 ${pflanzenListe}
-
+${hinweiseFuerBetreiber}
 Anmerkungen:
   ${anmerkungen || '—'}
 
@@ -3126,7 +3206,7 @@ vielen Dank für Ihre Anfrage! Wir haben Ihren Bepflanzungsplan erhalten und mel
 
 Ihr Bepflanzungsplan umfasst:
 ${pflanzenListe}
-
+${hinweiseFuerKunde}
 Die Preise im Planer sind unsere Schätzung und kein Angebot.
 
 Freundliche Grüße
@@ -3629,7 +3709,20 @@ app.get('/admin/anfragen', (req, res) => {
          * Zahl, die im Plan steht. Die Spanne gilt fuer das, was der Kunde sieht. */
         const kosten = typeof plan.gesamtkosten_geschaetzt === 'number'
           ? Math.round(plan.gesamtkosten_geschaetzt) + ' €' : (plan.gesamtkosten_geschaetzt || '');
-        planInfo = esc(`${n} Pflanzen${kosten ? ' · ' + kosten : ''}`);
+        /* DIE BEFUNDE GEHÖREN IN DIESE ZEILE. Hier entscheidet jemand, was er dem Kunden
+         * antwortet — „10 Pflanzen · 240 €" sagt nicht, dass zehn Arten auf 2,6 m² stehen.
+         * Der Befund liegt im gespeicherten ki_plan und musste nur gelesen werden. Nur die
+         * harten (`pruefung`): Die Herkunft des Plans und gelockerte Angaben sind fuer die
+         * Antwort an den Kunden zweitrangig, ein fachlicher Mangel nicht. */
+        const befunde = (Array.isArray(plan._hinweise) ? plan._hinweise : [])
+          .filter(h => h && h.art === 'pruefung');
+        const marke = befunde.length
+          ? ` <span title="${esc(befunde.map(h => h.text).join(' — '))}" `
+            + `style="background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:6px;`
+            + `padding:1px 6px;font-size:.75rem;white-space:nowrap">⚠ ${befunde.length} Befund`
+            + `${befunde.length === 1 ? '' : 'e'}</span>`
+          : '';
+        planInfo = esc(`${n} Pflanzen${kosten ? ' · ' + kosten : ''}`) + marke;
       } catch { planInfo = '(Plan nicht lesbar)'; }
     }
     const garten = [a.gartenflaeche ? a.gartenflaeche + ' m²' : '', a.licht, a.stil].filter(Boolean).map(esc).join(' · ');
