@@ -5,6 +5,25 @@
 
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 const Database = require('better-sqlite3');
+/*
+ * DIE VOKABELLISTE KOMMT AUS scripts/lebensbereiche.js, sie steht nicht mehr hier.
+ *
+ * Bis zum 23.09.2026 stand sie als Beispielaufzählung im Prompt — und in ihr fehlten fünf
+ * der zehn Bereiche: Gehölz, Beet, Steinanlage, Teichrand und Wasserfläche. Die Verteilung
+ * der erzeugten Spalte ist deshalb das Abbild dieser Liste und nicht das der Pflanzen:
+ * Gehölzrand 448 Zeilen, aber Gehölz 18; Quellflur 62, aber Teichrand 2. Eine externe
+ * Stichprobe über 35 Arten fand 17 von 20 Beanstandungen an genau dieser Stelle — der
+ * fehlende Bereich war keiner, den das Modell übersehen hat, sondern einer, den es nicht
+ * schreiben konnte. Wurmfarn und Königsfarn stehen auf „Gehölzrand,Waldsaum", weil „Gehölz"
+ * nie zur Auswahl stand.
+ *
+ * Zwei Vokabeln standen darin, die es im Zielsystem nicht gibt: „Waldsaum" (der Saum fällt
+ * unter Gehölzrand — trotzdem 184 Zeilen) und „Staudenheide" (0 Zeilen, das Modell hat sie
+ * zu Recht ignoriert). Und „bis zu 2" war ein Formatzwang: Hansen/Stahl vergibt regelmässig
+ * drei Bereiche, 672 von 711 Zeilen tragen genau zwei.
+ */
+const { promptVokabular } = require('./lebensbereiche');
+const LB_VOKABULAR = promptVokabular();
 const { OpenAI } = require('openai');
 const path = require('path');
 
@@ -72,7 +91,7 @@ Wuchs: ${p.wuchs || '?'}
 
 Felder die du befüllen sollst:
 {
-  "lebensbereich": "<Hansen & Stahl Lebensbereich(e), z.B. 'Freifläche', 'Gehölzrand', 'Waldsaum', 'Quellflur', 'Steppenheide', 'Staudenheide', 'Offener Rohboden' — bis zu 2 kommagetrennt>",
+  "lebensbereich": "<Lebensbereich(e) nach Hansen & Stahl. AUSSCHLIESSLICH diese Begriffe, bis zu 3 kommagetrennt, den vorwiegenden zuerst: ${LB_VOKABULAR}>",
   "breite_cm_max": <typische Ausbreitung in cm als Zahl, z.B. 60>,
   "rolle_empfehlung": "<'Leitstaude' wenn strukturprägend und auffällig (1–3 je Beet), 'Begleitstaude' wenn ergänzend und dekorativ, 'Füllstaude' wenn flächendeckend oder füllend>",
   "kombinationspartner": "<3–5 botanische Namen von gut passenden Staudenpartnern, kommagetrennt>",
