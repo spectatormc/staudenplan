@@ -12,17 +12,18 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const INSERT = db.prepare(`INSERT INTO wissen (titel, inhalt, kategorie, quelle, datum) VALUES (?, ?, ?, ?, ?)`);
 const HEUTE = new Date().toISOString().split('T')[0];
 
+/*
+ * PRAIRIE UND JAPANISCHER GARTEN STEHEN NICHT MEHR HIER, und das ist Absicht.
+ *
+ * Beide wurden am 23.09.2026 aus dem Planer genommen: Die Datenbank fuehrt fuer keine der
+ * 711 Zeilen eines der beiden Schlagwoerter, die Stilauswahl bot also Stile an, die die Daten
+ * nie bedienen konnten. Was dieses Skript in `wissen` schreibt, wird veroeffentlicht —
+ * /ratgeber listet ausnahmslos alle Zeilen, /sitemap.xml meldet sie an Google. Ein erneuter
+ * Lauf haette die beiden Ratgeber zurueckgebracht, und der Planer weist denselben Stil mit
+ * HTTP 400 ab. Wer sie wieder aufnimmt, traegt sie zuerst in STIL_SCHLAGWORT ein und sorgt
+ * fuer Pflanzen, die das Schlagwort tragen.
+ */
 const THEMEN = [
-  {
-    titel: 'Prairie-Stil — Naturalistische Pflanzenverwendung nach Piet Oudolf',
-    kategorie: 'Stilpraegend',
-    keywords: 'Prairie-Stil Garten, Piet Oudolf Deutschland, naturalistische Staudenverwendung, New Wave Planting'
-  },
-  {
-    titel: 'Japanischer Garten — Stille und Harmonie mit Stauden',
-    kategorie: 'Stilpraegend',
-    keywords: 'japanischer Garten Stauden, Zen-Garten Stauden, japanischer Gartenstil Deutschland, asiatischer Garten'
-  },
   {
     titel: 'Mediterraner Garten — Hitzestabile Stauden für Südeuropa-Flair',
     kategorie: 'Stilpraegend',

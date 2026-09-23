@@ -60,7 +60,12 @@ const FEUCHT_NASS = new Set(['feucht', 'nass']);
 
 /* Lebensbereiche nach Hansen/Stahl, die nicht in dieselbe Pflanzung gehören. Die Paarung ist
  * bewusst knapp gehalten: nur was sich im Wasserhaushalt ausschliesst. Gehölzrand und Waldsaum
- * etwa vertragen sich mit fast allem und stehen deshalb nicht drin. */
+ * etwa vertragen sich mit fast allem und stehen deshalb nicht drin.
+ *
+ * DIE SPALTENFOLGE TRÄGT BEDEUTUNG: links der trockene Pol, rechts der nasse. Daraus leitet
+ * lbAusschluss() ab, welcher Pol auf einem Standort nichts zu suchen hat — der Planer filtert
+ * die Kandidaten damit VORHER, diese Datei prüft NACHHER. Wer hier ein Paar ergänzt, ändert
+ * beides zugleich; eine zweite Liste im Server gibt es bewusst nicht. */
 const LB_UNVERTRAEGLICH = [
   ['steppenheide', 'quellflur'],
   ['steppenheide', 'wasserfläche'],
@@ -68,6 +73,70 @@ const LB_UNVERTRAEGLICH = [
   ['offener rohboden', 'quellflur'],
   ['offener rohboden', 'wasserfläche'],
 ];
+
+/* Die beiden Pole, aus der Tabelle abgeleitet statt ein zweites Mal geschrieben. */
+const LB_POL_TROCKEN = [...new Set(LB_UNVERTRAEGLICH.map(([a]) => a))];
+const LB_POL_NASS    = [...new Set(LB_UNVERTRAEGLICH.map(([, b]) => b))];
+
+/**
+ * Welche Lebensbereiche gehören auf einen Standort dieser Feuchte NICHT?
+ *
+ * Es wird immer nur der GEGENPOL ausgeschlossen, nie positiv gefiltert. Positiv zu filtern
+ * ("nur Steppenheide") würde die Kandidatenliste zusammenschnurren lassen, bis der Planer in
+ * den Ausweichpfad fällt — und damit genau den Schaden anrichten, den er verhindern soll.
+ * Der Ausschluss dagegen nimmt höchstens den kleineren der beiden Pole weg und macht es
+ * unmöglich, dass beide zugleich im Topf liegen.
+ *
+ * Wechselfeucht und normal zählen zur trockenen Seite: Ein normales Gartenbeet ist keine
+ * Quellflur, aber Steppenheide-Arten stehen dort regelmässig und zu Recht.
+ *
+ * @param {string} feuchtigkeit Wert aus getFeuchtigkeit(): trocken|normal|wechselfeucht|feucht|nass
+ * @returns {string[]} kleingeschriebene Lebensbereiche, die auszuschliessen sind
+ */
+function lbAusschluss(feuchtigkeit) {
+  const f = String(feuchtigkeit || '').toLowerCase();
+  return (f === 'feucht' || f === 'nass') ? [...LB_POL_TROCKEN] : [...LB_POL_NASS];
+}
+
+/* Die beiden Grenzen, die sich allein aus der Beetfläche ergeben — als Funktion, nicht als
+ * Rechnung mitten im Prüfcode. Der Planer in stauden-server.js stellt dem Modell damit VORHER
+ * dieselben Zahlen als harte Vorgabe hin, die hier NACHHER geprüft werden. Stünde die Rechnung
+ * zweimal da, wäre der Plan irgendwann genau an der Stelle ungültig, an der er der Vorgabe folgt.
+ * Bis zum 23.09.2026 war das tatsächlich so: Die ROLLENPFLICHT im Prompt verlangte mindestens
+ * sechs Arten, auf 2,56 m² tragen aber nur vier — jeder kleine Plan war damit zwangsläufig
+ * regelwidrig. */
+function maxArtenFuer(flaeche) {
+  const f = zahl(flaeche);
+  return f ? Math.max(3, Math.floor(f / FLAECHE_JE_ART)) : null;
+}
+
+/**
+ * Die kürzeste Beetkante in Metern — gemessen, wenn es geht, sonst geschätzt.
+ *
+ * Das Formular kennt zwei Modi: entweder eine Fläche in m², oder Länge × Breite. Im zweiten
+ * Fall liegt die echte kurze Kante vor, und dann ist jede Schätzung daneben: Bei 4,0 × 0,64 m
+ * (2,56 m²) ergibt die Wurzel 1,6 m — mehr als das Doppelte der echten Kante, und der Kunde
+ * las diese 1,6 m als Tatsache über SEIN Beet. `gemessen` unterscheidet die beiden Fälle,
+ * damit der Befundtext die Zahl nur nennt, wenn sie vom Kunden stammt.
+ */
+function kanteFuer(anfrage = {}) {
+  const l = zahl(anfrage.beetLaenge), b = zahl(anfrage.beetBreite);
+  if (l > 0 && b > 0) return { kante: Math.min(l, b), gemessen: true };
+  const f = zahl(anfrage.gartenflaeche);
+  return { kante: f > 0 ? Math.sqrt(f) : null, gemessen: false };
+}
+
+/* Zweites Argument ist die kurze Kante in Metern. Fehlt sie, wird aus der Fläche ein Quadrat
+ * angenommen. Der Planer MUSS dieselbe Kante einsetzen, mit der hier geprüft wird — sonst
+ * filtert er nach 1,6 m und beanstandet nach 0,64 m. */
+function maxHoeheFuer(flaeche, kante) {
+  const k = zahl(kante) || kanteFuer({ gartenflaeche: flaeche }).kante;
+  return k ? Math.round(k * 100 * HOEHE_ZU_KANTE) : null;
+}
+
+/* Deutsches Dezimalkomma. Die Befundtexte gehen seit 23.09.2026 an den Kunden — „2.6 m²“
+ * liest sich dort wie ein Tippfehler, und „0.64 m“ wie eine Zahl aus einer Tabelle. */
+const mZahl = (n, stellen = 1) => n.toFixed(stellen).replace(/0$/, '').replace(/\.$/, '').replace('.', ',');
 
 const teile = feld => String(feld || '').toLowerCase().split(/[|,]/).map(s => s.trim()).filter(Boolean);
 const zahl = w => { const n = Number(w); return Number.isFinite(n) ? n : null; };
@@ -95,24 +164,28 @@ function planPruefen(plan, anfrage = {}) {
 
   // ── 1. Artenzahl zur Fläche ────────────────────────────────────────────────────────────
   if (flaeche) {
-    const maxArten = Math.max(3, Math.floor(flaeche / FLAECHE_JE_ART));
+    const maxArten = maxArtenFuer(flaeche);
     if (stauden.length > maxArten) {
       melde('artenzahl', 'hart',
-        `${stauden.length} Arten auf ${flaeche.toFixed(1)} m². Auf dieser Fläche tragen höchstens `
+        `${stauden.length} Arten auf ${mZahl(flaeche)} m². Auf dieser Fläche tragen höchstens `
         + `${maxArten}, wenn jede Art als Gruppe wirken soll (rund ${FLAECHE_JE_ART} m² je Art). `
         + `Mehr Arten ergeben einen Flickenteppich statt einer Pflanzung.`);
     }
   }
 
   // ── 2. Endhöhe zur Beetkante ───────────────────────────────────────────────────────────
-  if (flaeche) {
-    const kante = Math.sqrt(flaeche);
-    const maxHoehe = Math.round(kante * 100 * HOEHE_ZU_KANTE);
+  // Die Kante wird nur dann im Text genannt, wenn der Kunde sie selbst eingegeben hat. Eine
+  // aus der Fläche gewurzelte Kante ist eine Annahme, und dieser Text behauptet sonst eine
+  // Tatsache über ein Beet, das der Kunde anders kennt. Der Satz trägt auch ohne sie.
+  const { kante, gemessen } = kanteFuer(anfrage);
+  if (flaeche || kante) {
+    const maxHoehe = maxHoeheFuer(flaeche, kante);
     const zuHoch = stauden.filter(p => (zahl(p.hoehe_cm_max) || 0) > maxHoehe);
     if (zuHoch.length) {
+      const wo = gemessen ? `ein Beet mit ${mZahl(kante, 2)} m kurzer Kante`
+               : `ein Beet von ${mZahl(flaeche)} m²`;
       melde('endhoehe', 'hart',
-        `${zuHoch.length} Art(en) werden höher als ${maxHoehe} cm und erschlagen ein Beet von `
-        + `${flaeche.toFixed(1)} m² (Kante rund ${kante.toFixed(1)} m): `
+        `${zuHoch.length} Art(en) werden höher als ${maxHoehe} cm und erschlagen ${wo}: `
         + zuHoch.map(p => `${p.name_deutsch || p.name_botanisch} (${p.hoehe_cm_max} cm)`).join(', ') + '.');
     }
   }
@@ -122,11 +195,11 @@ function planPruefen(plan, anfrage = {}) {
     const dichte = gesamtStueck / flaeche;
     if (dichte < DICHTE_MIN) {
       melde('dichte', 'weich',
-        `${dichte.toFixed(1)} Pflanzen je m² (${gesamtStueck} auf ${flaeche.toFixed(1)} m²). `
+        `${mZahl(dichte)} Pflanzen je m² (${gesamtStueck} auf ${mZahl(flaeche)} m²). `
         + `Unter ${DICHTE_MIN} bleibt der Boden jahrelang offen und verkrautet.`);
     } else if (dichte > DICHTE_MAX) {
       melde('dichte', 'weich',
-        `${dichte.toFixed(1)} Pflanzen je m². Über ${DICHTE_MAX} stehen die Stauden sich im Weg.`);
+        `${mZahl(dichte)} Pflanzen je m². Über ${DICHTE_MAX} stehen die Stauden sich im Weg.`);
     }
   }
 
@@ -169,7 +242,7 @@ function planPruefen(plan, anfrage = {}) {
  * Eine Prüfung, die den Anlassfall nicht findet, ist keine.
  *   node scripts/plan-pruefen.js --selbsttest
  */
-if (require.main === module && process.argv.includes('--selbsttest')) {
+if (typeof require !== 'undefined' && require.main === module && process.argv.includes('--selbsttest')) {
   let fehler = 0;
   const ok = (bed, was) => { console.log((bed ? 'ok    ' : 'FEHLER') + '  ' + was); if (!bed) fehler++; };
 
@@ -219,6 +292,29 @@ if (require.main === module && process.argv.includes('--selbsttest')) {
   ok(rGut.befunde.length === 0, `ein stimmiger Plan meldet nichts (gemeldet: ${rGut.befunde.length})`);
 
   ok(planPruefen({ pflanzen: [] }, {}).hart === 1, 'ein leerer Plan ist ein harter Befund');
+
+  // Die abgeleiteten Grenzen. Sie gehen VOR dem Modelllauf in den Prompt und MUESSEN
+  // dieselbe Zahl liefern wie die Pruefung, sonst folgt der Plan einer Vorgabe, die ihn
+  // anschliessend durchfallen laesst.
+  ok(maxArtenFuer(2.56) === 4, `2,56 m² tragen 4 Arten (${maxArtenFuer(2.56)})`);
+  ok(maxArtenFuer(80) === 145, `80 m² tragen 145 Arten (${maxArtenFuer(80)})`);
+  ok(maxArtenFuer(0.5) === 3, 'unter der Schwelle bleiben 3 Arten das Minimum');
+  ok(maxArtenFuer(null) === null && maxHoeheFuer(0) === null, 'ohne Flaeche gibt es keine Grenze, keine geratene');
+  ok(maxHoeheFuer(2.56) === 120, `2,56 m² erlauben 120 cm (${maxHoeheFuer(2.56)})`);
+
+  // Der Lebensbereich-Ausschluss: immer nur der Gegenpol, nie eine positive Auswahl.
+  ok(lbAusschluss('nass').includes('steppenheide'), 'nasser Standort schliesst Steppenheide aus');
+  ok(lbAusschluss('feucht').includes('offener rohboden'), 'feuchter Standort schliesst offenen Rohboden aus');
+  ok(lbAusschluss('trocken').includes('quellflur') && lbAusschluss('trocken').includes('teichrand'),
+     'trockener Standort schliesst Quellflur und Teichrand aus');
+  ok(lbAusschluss('normal').includes('quellflur'), 'normaler Boden ist keine Quellflur');
+  ok(!lbAusschluss('normal').includes('steppenheide'), 'normaler Boden behaelt die Steppenheide — sonst faellt der Topf zusammen');
+  // Die Probe aufs Exempel: Wer den Gegenpol vorher wegnimmt, kann die Regel nicht mehr verletzen.
+  for (const f of ['trocken', 'normal', 'wechselfeucht', 'feucht', 'nass']) {
+    const weg = new Set(lbAusschluss(f));
+    ok(LB_UNVERTRAEGLICH.every(([a, b]) => weg.has(a) || weg.has(b)),
+       `Feuchte "${f}": jedes unvertraegliche Paar ist aufgetrennt`);
+  }
   ok(planPruefen({ pflanzen: [{ name_deutsch: 'X', stueckzahl: 3 }] }, {}).befunde.length === 0,
      'ohne Flaechenangabe werden die flaechenabhaengigen Regeln uebersprungen statt geraten');
 
@@ -226,4 +322,15 @@ if (require.main === module && process.argv.includes('--selbsttest')) {
   process.exit(fehler ? 1 : 0);
 }
 
-module.exports = { planPruefen, GRUPPE_MIN, FLAECHE_JE_ART, HOEHE_ZU_KANTE, DICHTE_MIN, DICHTE_MAX };
+/* Laeuft in BEIDEN Umgebungen — wie scripts/preis-spanne.js und aus demselben Grund: Der
+ * Browser aendert den Plan nach der Antwort noch (Alternative tauschen, Dichte umstellen) und
+ * muss die Befunde dann neu bilden. Eine zweite, abgetippte Fassung der Schwellen wuerde
+ * frueher oder spaeter von dieser hier abweichen, und dann behauptete der gelbe Kasten etwas,
+ * das der Server nie gerechnet hat. stauden-server.js setzt den Quelltext dieser Datei beim
+ * Ausliefern von stauden-portal.html an der dafuer vorgesehenen Stelle ein, in eine IIFE
+ * gekapselt.
+ * Deshalb sind die Zeile oben (require.main) und diese hier typgeprueft statt roh. */
+if (typeof module !== 'undefined' && module.exports) module.exports = {
+  planPruefen, lbAusschluss, maxArtenFuer, maxHoeheFuer, kanteFuer,
+  GRUPPE_MIN, FLAECHE_JE_ART, HOEHE_ZU_KANTE, DICHTE_MIN, DICHTE_MAX,
+  LB_UNVERTRAEGLICH, LB_POL_TROCKEN, LB_POL_NASS };

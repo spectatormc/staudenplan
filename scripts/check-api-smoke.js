@@ -6,14 +6,19 @@ const projectRoot = path.resolve(__dirname, '..');
 const port = Number(process.env.SMOKE_PORT || 3310);
 const baseUrl = `http://127.0.0.1:${port}`;
 
-function request(route) {
+function request(route, body) {
   return new Promise((resolve, reject) => {
-    const req = http.request(baseUrl + route, { method: 'GET' }, (res) => {
-      let body = '';
-      res.on('data', (chunk) => (body += chunk.toString()));
-      res.on('end', () => resolve({ status: res.statusCode || 0, body }));
+    const daten = body ? Buffer.from(JSON.stringify(body)) : null;
+    const req = http.request(baseUrl + route, {
+      method: daten ? 'POST' : 'GET',
+      headers: daten ? { 'Content-Type': 'application/json', 'Content-Length': daten.length } : {},
+    }, (res) => {
+      let text = '';
+      res.on('data', (chunk) => (text += chunk.toString()));
+      res.on('end', () => resolve({ status: res.statusCode || 0, body: text }));
     });
     req.on('error', reject);
+    if (daten) req.write(daten);
     req.end();
   });
 }
@@ -31,9 +36,13 @@ async function waitForServer(timeoutMs = 30000) {
 }
 
 (async () => {
+  /* Der Schluessel wird bewusst unbrauchbar gemacht. Dann faellt /api/plan in den Notplan,
+   * und genau der ist hier zu pruefen: Er ist der Ausgabepfad ohne Modell, er kostet nichts,
+   * und er ist reproduzierbar. Mit echtem Schluessel wuerde dieser Lauf Geld ausgeben und
+   * bei jedem Durchgang etwas anderes pruefen. */
   const child = spawn('node', ['stauden-server.js'], {
     cwd: projectRoot,
-    env: { ...process.env, PORT: String(port) },
+    env: { ...process.env, PORT: String(port), OPENAI_API_KEY: 'sk-smoke-ungueltig-erzwingt-notplan' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
@@ -67,6 +76,41 @@ async function waitForServer(timeoutMs = 30000) {
         if (!ok) errors += 1;
       } catch (err) {
         console.log(`FAIL ${route} -> request error`);
+        errors += 1;
+      }
+    }
+
+    /*
+     * KLEINE BEETE — der Fall, an dem die Endhoehengrenze am 23.09.2026 das Auffangnetz
+     * zerrissen hat. maxHoeheFuer() liegt unter 1,78 m² unter 100 cm, notplanRolle() macht
+     * eine Leitstaude an >= 100 cm fest: Die gefilterte Kandidatenliste hatte dann KEINE
+     * Leitstaude mehr, buildNotplan() gab null zurueck, und der Kunde bekam statt eines
+     * Plans HTTP 502. Gemessen damals: 1,0 und 1,5 m² scheiterten, ab 2,0 m² ging es.
+     *
+     * Geprueft wird deshalb nicht nur der Status, sondern die ROLLENABDECKUNG — eine
+     * Stueckzahlprobe haette den Fehler nicht gefunden, weil genug Kandidaten da waren,
+     * nur keine einzige hohe.
+     */
+    console.log('--- Notplan auf kleinen Beeten (Rollenabdeckung) ---');
+    for (const flaeche of [1.0, 1.5, 2.0]) {
+      try {
+        const res = await request('/api/plan', {
+          gartenflaeche: flaeche, licht: 'Vollsonne (6+ h)', boden: 'Lehmig / schwer',
+          stil: 'Naturgarten / Wildgarten', vielfalt: 'ausgewogen',
+        });
+        if (res.status !== 200) {
+          console.log(`FAIL /api/plan ${flaeche} m² -> ${res.status}`);
+          errors += 1;
+          continue;
+        }
+        const daten = JSON.parse(res.body);
+        const rollen = new Set((daten.plan && daten.plan.pflanzen || [])
+          .map(p => p.rolle).filter(r => r && r !== 'Geophyt'));
+        const vollstaendig = ['Leitstaude', 'Begleitstaude', 'Füllstaude'].every(r => rollen.has(r));
+        console.log(`${vollstaendig ? 'OK  ' : 'FAIL'} /api/plan ${flaeche} m² -> 200, Rollen: ${[...rollen].join(', ') || 'keine'}`);
+        if (!vollstaendig) errors += 1;
+      } catch (err) {
+        console.log(`FAIL /api/plan ${flaeche} m² -> ${err.message}`);
         errors += 1;
       }
     }

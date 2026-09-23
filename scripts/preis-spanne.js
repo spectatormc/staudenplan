@@ -57,16 +57,31 @@ function einzelSpanne(betrag) {
 }
 
 /**
- * Spanne für eine Summe. Gerundet wird in Zehnerschritten, ab 1.000 € in Fünfzigerschritten:
- * „ca. 330–430 €" ist eine Aussage, „ca. 1.237–1.556 €" wäre wieder Scheingenauigkeit.
+ * Spanne für eine Summe. Die Schrittweite wächst mit dem Betrag (siehe unten): „ca. 330–430 €"
+ * ist eine Aussage, „ca. 1.237–1.556 €" wäre wieder Scheingenauigkeit — und „ca. 30–60 €"
+ * für 45 € wäre keine mehr.
  */
 function summeSpanne(betrag) {
   const n = zahl(betrag);
   if (n === null) return null;
-  /* Die Schwelle lag zuerst bei 500 € und mit ihr ein Sprung: 499 € ergab 430–560,
-   * 500 € dagegen 400–600 — der groessere Betrag bekam die groebere Spanne. Bei 1000 €
-   * faellt der Wechsel nicht mehr auf, weil die Spanne dort ohnehin ueber 200 € breit ist. */
-  const schritt = n >= 1000 ? 50 : 10;
+  /* DIE SCHRITTWEITE FOLGT DEM BETRAG, sie steht nicht in einer Treppe.
+   *
+   * Feste Schwellen haben hier zweimal danebengelegen: Zuerst wechselte die Stufe bei 500 €,
+   * und 499 € bekam mit 430–560 eine engere Spanne als 500 € mit 400–600 — der groessere
+   * Betrag die groebere Aussage. Danach galt unter 1.000 € pauschal der Zehnerschritt, und
+   * eine Plansumme von 45 € wurde zu „ca. 30–60 €": 67 % breit, wo zwoelf Prozent gemeint
+   * sind. Kleine Plansummen sind bei kleinen Beeten der Normalfall (gemessen: 59,40 € und
+   * 98,50 €), und diese Zahl steht in Kopfzeile, Stueckliste, PDF und auf der geteilten Seite.
+   *
+   * Die Rundung nach aussen verbreitert die Spanne um hoechstens zwei Schritte. Damit die
+   * Gesamtbreite unter 35 % bleibt (2 × BREITE = 24 % plus Rundung), muss ein Schritt unter
+   * 5,5 % des Betrags liegen — genau das waehlt die Zeile unten, und zwar die groebste
+   * Stufe, die das noch einhaelt. Gedeckelt bei 50 €: „ca. 4.400–5.600 €" ist lesbar genug,
+   * und Hunderterschritte wuerden bei kleinen Plaenen nie greifen, aber gross aussehen.
+   * Der Selbsttest prueft seit 23.09.2026 die BREITE — dass der Betrag in der Spanne liegt,
+   * war die schwaechere Frage, die auch „ca. 0–1.000 €" bestanden haette. */
+  const STUFEN = [50, 25, 10, 5, 2, 1];
+  const schritt = STUFEN.find(st => st <= n * 0.055) || 1;
   const von = Math.max(schritt, abRunden(n * (1 - BREITE), schritt));
   const bis = Math.max(von + schritt, aufRunden(n * (1 + BREITE), schritt));
   const tausend = w => w.toLocaleString('de-DE');
@@ -75,7 +90,7 @@ function summeSpanne(betrag) {
 
 /* Selbsttest: node scripts/preis-spanne.js --selbsttest
  * Prueft die Eigenschaften, auf die sich die Aufrufer verlassen — nicht einzelne Wunschwerte. */
-if (require.main === module && process.argv.includes('--selbsttest')) {
+if (typeof require !== 'undefined' && require.main === module && process.argv.includes('--selbsttest')) {
   let fehler = 0;
   const ok = (bedingung, was) => { console.log((bedingung ? 'ok    ' : 'FEHLER') + '  ' + was); if (!bedingung) fehler++; };
 
@@ -84,9 +99,24 @@ if (require.main === module && process.argv.includes('--selbsttest')) {
     ok(s.von <= p && p <= s.bis, `${p} € liegt in der Spanne ${s.text}`);
     ok(s.bis > s.von, `${p} €: Spanne ist nicht leer (${s.text})`);
   }
-  for (const g of [45, 180, 380, 499, 500, 1240, 5000]) {
+  for (const g of [12, 45, 98.5, 180, 380, 499, 500, 1240, 5000]) {
     const s = summeSpanne(g);
     ok(s.von <= g && g <= s.bis, `${g} € liegt in der Summenspanne ${s.text}`);
+  }
+  /* DIE EIGENSCHAFT, AUF DIE SICH DIE AUFRUFER VERLASSEN, ist nicht „der Betrag liegt drin“
+   * — das erfüllt auch „ca. 0–1000 €“. Es ist die Breite. 0,35 statt 0,24 (= 2 × BREITE)
+   * lässt Raum für die Rundung nach aussen, die bei kleinen Beträgen relativ am meisten
+   * zulädt; mehr ist keine Spanne mehr, sondern eine Ausrede. */
+  const MAX_BREITE = 0.35;
+  for (const p of [2.2, 3.5, 6.9, 8, 12.4, 25, 99.9]) {
+    const s = einzelSpanne(p);
+    ok((s.bis - s.von) / p <= MAX_BREITE,
+       `${p} €: Spanne ${s.text} ist höchstens ${MAX_BREITE * 100} % breit (${(((s.bis - s.von) / p) * 100).toFixed(0)} %)`);
+  }
+  for (const g of [12, 45, 98.5, 180, 380, 499, 500, 1240, 5000]) {
+    const s = summeSpanne(g);
+    ok((s.bis - s.von) / g <= MAX_BREITE,
+       `${g} €: Summenspanne ${s.text} ist höchstens ${MAX_BREITE * 100} % breit (${(((s.bis - s.von) / g) * 100).toFixed(0)} %)`);
   }
   ok(einzelSpanne(6.9).text === einzelSpanne(6.9).text, 'derselbe Betrag ergibt dieselbe Spanne');
   ok(einzelSpanne(0) === null && einzelSpanne(null) === null && einzelSpanne('x') === null,
@@ -103,4 +133,10 @@ if (require.main === module && process.argv.includes('--selbsttest')) {
   process.exit(fehler ? 1 : 0);
 }
 
-module.exports = { einzelSpanne, summeSpanne, BREITE };
+/* Laeuft in BEIDEN Umgebungen: unter Node als Modul, im Browser als eingebetteter Text.
+ * stauden-server.js setzt diese Datei beim Ausliefern von stauden-portal.html dort ein, wo
+ * der Platzhalter steht (in einer IIFE gekapselt). Grund: Der Browser rechnet Plansumme und
+ * Kartenpreise nach jedem Dichte-Klick neu — mit einer zweiten, abgetippten Fassung der
+ * Spannenregel wuerden Stueckliste und Kopfzeile frueher oder spaeter auseinanderlaufen.
+ * Deshalb sind die beiden Zeilen oben und unten typgeprueft statt roh. */
+if (typeof module !== 'undefined' && module.exports) module.exports = { einzelSpanne, summeSpanne, BREITE };

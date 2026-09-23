@@ -15,6 +15,16 @@ const crypto = require('crypto');
 // abhängen, ob eine einzelne Zeile schon durch einen Datenlauf gegangen ist.
 const { giftigkeit, istKindersicher, kindersicherGrund } = require('./scripts/pflanzen-giftigkeit');
 
+/* Schlusspruefung eines fertigen Plans und die beiden Grenzen, die sich aus der Beetflaeche
+ * ergeben. Die Grenzen gehen VOR dem Modelllauf als harte Vorgabe in den Prompt und werden
+ * NACHHER geprueft — aus derselben Datei, damit ein Plan nicht an der Vorgabe scheitert,
+ * der er gefolgt ist. lbAusschluss() filtert ausserdem schon die Kandidatenliste. */
+const { planPruefen, lbAusschluss, maxArtenFuer, maxHoeheFuer, kanteFuer } = require('./scripts/plan-pruefen');
+/* Preise als Spanne statt als Betrag. Dieselbe Datei wird beim Ausliefern von
+ * stauden-portal.html in die Seite eingesetzt (__PREIS_SPANNE_JS__) — der Browser rechnet
+ * die Plansumme nach jedem Dichte-Klick neu und muss dabei dieselbe Spanne bilden. */
+const { einzelSpanne, summeSpanne } = require('./scripts/preis-spanne');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -260,7 +270,12 @@ function pflanzeNachschlagen(nameBot) {
   const binomial = tokens.slice(0, 2).join(' ') || genus;
   // Bester Treffer zuerst: exakt → gleiche Art (Gattung+Art) → nur Gattung
   const zeile = db.prepare(
-    `SELECT name_deutsch, name_botanisch, ${BILD_SPALTEN_SQL}, inhalt_lang, preis_stueck_eur
+    // hoehe_cm_max, feuchtigkeit und lebensbereich kommen seit dem 23.09.2026 mit: Die
+    // Schlussprüfung (scripts/plan-pruefen.js) rechnet mit den DB-Werten, nicht mit denen,
+    // die das Modell in den Plan geschrieben hat. Der Plan trägt nur ein gemitteltes
+    // `hoehe_cm` und gar keine Feuchte- oder Lebensbereichsangabe.
+    `SELECT name_deutsch, name_botanisch, ${BILD_SPALTEN_SQL}, inhalt_lang, preis_stueck_eur,
+            hoehe_cm_max, feuchtigkeit, lebensbereich
        FROM pflanzen
       WHERE name_botanisch = ? OR name_botanisch LIKE ? OR name_botanisch LIKE ?
       ORDER BY CASE WHEN name_botanisch = ? THEN 0 WHEN name_botanisch LIKE ? THEN 1 ELSE 2 END
@@ -551,12 +566,53 @@ const BODEN_MAP = {
   'Normal / humos': 'normal',
   'Normal / unbekannt': 'normal',
 };
-const STIL_MAP = {
-  'Naturgarten / Wildgarten': 'Naturgarten',
+/*
+ * GARTENSTIL: langer Name aus der Oberflaeche -> Schlagwort in der Spalte `stil`.
+ *
+ * DIE STILAUSWAHL HAT BIS ZUM 23.09.2026 FUER KEINEN EINZIGEN STIL FUNKTIONIERT.
+ * Der Planer schickte den vollen Namen in ein `stil LIKE '%...%'`, die Datenbank speichert
+ * aber kurze Schlagwoerter. Am Live-Bestand (711 Zeilen) gemessen:
+ *   '%Naturgarten / Wildgarten%'      -> 0 Zeilen     '%Naturgarten%'   -> 469
+ *   '%Bauerngarten / Romantisch%'     -> 0            '%Bauerngarten%'  -> 296
+ *   '%Cottage-Garten / Englisch%'     -> 0            '%Cottage%'       -> 233
+ *   '%Modern / Minimalistisch%'       -> 0            '%Modern%'        ->  77
+ *   '%Mediterraner Garten%'           -> 0            '%Mediterran%'    ->  56
+ *   '%Steingarten / Alpin%'           -> 0            '%Steingarten%'   -> 133
+ * Die vier Eintraege, die es frueher hier gab, wurden dadurch entwertet: Sie standen zwar
+ * richtig da, der Rueckfall `stil.split('/')[0].trim()` fing aber auch die restlichen vier
+ * Stile ab und machte aus "Mediterraner Garten" den Suchbegriff "Mediterraner Garten".
+ * Jede Plananfrage fiel so auf den Ausweichpfad (nur Licht) zurueck — daher der
+ * Himalaya-Enzian in einer Praerie-Pflanzung.
+ *
+ * PRAIRIE UND JAPANISCH SIND HERAUSGENOMMEN. Beide Schlagwoerter tragen 0 der 711 Zeilen.
+ * Einen Stil anzubieten, den die Daten nicht bedienen koennen, ist eine Zusage ohne Regel:
+ * Der Kunde waehlt "Prairie" und bekommt einen generischen Kandidatentopf, ohne es zu
+ * erfahren. Sie kommen zurueck, sobald Pflanzen das Schlagwort tragen — dann genuegt hier
+ * eine Zeile, und Auswahlkarte, Pruefung und Filter gelten wieder gemeinsam.
+ *
+ * KEIN RUECKFALL AUF EINEN GERATENEN SUCHBEGRIFF. Ein unbekannter Stil liefert null, und
+ * null heisst "gar kein Stilfilter". Ein geratener Begriff trifft im Zweifel 0 Zeilen und
+ * legt die Abfrage lautlos lahm — genau der Fehler, der hier behoben wird.
+ */
+const STIL_SCHLAGWORT = {
+  'Naturgarten / Wildgarten':  'Naturgarten',
   'Bauerngarten / Romantisch': 'Bauerngarten',
-  'Modern / Minimalistisch': 'Modern',
+  'Modern / Minimalistisch':   'Modern',
   'Cottage-Garten / Englisch': 'Cottage',
+  'Mediterraner Garten':       'Mediterran',
+  'Steingarten / Alpin':       'Steingarten',
+  // Kurzformen aus aelteren gespeicherten Formularen und aus den Beispielaufrufen der
+  // Dokumentation. Sie SIND bereits das Schlagwort und bleiben deshalb sich selbst.
+  'Naturgarten':  'Naturgarten',
+  'Bauerngarten': 'Bauerngarten',
+  'Modern':       'Modern',
+  'Cottage':      'Cottage',
+  'Mediterran':   'Mediterran',
+  'Steingarten':  'Steingarten',
 };
+
+/** Schlagwort zu einem Stilwert, oder null (= kein Stilfilter). Einzige Ableitung im Projekt. */
+const stilSchlagwort = (stil) => STIL_SCHLAGWORT[String(stil == null ? '' : stil).trim()] || null;
 
 /*
  * Prüft, ob ein Wert aus dem bekannten Vokabular stammt.
@@ -575,26 +631,28 @@ const STIL_MAP = {
  */
 /*
  * ACHTUNG, hier lag schon ein Fehler: Die Prüfung stützte sich zuerst auf LICHT_MAP,
- * BODEN_MAP und STIL_MAP. Diese Tabellen sind aber KEINE Vollständigkeitsliste, sondern
- * eine Übersetzungshilfe mit Rückfallregel — STIL_MAP kennt vier Einträge, die Oberfläche
- * bietet acht an. „Prairie-Stil / Naturalistisch", „Mediterraner Garten", „Japanischer
- * Garten" und „Steingarten / Alpin" wären damit abgewiesen worden, obwohl sie täglich
- * gewählt werden. Aufgefallen an den echten Werten in plan_statistik.
+ * BODEN_MAP und STIL_MAP. Diese Tabellen waren KEINE Vollständigkeitsliste, sondern eine
+ * Übersetzungshilfe mit Rückfallregel — STIL_MAP kannte vier Einträge, die Oberfläche bot
+ * acht an. Die vier fehlenden wären damit abgewiesen worden, obwohl sie täglich gewählt
+ * wurden. Die Liste wurde deshalb von Hand daneben geschrieben.
  *
- * Die Listen unten stammen deshalb aus dem Client (Attribute data-licht/data-boden und die
- * Aufrufe von selectOption) und aus den tatsächlich eingegangenen Werten. Die Kurzformen
- * bleiben gültig: Sie kommen aus älteren gespeicherten Formularen und aus Testaufrufen.
+ * FÜR LICHT UND BODEN GILT DAS WEITERHIN — die Listen unten stammen aus dem Client
+ * (data-licht/data-boden, selectOption) und aus den echten Werten in plan_statistik.
  *
- * Wer eine Auswahlmöglichkeit im Client ergänzt, muss sie hier eintragen.
+ * FÜR DEN STIL NICHT MEHR: Seit dem 23.09.2026 ist STIL_SCHLAGWORT vollständig, weil ein
+ * Stil ohne Schlagwort nachweislich null Kandidaten liefert. Eine handgeführte Zweitliste
+ * wäre jetzt genau das Loch, durch das „Prairie" zurückkäme, nachdem es oben entfernt wurde.
+ * Deshalb IST die Übersetzungstabelle die Liste. Wer eine Auswahlmöglichkeit im Client
+ * ergänzt, trägt sie oben ein — und nur dort.
+ *
+ * Die Kurzformen bleiben gültig: Sie kommen aus älteren gespeicherten Formularen und aus
+ * Testaufrufen und stehen mit in der Tabelle.
  */
 const ERLAUBT_LICHT = new Set(['Vollsonne (6+ h)', 'Halbschatten (3–6 h)', 'Schatten (unter 3 h)',
   'Wechselnde Bedingungen', 'Sonne', 'Halbschatten', 'Schatten']);
 const ERLAUBT_BODEN = new Set(['Sandig / durchlässig', 'Lehmig / schwer', 'Normal / humos',
   'Normal / unbekannt', 'sandig', 'lehmig', 'normal']);
-const ERLAUBT_STIL = new Set(['Naturgarten / Wildgarten', 'Bauerngarten / Romantisch',
-  'Modern / Minimalistisch', 'Cottage-Garten / Englisch', 'Prairie-Stil / Naturalistisch',
-  'Mediterraner Garten', 'Japanischer Garten', 'Steingarten / Alpin',
-  'Naturgarten', 'Bauerngarten', 'Modern', 'Cottage', 'Mediterran']);
+const ERLAUBT_STIL = new Set(Object.keys(STIL_SCHLAGWORT));
 
 const bekannterWert = (wert, erlaubt) => erlaubt.has(String(wert || '').trim());
 
@@ -656,26 +714,68 @@ function getPflanzenkandidaten(licht, boden, stil, standortBeschr, kindersicher 
 
   const lichtTerm   = LICHT_MAP[licht] || licht.split(' ')[0];
   const bodenTerm   = BODEN_MAP[boden] || 'normal';
-  const stilTerm    = STIL_MAP[stil]   || stil.split('/')[0].trim();
+  const stilTerm    = stilSchlagwort(stil);
   const feuchtigkeit = getFeuchtigkeit(boden, standortBeschr);
   const feuchTerms  = FEUCHT_COMPAT[feuchtigkeit] || ['normal'];
   const feuchPlaceholders = feuchTerms.map(() => '?').join(',');
 
   const COLS = PLAN_COLS;
 
-  // WHERE-Varianten (Vollmatch → Licht+Feucht → nur Licht)
-  const FULL_WHERE  = `licht LIKE ? AND (boden LIKE ? OR boden LIKE ?) AND stil LIKE ?
+  /* Kein Schlagwort → gar kein Stilfilter statt eines geratenen Begriffs. `stil LIKE
+   * '%Mediterraner Garten%'` traf null Zeilen und legte die genaue Abfrage lautlos lahm;
+   * ohne die Bedingung liefert sie wenigstens standortgerechte Kandidaten. Vorkommen kann
+   * das nur noch in /api/alternativ, wo der Stil optional ist — /api/plan prüft vorher
+   * gegen ERLAUBT_STIL, und diese Menge IST die Schlüsselmenge dieser Tabelle. */
+  const STIL_WHERE = stilTerm ? 'AND stil LIKE ?' : '';
+  const STIL_ARGS  = stilTerm ? [`%${stilTerm}%`] : [];
+
+  /*
+   * LEBENSBEREICH ALS BEDINGUNG (Hansen/Stahl).
+   *
+   * Die Spalte ist für alle 711 Zeilen gefüllt und tauchte bis zum 23.09.2026 im ganzen Code
+   * genau einmal auf: als Textschnipsel „| LB:…" im Prompt. Eine Bitte an das Modell, kein
+   * Filter. Entsprechend standen Quellflur und Steppenheide im selben Beet — der Befund, an
+   * dem die Gärtnerei den beanstandeten Plan festgemacht hat.
+   *
+   * AUSGESCHLOSSEN WIRD, NICHT AUSGEWÄHLT. Positiv zu filtern („nur Steppenheide") würde die
+   * Kandidatenliste so klein machen, dass der Planer wieder in den Ausweichpfad fällt und der
+   * Stil erneut wirkungslos wäre — das Gegenteil des Ziels. lbAusschluss() nimmt deshalb nur
+   * den GEGENPOL weg, und zwar denselben, den die Schlussprüfung hinterher als „hart" meldet
+   * (scripts/plan-pruefen.js, LB_UNVERTRAEGLICH). Eine Regel, zwei Zeitpunkte.
+   *
+   * WIE VIEL DAS KOSTET, aus der Live-Verteilung abgeleitet: Der nasse Pol (Quellflur 62,
+   * Wasserfläche 11, Teichrand 2) trägt höchstens 75 Zeilen, der trockene (Steppenheide 192,
+   * Offener Rohboden 8) höchstens 200. Im schlimmsten Fall bleiben 511 von 711 Zeilen übrig —
+   * die Rollenabfragen holen zusammen 33. Ein grosser Teil davon fällt ohnehin schon durch
+   * den Feuchtefilter darüber; spürbar wird der Ausschluss erst im letzten Ausweichpfad, wo
+   * die Feuchte fallengelassen wird. Genau dort entstand der Schaden.
+   *
+   * DIESE BEDINGUNG IST NICHT DIE DURCHSETZUNG, sie ist nur die Vorauswahl. Sie steht zwar in
+   * allen drei WHERE-Varianten, aber nach dieser Funktion schütten zwei weitere Abfragen in
+   * dieselbe Kandidatenliste nach — ergaenzeNutzungskandidaten() und der Pflegegrenzen-Block
+   * in /api/plan — und die kennen den Ausschluss nicht. Der Gegenpol käme darüber zurück.
+   * Durchgesetzt wird deshalb erst NACH allen concat-Stellen, als Filter auf der fertigen
+   * Liste (siehe „LEBENSBEREICH DURCHSETZEN" in /api/plan). Hier zu filtern spart trotzdem
+   * Zeilen und hält die Rollenabfragen sauber.
+   */
+  const lbAus     = lbAusschluss(feuchtigkeit);
+  const LB_WHERE  = lbAus.map(() => "AND LOWER(COALESCE(lebensbereich,'')) NOT LIKE ?").join(' ');
+  const LB_ARGS   = lbAus.map(t => `%${t}%`);
+
+  // WHERE-Varianten (Vollmatch → Licht+Feucht → nur Licht). Lebensbereich und Winterhärte
+  // gelten in allen dreien.
+  const FULL_WHERE  = `licht LIKE ? AND (boden LIKE ? OR boden LIKE ?) ${STIL_WHERE}
       AND (feuchtigkeit IN (${feuchPlaceholders}) OR feuchtigkeit IS NULL)
-      AND ${PLANBAR}`;
-  const FULL_ARGS   = [`%${lichtTerm}%`, `%${bodenTerm}%`, '%normal%', `%${stilTerm}%`, ...feuchTerms];
+      ${LB_WHERE} AND ${PLANBAR}`;
+  const FULL_ARGS   = [`%${lichtTerm}%`, `%${bodenTerm}%`, '%normal%', ...STIL_ARGS, ...feuchTerms, ...LB_ARGS];
 
   const LICHT_WHERE = `licht LIKE ?
       AND (feuchtigkeit IN (${feuchPlaceholders}) OR feuchtigkeit IS NULL)
-      AND ${PLANBAR}`;
-  const LICHT_ARGS  = [`%${lichtTerm}%`, ...feuchTerms];
+      ${LB_WHERE} AND ${PLANBAR}`;
+  const LICHT_ARGS  = [`%${lichtTerm}%`, ...feuchTerms, ...LB_ARGS];
 
-  const LAST_WHERE  = `licht LIKE ? AND ${PLANBAR}`;
-  const LAST_ARGS   = [`%${lichtTerm}%`];
+  const LAST_WHERE  = `licht LIKE ? ${LB_WHERE} AND ${PLANBAR}`;
+  const LAST_ARGS   = [`%${lichtTerm}%`, ...LB_ARGS];
 
   // Rollen-Filter (spiegelt die Logik aus buildSystemPrompt Zeile ~269)
   const LEIT_F    = `(rolle_empfehlung = 'Leitstaude'    OR (rolle_empfehlung IS NULL AND COALESCE(hoehe_cm_max,50) >= 100))`;
@@ -738,10 +838,31 @@ function getPflanzenkandidaten(licht, boden, stil, standortBeschr, kindersicher 
 
   // Absoluter Fallback: alle passenden Pflanzen nach Licht
   aufgegeben.add('Bodentyp').add('Gartenstil').add('Bodenfeuchte');
-  const rest = db.prepare(
-    `SELECT ${COLS} FROM pflanzen WHERE ${LAST_WHERE} ORDER BY RANDOM() LIMIT ${kindersicher ? 105 : 35}`
-  ).all(...LAST_ARGS);
-  return mitVermerk(kindersicher ? rest.filter(p => istKindersicher(p.name_botanisch)).slice(0, 35) : rest);
+  const restHolen = (where, args) => {
+    const rows = db.prepare(
+      `SELECT ${COLS} FROM pflanzen WHERE ${where} ORDER BY RANDOM() LIMIT ${kindersicher ? 105 : 35}`
+    ).all(...args);
+    return kindersicher ? rows.filter(p => istKindersicher(p.name_botanisch)).slice(0, 35) : rows;
+  };
+  const rest = restHolen(LAST_WHERE, LAST_ARGS);
+  /*
+   * Letzte Sicherung für den Lebensbereich-Ausschluss. Nach der Live-Verteilung darf das nie
+   * greifen (siehe die Rechnung oben: schlimmstenfalls 511 von 711 Zeilen bleiben übrig, hier
+   * werden 35 geholt). Es steht trotzdem hier, weil die Alternative die schlechtere wäre: Der
+   * Ausschluss WÜRDE sonst im Zweifel den ganzen Plan verhindern — und ein Kunde ohne Ergebnis
+   * ist schlimmer als ein Kunde mit einem Plan und einem ehrlichen Hinweis.
+   * Der Vermerk ist Pflicht: Eine Bedingung, die still fällt, ist wieder eine Zusage ohne Regel.
+   */
+  if (rest.length < 8 && lbAus.length) {
+    const ohneLb = restHolen(`licht LIKE ? AND ${PLANBAR}`, [`%${lichtTerm}%`]);
+    if (ohneLb.length > rest.length) {
+      console.warn('Lebensbereich-Ausschluss aufgegeben: %d statt %d Kandidaten bei licht=%j feuchte=%j',
+        ohneLb.length, rest.length, licht, feuchtigkeit);
+      aufgegeben.add('Lebensbereich');
+      return mitVermerk(ohneLb);
+    }
+  }
+  return mitVermerk(rest);
 }
 
 function getRelevantesWissen(stil, licht, feuchtigkeit) {
@@ -749,7 +870,10 @@ function getRelevantesWissen(stil, licht, feuchtigkeit) {
     const count = db.prepare('SELECT COUNT(*) as n FROM wissen').get().n;
     if (count === 0) return [];
 
-    const stilTerm   = (STIL_MAP[stil]  || stil.split('/')[0].trim()).toLowerCase();
+    // Dieselbe Ableitung wie im Planer. Ohne Schlagwort faellt der Begriff aus der
+    // FTS-Abfrage heraus (filter(Boolean) unten) — ein geratener Begriff wuerde stattdessen
+    // an den falschen Wissenstexten haengen bleiben.
+    const stilTerm   = (stilSchlagwort(stil) || '').toLowerCase();
     const lichtTerm  = (LICHT_MAP[licht] || licht.split(' ')[0]).toLowerCase();
     const feuchTerm  = feuchtigkeit === 'nass' || feuchtigkeit === 'feucht' ? 'Feuchtbeet' : '';
     const ftsTerms   = [stilTerm, lichtTerm, 'Höhenstaffelung', feuchTerm].filter(Boolean);
@@ -906,6 +1030,11 @@ const NOTPLAN_MONAT = {
   juli: 7, august: 8, september: 9, oktober: 10, november: 11, dezember: 12
 };
 
+// „A und B“ bzw. „A, B und C“ — nicht „A und B und C“. Steht hier einmal, weil es an zwei
+// Stellen in Kundentexte geht (Blühlücken im Pflegetipp, gelockerte Angaben im Planhinweis).
+const aufzaehlung = teile => teile.length <= 1 ? (teile[0] || '')
+  : `${teile.slice(0, -1).join(', ')} und ${teile[teile.length - 1]}`;
+
 // Rollen wie in getPflanzenkandidaten (LEIT_F/BEGLEIT_F/FUELL_F): erst das gepflegte Feld,
 // sonst nach Endhöhe. 'Strukturpflanze' (1 Zeile) fällt bewusst auf die Höhenlogik zurück.
 function notplanRolle(p) {
@@ -991,7 +1120,31 @@ function buildNotplan({ kandidaten, geophytenKandidaten, geophyten, gartenflaech
   if (!nachRolle.Leitstaude.length || !nachRolle.Füllstaude.length) return null;
 
   const ARTEN = { wenig: [1, 3, 2], ausgewogen: [2, 4, 3], viel: [3, 6, 4] };
-  const [nLeit, nBegleit, nFuell] = ARTEN[vielfalt] || ARTEN.ausgewogen;
+  let [nLeit, nBegleit, nFuell] = ARTEN[vielfalt] || ARTEN.ausgewogen;
+  /*
+   * Artenzahl an die Fläche binden — DER NOTPLAN IST EIN EIGENER AUSGABEPFAD.
+   *
+   * Die Vielfaltsstufe „viel" verlangte hier 3 + 6 + 4 = 13 Arten, unabhängig von der
+   * Beetgrösse. Auf 2,5 m² tragen vier (maxArtenFuer). Die Grenze im Prompt hilft an dieser
+   * Stelle nichts: Der Notplan entsteht gerade dann, wenn das Modell ausgefallen ist. Ein
+   * lokaler Test am 23.09.2026 lieferte genau das — 13 Arten auf 2,5 m², sofort als harter
+   * Befund gemeldet. Der Planer darf nicht selbst bauen, was er hinterher beanstandet.
+   *
+   * Gekürzt wird immer bei der grössten Gruppe, bei Gleichstand zuerst bei den Begleit-,
+   * dann bei den Leitstauden: Auf einem kleinen Beet ist die zweite Leitstaude entbehrlicher
+   * als die Füllstaude, die den Boden schliesst. Unter 1+1+1 geht es nicht, und so tief muss
+   * es auch nie — maxArtenFuer gibt nie weniger als 3 zurück.
+   */
+  const obergrenze = maxArtenFuer(flaeche);
+  if (obergrenze) {
+    while (nLeit + nBegleit + nFuell > obergrenze) {
+      const groesste = Math.max(nLeit, nBegleit, nFuell);
+      if (groesste <= 1) break;
+      if (nBegleit === groesste) nBegleit--;
+      else if (nLeit === groesste) nLeit--;
+      else nFuell--;
+    }
+  }
   // Blühzeiten spreizen: erst nach Blühbeginn sortieren, dann gleichmäßig durchgreifen.
   // So deckt die Auswahl die Saison ab, statt fünf Arten aus demselben Monat zu nehmen.
   const spreizen = (liste, n) => {
@@ -1106,10 +1259,7 @@ function buildNotplan({ kandidaten, geophytenKandidaten, geophyten, gartenflaech
   }
   const luecken = Object.entries(SAISON).filter(([, ms]) => !alleMonate.some(m => ms.includes(m))).map(([s]) => s);
   if (luecken.length) {
-    // "Frühling und Sommer" bzw. "Frühling, Sommer und Herbst" — nicht "A und B und C".
-    const aufzaehlung = luecken.length === 1 ? luecken[0]
-      : `${luecken.slice(0, -1).join(', ')} und ${luecken[luecken.length - 1]}`;
-    tipps.push(`In dieser Zusammenstellung blüht im ${aufzaehlung} nichts — hier lassen sich später gezielt Arten ergänzen.`);
+    tipps.push(`In dieser Zusammenstellung blüht im ${aufzaehlung(luecken)} nichts — hier lassen sich später gezielt Arten ergänzen.`);
   }
 
   return {
@@ -1250,6 +1400,24 @@ app.get('/', (req, res) => {
      * geteilt wird. Als JSON-Literal eingesetzt, damit Anführungszeichen im Markup den
      * Client-Code nicht aufbrechen. */
     html = html.replace(/__KI_MARKE__/g, JSON.stringify(KI_MARKE_HTML));
+    /* Die Spannenregel wird als QUELLTEXT eingesetzt, nicht im Client nachgebaut. Der Browser
+     * rechnet Kartenpreise und Plansumme nach jedem Klick auf „Locker/Normal/Dicht" neu; eine
+     * zweite, abgetippte Fassung liefe frueher oder spaeter von der des Servers weg, und dann
+     * wuerden Stueckliste und Kopfzeile derselben Seite verschiedene Spannen nennen. Genau dieser
+     * Fehler ist bei gesamtkosten_geschaetzt schon einmal passiert (bis zu 48 % Abweichung auf
+     * den Beispielseiten).
+     * Als Funktion ersetzt, damit $-Folgen im Quelltext nicht als Ersetzungsmuster gelesen
+     * werden. Die Datei ist so geschrieben, dass sie in beiden Umgebungen laeuft. */
+    html = html.replace('__PREIS_SPANNE_JS__',
+      () => fs.readFileSync(path.join(__dirname, 'scripts/preis-spanne.js'), 'utf8'));
+    /* Dieselbe Begruendung fuer die Schlusspruefung: Der Browser AENDERT den Plan nach der
+     * Antwort noch — „Alternative vorschlagen" tauscht eine Art aus, „Locker/Dicht" aendert
+     * alle Stueckzahlen. Die Befunde vom Server gelten danach nicht mehr. Bis zum 23.09.2026
+     * blieben sie trotzdem stehen: Wer die beanstandete 150-cm-Staude wegtauschte, las
+     * danach weiter, sie erschlage sein Beet. Mit dem Quelltext hier rechnet der Browser
+     * dieselbe Regel nach, statt eine zweite abzutippen. */
+    html = html.replace('__PLAN_PRUEFEN_JS__',
+      () => fs.readFileSync(path.join(__dirname, 'scripts/plan-pruefen.js'), 'utf8'));
 
   // FAQ (targetet reale Search-Console-Queries: "bepflanzungsplan erstellen", "beetplaner
   // online kostenlos", "staudenbeet planen online", "stauden pro m²") — HTML + FAQPage-Schema.
@@ -1603,8 +1771,15 @@ function klassifiziereOpenAIFehler(err) {
 
 app.post('/api/plan', planHartLimiter, planLimiter, async (req, res) => {
   const t0 = Date.now();
+  // beetLaenge/beetBreite kommen nur mit, wenn der Kunde den L×B-Modus gewählt hat. Sie sind
+  // nicht Pflicht und ersetzen die Fläche nicht — sie sagen nur, WIE SCHMAL das Beet ist.
+  // Ohne sie musste die Schlussprüfung die Kante aus der Fläche raten (Math.sqrt), also ein
+  // Quadrat annehmen; bei 4,0 × 0,64 m stand dann „Kante rund 1,6 m" im Kundentext, eine
+  // Zahl, die er nie eingegeben hat. Seit 23.09.2026 rechnet die Prüfung mit der echten
+  // kurzen Kante, wenn es sie gibt.
   const { gartenflaeche, licht, boden, standort_beschreibung, stil, sichtseite, farbe, saison,
-          lieblingspflanzen, budget, nutzung, pflegezeit, vielfalt, dichte, plz, geophyten } = req.body;
+          lieblingspflanzen, budget, nutzung, pflegezeit, vielfalt, dichte, plz, geophyten,
+          beetLaenge, beetBreite } = req.body;
 
   if (!gartenflaeche || !licht || !boden || !stil) {
     return res.status(400).json({ error: 'Bitte alle Pflichtfelder ausfüllen.' });
@@ -1692,6 +1867,108 @@ app.post('/api/plan', planHartLimiter, planLimiter, async (req, res) => {
     console.log('Pflegegrenze ≤%d★: %d von %d Kandidaten bleiben', pflegeGrenze, kandidaten.length, vorher);
   }
 
+  // Vor den beiden Grenzen deklariert, weil beide sich daran messen.
+  const MIN_KANDIDATEN = 5;
+
+  /*
+   * LEBENSBEREICH DURCHSETZEN — hier, weil hier die Liste fertig ist.
+   *
+   * getPflanzenkandidaten() trägt den Ausschluss schon in seinen drei WHERE-Varianten. Das
+   * genügt nicht: Danach legen ergaenzeNutzungskandidaten() (bis zu 12 Arten je Schwerpunkt)
+   * und der Pflegegrenzen-Block darüber (bis zu 15 Arten) ungefiltert in dieselbe Liste
+   * nach. Nachgestellt am 23.09.2026: Auf trockenem Standort fällt Blutweiderich (Quellflur)
+   * korrekt aus der Kandidatenabfrage — und kommt über den Bienengarten-Nachschub zurück.
+   * Der Schwerpunkt-Zwang weiter unten setzt genau solche Arten dann aktiv in den Plan.
+   * Der Server hätte eingepflanzt, was er hinterher als „hart" meldet.
+   *
+   * Deshalb steht die Durchsetzung dort, wo auch die Höhengrenze steht: NACH allen concat-
+   * Stellen, auf der fertigen Liste. Die WHERE-Bedingung oben bleibt als Vorauswahl.
+   *
+   * Hat der letzte Ausweichpfad den Ausschluss bereits aufgegeben (dann steht er in
+   * `gelockert` und der Kunde erfährt es), wird hier nicht nachgetreten.
+   */
+  const lbAusPlan = gelockert.includes('Lebensbereich') ? [] : lbAusschluss(feuchtigkeit);
+  if (lbAusPlan.length) {
+    const passtLb = p => !lbAusPlan.some(t => String(p.lebensbereich || '').toLowerCase().includes(t));
+    const lbFrei = kandidaten.filter(passtLb);
+    if (lbFrei.length < kandidaten.length) {
+      if (lbFrei.length >= MIN_KANDIDATEN * 2) {
+        console.log('Lebensbereich-Ausschluss (%s): %d von %d Kandidaten bleiben',
+          lbAusPlan.join('/'), lbFrei.length, kandidaten.length);
+        kandidaten = lbFrei;
+      } else {
+        console.warn('Lebensbereich-Ausschluss nicht angewandt: nur %d von %d Kandidaten blieben übrig',
+          lbFrei.length, kandidaten.length);
+        gelockert.push('Lebensbereich');
+      }
+    }
+  }
+
+  /*
+   * ZU HOHE ARTEN GAR NICHT ERST ANBIETEN.
+   *
+   * Die Schlussprüfung meldet als „hart", wenn eine Staude höher wird als drei Viertel der
+   * kürzesten Beetkante — in einem der beanstandeten Pläne standen zwei 150-cm-Stauden auf
+   * 2,56 m². Die Grenze kommt aus derselben Funktion, die hinterher prüft (maxHoeheFuer),
+   * damit der Plan nicht an einer Vorgabe scheitert, der er gefolgt ist.
+   *
+   * Sie greift nur bei kleinen Beeten: ab 4 m² liegt sie bei 150 cm und lässt praktisch
+   * alles durch, bei 2,5 m² bei 118 cm. Deshalb steht sie hier und nicht in der Abfrage —
+   * in der Abfrage würde sie bei einem Kleinstbeet die Rollenauswahl leerlaufen lassen und
+   * „Bodentyp und Gartenstil gelockert" ins Protokoll schreiben, obwohl das gar nicht der
+   * Grund wäre. Der Kunde bekäme einen falschen Hinweis, und das ist schlimmer als keiner.
+   *
+   * Wenn zu wenige übrig blieben, wird NICHT gefiltert: Eine Kandidatenliste, die in den
+   * Ausweichpfad zwingt, macht es schlimmer statt besser. Die Schlussprüfung fängt den Fall
+   * dann hinterher ab und sagt es dem Kunden.
+   *
+   * STÜCKZAHL ALLEIN GENÜGT ALS SICHERUNG NICHT. notplanRolle() macht eine Leitstaude an
+   * hoehe_cm_max >= 100 fest; unter rund 1,78 m² liegt maxHoeheFuer() darunter, und dann
+   * enthält die gefilterte Liste keine einzige Leitstaude mehr. buildNotplan() gibt in dem
+   * Fall null zurück, und aus dem Auffangnetz für den KI-Ausfall wird ein HTTP 502.
+   * Gemessen am 23.09.2026 gegen die vorige Fassung: 1,0 m² und 1,5 m² lieferten 502 statt
+   * eines Plans, ab 2 m² wieder 200. Ausgerechnet die kleinen Beete, um derentwillen die
+   * Grenze eingebaut wurde, hätten ihr Auffangnetz verloren.
+   *
+   * Deshalb wird die fehlende Rolle mit den KÜRZESTEN Vertretern wieder aufgefüllt, statt
+   * die Grenze ganz fallen zu lassen: 110 cm auf 1 m² sind zu hoch, 150 cm sind schlimmer.
+   */
+  const { kante: beetKante, gemessen: kanteGemessen } = kanteFuer({ gartenflaeche: flaecheGeprueft, beetLaenge, beetBreite });
+  const maxHoehe = maxHoeheFuer(flaecheGeprueft, beetKante);
+  const maxArten = maxArtenFuer(flaecheGeprueft);
+  if (maxHoehe) {
+    const passend = kandidaten.filter(p => (p.hoehe_cm_max || 0) <= maxHoehe);
+    if (passend.length >= MIN_KANDIDATEN * 2) {
+      // Rollenabdeckung nachziehen. Gezählt wird wie in buildNotplan — Geophyten bleiben
+      // dort aussen vor, also hier auch, sonst sichert die Probe eine Rolle ab, die der
+      // Notplan gar nicht aus ihr besetzt.
+      const rollenTopf = liste => {
+        const nach = { Leitstaude: [], Begleitstaude: [], Füllstaude: [] };
+        for (const p of liste) if (!istGeophyt(p)) nach[notplanRolle(p)].push(p);
+        return nach;
+      };
+      const vorher = rollenTopf(kandidaten);
+      const nachher = rollenTopf(passend);
+      const ergaenzt = [];
+      for (const rolle of ['Leitstaude', 'Begleitstaude', 'Füllstaude']) {
+        if (nachher[rolle].length || !vorher[rolle].length) continue;
+        const kuerzeste = [...vorher[rolle]]
+          .sort((a, b) => (a.hoehe_cm_max || 0) - (b.hoehe_cm_max || 0)).slice(0, 3);
+        ergaenzt.push(...kuerzeste);
+        console.warn('Höhengrenze ≤%d cm: Rolle %s wäre leer — %d kürzeste Arten (ab %d cm) bleiben drin',
+          maxHoehe, rolle, kuerzeste.length, kuerzeste[0] && kuerzeste[0].hoehe_cm_max);
+      }
+      if (passend.length < kandidaten.length) {
+        console.log('Höhengrenze ≤%d cm (%s m²): %d von %d Kandidaten bleiben',
+          maxHoehe, flaecheGeprueft, passend.length + ergaenzt.length, kandidaten.length);
+      }
+      kandidaten = passend.concat(ergaenzt);
+    } else {
+      console.warn('Höhengrenze ≤%d cm nicht angewandt: nur %d von %d Kandidaten blieben übrig',
+        maxHoehe, passend.length, kandidaten.length);
+    }
+  }
+
   /*
    * Ohne Kandidaten wird im Prompt die gesamte Pflanzenliste weggelassen — das Modell
    * antwortet dann aus eigenem Wissen. Im Test kamen so vier frei erfundene Arten in einen
@@ -1699,7 +1976,6 @@ app.post('/api/plan', planHartLimiter, planLimiter, async (req, res) => {
    * an allen Regeln vorbei, die auf der Datenbank aufsetzen (Winterhärte, Lebensdauer).
    * Lieber ein klarer Fehler als ein Plan, der nicht zur Seite gehört.
    */
-  const MIN_KANDIDATEN = 5;
   if (kandidaten.length < MIN_KANDIDATEN) {
     console.warn('Plananfrage ohne ausreichende Kandidaten: %d bei licht=%j boden=%j stil=%j kindersicher=%s',
       kandidaten.length, licht, boden, stil, kindersicher);
@@ -1747,11 +2023,46 @@ app.post('/api/plan', planHartLimiter, planLimiter, async (req, res) => {
       + 'Satz, dass alle vorgeschlagenen Pflanzen ungiftig und dornenfrei sind.'
     : '';
 
+  /*
+   * ARTENZAHL UND ROLLENPFLICHT AN DER FLÄCHE AUSRICHTEN.
+   *
+   * Bis zum 23.09.2026 widersprachen sich Prompt und Fachregel: Die ROLLENPFLICHT weiter
+   * unten verlangte mindestens 1 Leit- + 3 Begleit- + 2 Füllstauden, also sechs Arten, und
+   * die Vielfaltsstufe „viel" bis zu zwanzig — unabhängig von der Beetgröße. Auf 2,56 m²
+   * tragen aber nur vier Arten, wenn jede als Gruppe wirken soll (maxArtenFuer). Jeder Plan
+   * für ein kleines Beet war damit zwangsläufig ein Flickenteppich, und die Schlussprüfung
+   * hätte ihn zu Recht beanstandet — für einen Fehler, den der Prompt verlangt hat.
+   *
+   * Die Zahl kommt aus derselben Funktion, die hinterher prüft. Gedeckelt, nie erhöht: Wer
+   * „wenige Arten" wählt, bekommt auf 50 m² nicht plötzlich neunzig.
+   */
+  /* Nach oben bei 20 gekappt — die Zahl, die der Prompt schon vorher als Obergrenze nannte.
+   * Ohne die Kappung stünde auf einem 500-m²-Beet „HÖCHSTENS 909 Arten" im Prompt, was keine
+   * Vorgabe mehr ist, sondern eine Einladung. Strenger als die Schlussprüfung zu sein ist
+   * unbedenklich; lockerer wäre es nicht. */
+  const artenObergrenze = Math.min(maxArten || 20, 20);
+  const bis = (n) => Math.min(n, artenObergrenze);
+  const minFuell   = artenObergrenze >= 6 ? 2 : 1;
+  const minBegleit = artenObergrenze >= 6 ? 3 : Math.max(1, artenObergrenze - 2);
+
   const vielfaltAnweisung = (() => {
-    if (vielfalt === 'wenig') return `Empfehle 6–7 winterharte Stauden — bewusst wenige Arten für eine ruhige, klar strukturierte Wirkung, dafür mit hoher Wiederholung in großen Gruppen. Das ist die kleinstmögliche Auswahl, die noch alle Schichten erfüllt (mind. 1 Leitstaude, 3 Begleitstauden, 2 Füllstauden).`;
-    if (vielfalt === 'viel') return `Empfehle mindestens 8 verschiedene, winterharte Stauden — bei Flächen über 20 m² gerne bis zu 20 Arten. Maximale Artenvielfalt, kleine Gruppen je Art, hohe Biodiversität.`;
-    return `Empfehle 5–8 geeignete, winterharte Stauden.`;
+    const eng = artenObergrenze < 6
+      ? ` Das Beet ist klein: MEHR ALS ${artenObergrenze} ARTEN sind hier ein Fehler, nicht eine Leistung — auf ${gartenflaeche} m² braucht jede Art rund 0,55 m², sonst entsteht ein Flickenteppich statt einer Pflanzung.`
+      : '';
+    if (vielfalt === 'wenig') return `Empfehle ${bis(6)}–${bis(7)} winterharte Stauden — bewusst wenige Arten für eine ruhige, klar strukturierte Wirkung, dafür mit hoher Wiederholung in großen Gruppen. Das ist die kleinstmögliche Auswahl, die noch alle Schichten erfüllt (mind. 1 Leitstaude, ${minBegleit} Begleitstauden, ${minFuell} Füllstauden).${eng}`;
+    if (vielfalt === 'viel') return `Empfehle ${bis(8)}–${artenObergrenze} verschiedene, winterharte Stauden — HÖCHSTENS ${artenObergrenze} Arten, das ist die Grenze dieser Fläche. Innerhalb davon maximale Artenvielfalt, kleine Gruppen je Art, hohe Biodiversität.${eng}`;
+    return `Empfehle ${bis(5)}–${bis(8)} geeignete, winterharte Stauden, HÖCHSTENS ${artenObergrenze}.${eng}`;
   })();
+
+  /*
+   * Endhöhe als Vorgabe, nicht nur als Nachprüfung. Die Kandidatenliste ist bereits gefiltert
+   * (siehe Höhengrenze oben) — der Satz steht trotzdem hier, weil das Modell Arten frei
+   * ergänzen kann und die Liste bei zu wenigen Treffern ungefiltert bleibt.
+   */
+  const hoeheAnweisung = maxHoehe
+    ? `
+ENDHÖHE: Keine Art über ${maxHoehe} cm Endhöhe. Die kürzeste Beetkante ${kanteGemessen ? 'ist' : 'liegt bei'} rund ${beetKante.toFixed(1)} m; was höher wird, erschlägt die Fläche optisch.`
+    : '';
 
   const dichteAnweisung = (() => {
     const ppm2 = dichte === 'locker' ? 2.5 : dichte === 'dicht' ? 7 : 4;
@@ -1776,7 +2087,7 @@ app.post('/api/plan', planHartLimiter, planLimiter, async (req, res) => {
 ${lieblingsList ? `WICHTIG ZU DEN LIEBLINGSPFLANZEN: Prüfe ob die gewünschten Pflanzen zum angegebenen Standort (${licht}, ${boden}, Feuchtigkeit: ${feuchtigkeit}) passen. Falls eine Pflanze nicht passt, weise im "tipps"-Feld explizit darauf hin und schlage eine Alternative vor. Dennoch: Baue alle Lieblingspflanzen ein, sofern irgendwie vertretbar.\n` : ''}${sichtseite && sichtseite.includes('Einseitig') ? 'ANORDNUNG: Einseitig einsehbares Beet — hohe Pflanzen (>80 cm) im Hintergrund, mittlere in der Mitte, niedrige (<40 cm) im Vordergrund. Im Feld "standort" jeder Pflanze angeben: "Hintergrund", "Mitte" oder "Vordergrund".' : ''}${sichtseite && sichtseite.includes('Rundbeet') ? 'ANORDNUNG: Rundbeet / Inselbeet — höchste Pflanzen in der Mitte, nach außen abnehmende Höhen. Im Feld "standort" angeben: "Mitte", "Mittelzone" oder "Rand".' : ''}${sichtseite && sichtseite.includes('Eckbeet') ? 'ANORDNUNG: Eckbeet — höchste Pflanzen an der Ecke/Rückwand, diagonal nach vorne-links und vorne-rechts abfallend. Im Feld "standort" angeben: "Ecke/Hintergrund", "Mitte" oder "Vordergrund".' : ''}
 ${vielfaltAnweisung} ${dichteAnweisung} Berechne Stückzahlen für ${gartenflaeche} m².
 STÜCKZAHLBERECHNUNG: Nutze das Feld "Ø[X]cm" (Ausbreitung) aus der Pflanzenliste für realistische Abstände. Formel: Stückzahl = zugewiesene Fläche / (Ø_cm/100)². Leitstauden erhalten 25–35% der Fläche geteilt durch ihre Stückzahl. Füllstauden füllen die restliche Fläche lückenlos.
-ROLLENPFLICHT — dein Plan ist ungültig ohne: mind. 2 Füllstauden-Arten (z.B. Storchschnabel, Katzenminze, Frauenmantel, Elfenblume, Immergrün, Gundermann, Waldsteinia) die alle freien Flächen lückenlos schließen; mind. 3 Begleitstauden-Arten (mittlere Höhe, rahmen Leitstauden ein).
+ROLLENPFLICHT — dein Plan ist ungültig ohne: mind. ${minFuell} Füllstauden-Art(en) (z.B. Storchschnabel, Katzenminze, Frauenmantel, Elfenblume, Immergrün, Gundermann, Waldsteinia) die alle freien Flächen lückenlos schließen; mind. ${minBegleit} Begleitstauden-Art(en) (mittlere Höhe, rahmen Leitstauden ein).${hoeheAnweisung}
 ${geophytenKandidaten.length > 0 ? `GEOPHYTEN-SCHICHT (ZUSÄTZLICH, PFLICHT da angefordert): Wähle 2–4 Geophyten aus der bereitgestellten Geophyten-Liste. Diese kommen ON TOP zu allen Stauden dazu — sie ersetzen KEINE Staude, reduzieren NICHT deren Stückzahl und fließen NICHT in die Pflanzdichte-Berechnung ein. Vergib ihnen Rolle "Geophyt". Stückzahl pro Art: ${Math.round((gartenflaeche || 10) * 5)} ÷ Anzahl Geophyten-Arten (mind. 5 Stk/Art, in Gruppen à 7–15 gepflanzt). Pflanzzeit: Oktober–November im Herbst als Zwiebeln in den Boden zwischen die Stauden.` : ''}
 ${lieblingsList ? 'Die genannten Lieblingspflanzen MÜSSEN im Plan enthalten sein.' : ''}${budget ? ` Halte die Gesamtkosten unter ${budget} €.` : ''}
 ${kandidaten.length > 0 ? 'Wähle primär aus der bereitgestellten Pflanzenliste.' : ''}
@@ -1937,6 +2248,14 @@ JSON-Format:
     // Bilder, Pflanzabstand UND Preis aus DB anreichern.
     // Der Preis ist die einzige kaufrelevante Zahl, die früher ungeprüft vom Modell durchlief —
     // die DB ist hier die Wahrheit, nicht die KI. Alle Preisanzeigen im Frontend hängen daran.
+    /* Fachwerte für die Schlussprüfung, eingesammelt im selben Durchlauf wie die Anreicherung
+     * und damit aus derselben DB-Zeile wie Preis und Bild. Sie stehen im Plan selbst nicht:
+     * Das Modell schreibt ein gemitteltes `hoehe_cm` und weder Feuchte noch Lebensbereich.
+     *
+     * ALS NACHSCHLAGETABELLE, NICHT ALS FERTIGE LISTE: Nach dieser Stelle fallen noch Arten
+     * weg (Kindersicher-Netz) und Stückzahlen ändern sich (Budget-Kappung). Eine hier fertig
+     * gebaute Liste würde einen Plan prüfen, den der Kunde so nie bekommt. */
+    const fachwerte = new Map();
     if (Array.isArray(plan.pflanzen)) {
       plan.pflanzen = plan.pflanzen.map(p => {
         const nameBot = (p.name_botanisch || '').trim();
@@ -1973,9 +2292,22 @@ JSON-Format:
          * die auch die Kennzeichnung bildet: Ohne belegte Herkunft geht schon die URL nicht
          * mit, sonst könnte ein anderer Empfänger sie doch anzeigen. */
         const bildZeile = zeigbar(dbP) ? dbP : null;
+        if (artTreffer) fachwerte.set(nameBot, {
+          hoehe_cm_max: dbP.hoehe_cm_max, feuchtigkeit: dbP.feuchtigkeit, lebensbereich: dbP.lebensbereich,
+        });
+        /* Endhoehe, Feuchte und Lebensbereich gehen MIT an den Browser. Nicht zur Anzeige —
+         * der Browser rechnet die Schlusspruefung nach jedem Tausch neu, und ohne diese drei
+         * Felder wuerde planPruefen() dort drei seiner sechs Regeln stillschweigend
+         * ueberspringen und „keine Befunde" melden. Das saehe aus wie ein Freispruch und
+         * waere nur ein blinder Fleck. Sie kommen aus derselben Zeile wie die Fachwerte der
+         * Serverpruefung (artTreffer), damit beide Seiten dasselbe rechnen. */
+        const fw = fachwerte.get(nameBot) || {};
         return { ...p, preis_stueck_eur, bild_url: bildZeile?.bild_url || null,
                  bild_herkunft: bildZeile ? herkunftFuerJson(bildZeile) : null,
                  pflanzabstand_cm, fehler,
+                 hoehe_cm_max: fw.hoehe_cm_max != null ? fw.hoehe_cm_max : null,
+                 feuchtigkeit: fw.feuchtigkeit || null,
+                 lebensbereich: fw.lebensbereich || null,
                  giftig: gift ? { stufe: gift.stufe, text: gift.text } : null };
       });
 
@@ -2048,18 +2380,107 @@ JSON-Format:
       );
     } catch (e) { console.warn('plan_statistik nicht geschrieben:', e.message); }
 
-    // Gelockerte Bedingungen offenlegen. Wer „Mediterran" und „lehmig" angibt und beides
-    // still fallen sieht, hält den Plan sonst für eine Antwort auf seine Angaben.
-    const lockerHinweis = gelockert.length
-      ? `Für die gewählte Kombination gab es zu wenige passende Stauden. Wir haben ${gelockert.length === 1 ? 'die Angabe' : 'die Angaben'} ${gelockert.join(' und ')} bei der Auswahl gelockert — Lichtverhältnisse und Winterhärte gelten unverändert.`
-      : undefined;
+    /*
+     * SCHLUSSPRÜFUNG. Bis zum 23.09.2026 ging ein fertiger Plan ungesehen an den Kunden.
+     * Geprüft wird der Plan, den er WIRKLICH bekommt — nach Kindersicher-Netz und
+     * Budget-Kappung, mit den Stückzahlen und Arten, die gleich in der Antwort stehen.
+     *
+     * WAS MIT HARTEN BEFUNDEN GESCHIEHT: Der Plan geht raus, aber mit dem Befund im Klartext
+     * obenauf. Die beiden Alternativen wären schlechter. Ihn wortlos auszuliefern ist der
+     * Zustand, der die Gärtnerei zu „richtiger Mist" gebracht hat. Ihn zu verweigern liesse
+     * den Kunden nach fünfzehn Sekunden Wartezeit ohne alles dastehen, obwohl ein Plan mit
+     * zwei zu hohen Stauden immer noch ein brauchbarer Ausgangspunkt ist. Ein zweiter
+     * Modelllauf passt in PLAN_BUDGET_MS meistens nicht mehr hinein (die Schleife oben hat
+     * ihre zwei Versuche womöglich schon verbraucht), und automatisch Arten zu streichen
+     * würde Rollenpflicht, Stückzahlen und den grafischen Plan hinter dem Rücken des Kunden
+     * verändern — eine Zusage ohne Regel in die andere Richtung.
+     *
+     * Verhindert wird stattdessen VORHER, deterministisch: Artenzahl und Endhöhe stehen als
+     * Grenze im Prompt und in der Kandidatenauswahl, der unvereinbare Lebensbereich ist aus
+     * der Kandidatenliste ausgeschlossen. Was danach noch durchkommt, wird benannt.
+     *
+     * WEICHE BEFUNDE bekommt der Kunde nicht zu sehen — „vertretbar" heisst vertretbar. Ins
+     * Protokoll gehen beide, sonst lässt sich nie zählen, wie oft eine Regel greift.
+     *
+     * GEKAPSELT wie der plan_statistik-Block darüber, und aus demselben Grund: Eine Prüfung
+     * darf den Plan melden, aber nie verhindern. `plan.pflanzen` kommt aus dem Modell und ist
+     * nicht garantiert ein Array — die drei Blöcke davor fragen alle vorher `Array.isArray`.
+     * Ohne Kapselung würde aus einem fertigen (wenn auch schlechten) Plan eine 500-Antwort.
+     */
+    let pruefung = { befunde: [], hart: 0 };
+    try {
+      pruefung = planPruefen(
+        { pflanzen: (Array.isArray(plan.pflanzen) ? plan.pflanzen : []).map(p => {
+            const f = fachwerte.get((p.name_botanisch || '').trim()) || {};
+            return {
+              name_deutsch: p.name_deutsch, name_botanisch: p.name_botanisch,
+              rolle: p.rolle, stueckzahl: p.stueckzahl,
+              hoehe_cm_max: f.hoehe_cm_max != null ? f.hoehe_cm_max : p.hoehe_cm,
+              feuchtigkeit: f.feuchtigkeit || null,
+              lebensbereich: f.lebensbereich || null,
+            };
+          }) },
+        { gartenflaeche: flaecheGeprueft, beetLaenge, beetBreite }
+      );
+    } catch (e) {
+      console.warn('plan pruefung nicht gelaufen:', e.message);
+    }
+    if (pruefung.befunde.length) {
+      // Eine Zeile je Lauf, maschinell auswertbar wie „plan ok …": grep auf „plan pruefung"
+      // beantwortet, welche Regel wie oft greift und bei welcher Fläche.
+      console.warn(`plan pruefung flaeche=${flaecheGeprueft} arten=${(plan.pflanzen || []).length} hart=${pruefung.hart} `
+        + `quelle=${notplan ? 'datenbank' : 'ki'} befunde=${pruefung.befunde.map(b => `${b.regel}:${b.schwere}`).join(',')}`);
+      for (const b of pruefung.befunde) console.warn(`  ${b.schwere} ${b.regel}: ${b.text}`);
+    }
+
+    /*
+     * DIE HINWEISE AN DEN KUNDEN — als Liste, nicht als ein Feld.
+     *
+     * Bis zum 23.09.2026 stand hier `hinweis: notplan ? '…' : lockerHinweis`, und der Client
+     * zeigte die Box nur bei `quelle === 'datenbank'`. Die beiden Bedingungen schlossen
+     * einander aus: Der Lockerungshinweis wurde für jeden Modellplan gebaut und konnte in
+     * keinem einzigen Fall erscheinen. Wer „Mediterran" und „lehmig" angab und beides still
+     * fallen sah, erfuhr es nie — genau die Stelle, an der der Kunde erfahren soll, dass
+     * seine Angabe nicht durchgesetzt werden konnte.
+     *
+     * Eine Liste, weil mehrere Gründe gleichzeitig zutreffen können: Ein Notplan KANN auf
+     * gelockerten Kriterien beruhen und zusätzlich einen harten Befund haben. Mit einem
+     * einzelnen Feld verdrängt zwangsläufig einer den anderen.
+     */
+    const hinweise = [];
+    /*
+     * Der Notplan-Satz nennt nur, was buildNotplan WIRKLICH durchsetzt: Rollenverteilung und
+     * Artenzahl nach Fläche. „Höhenstaffelung und Blütenfolge stimmen“ stand bis zum
+     * 23.09.2026 hier — die Blütenfolge prüft niemand (plan-pruefen.js sagt selbst, dass sie
+     * es nicht tut), und seit die Hinweise eine Liste sind, stand der Satz direkt über einem
+     * harten Befund zur Endhöhe. Erst „stimmt“, darunter „stimmt nicht“.
+     */
+    if (notplan) hinweise.push({
+      art: 'notplan',
+      text: 'Die KI war gerade nicht erreichbar. Dieser Plan wurde aus unserer Staudendatenbank zusammengestellt: passend zu Standort und Boden, mit Leit-, Begleit- und Füllstauden und mit einer Artenzahl, die auf die Fläche passt. Die persönliche Handschrift fehlt.',
+    });
+    /*
+     * „Lebensbereich“ ist KEINE Angabe des Kunden — er hat nie eine gemacht. Der Satz unten
+     * zählt auf, was von SEINEN Eingaben fallengelassen wurde; der Lebensbereich ist eine
+     * interne Fachbedingung und bekommt deshalb einen eigenen, verständlichen Hinweis.
+     */
+    const gelockertEingaben = gelockert.filter(g => g !== 'Lebensbereich');
+    if (gelockertEingaben.length) hinweise.push({
+      art: 'gelockert',
+      text: `Für die gewählte Kombination gab es zu wenige passende Stauden. Wir haben ${gelockertEingaben.length === 1 ? 'die Angabe' : 'die Angaben'} ${aufzaehlung(gelockertEingaben)} bei der Auswahl gelockert — Lichtverhältnisse und Winterhärte gelten unverändert.`,
+    });
+    if (gelockert.includes('Lebensbereich')) hinweise.push({
+      art: 'gelockert',
+      text: 'Für diesen Standort gab es zu wenige Stauden. Wir haben deshalb auch Arten aus abweichenden Lebensbereichen zugelassen — achte beim Giessen darauf, dass nicht alle dasselbe brauchen.',
+    });
+    for (const b of pruefung.befunde.filter(b => b.schwere === 'hart')) {
+      hinweise.push({ art: 'pruefung', regel: b.regel, text: b.text });
+    }
 
     res.json({
       success: true, plan,
       quelle: notplan ? 'datenbank' : 'ki',
-      hinweis: notplan
-        ? 'Die KI war gerade nicht erreichbar. Dieser Plan wurde nach denselben Regeln aus unserer Staudendatenbank zusammengestellt — Höhenstaffelung, Rollenverteilung und Blütenfolge stimmen, nur die persönliche Handschrift fehlt.'
-        : lockerHinweis,
+      hinweise,
       gelockert: gelockert.length ? gelockert : undefined,
       rag: { kandidaten: kandidaten.length, wissen: wissen.length }
     });
@@ -2073,7 +2494,8 @@ JSON-Format:
 });
 
 app.post('/api/alternativ', alternativLimiter, (req, res) => {
-  const { licht, boden, standort_beschreibung, stil, rolle, ausschliessen } = req.body;
+  const { licht, boden, standort_beschreibung, stil, rolle, ausschliessen,
+          gartenflaeche, beetLaenge, beetBreite } = req.body;
   if (!licht) return res.status(400).json({ error: 'licht erforderlich' });
 
   /*
@@ -2086,7 +2508,11 @@ app.post('/api/alternativ', alternativLimiter, (req, res) => {
    */
   const lichtTerm = LICHT_MAP[licht] || licht.split(' ')[0];
   const bodenTerm = BODEN_MAP[boden] || 'normal';
-  const stilTerm  = STIL_MAP[stil]   || (stil || '').split('/')[0].trim();
+  // Kein Schlagwort (fehlender oder zurückgezogener Stil) → die Bedingung entfällt ganz,
+  // statt mit einem geratenen Begriff null Zeilen zu treffen.
+  const stilTerm  = stilSchlagwort(stil);
+  const STIL_WHERE = stilTerm ? 'AND stil LIKE ?' : '';
+  const STIL_ARGS  = stilTerm ? [`%${stilTerm}%`] : [];
 
   /*
    * Feuchtigkeit kam in dieser Route bis zum 18.08.2026 überhaupt nicht vor — weder in der
@@ -2099,6 +2525,33 @@ app.post('/api/alternativ', alternativLimiter, (req, res) => {
   const feuchTerms   = FEUCHT_COMPAT[feuchtigkeit] || ['normal'];
   const feuchPh      = feuchTerms.map(() => '?').join(',');
   const FEUCHT_WHERE = `AND (feuchtigkeit IN (${feuchPh}) OR feuchtigkeit IS NULL)`;
+
+  /*
+   * Lebensbereich — dieselbe Ableitung wie im Planer (lbAusschluss), und aus demselben Grund:
+   * Diese Route ist ein ZWEITER Ausgabepfad. Der Planer kann den Gegenpol noch so sauber
+   * aussperren; wer danach auf „Alternative vorschlagen" klickt, holte sich bis zum
+   * 23.09.2026 die Quellflur-Pflanze in ein Steppenheide-Beet zurück — nach der
+   * Schlussprüfung, die davon nie wieder etwas erfährt.
+   */
+  const lbAus     = lbAusschluss(feuchtigkeit);
+  const LB_WHERE  = lbAus.map(() => "AND LOWER(COALESCE(lebensbereich,'')) NOT LIKE ?").join(' ');
+  const LB_ARGS   = lbAus.map(t => `%${t}%`);
+
+  /*
+   * Endhöhe — aus demselben Grund wie der Lebensbereich direkt darüber, und derselbe Fehler
+   * wäre es gewesen, ihn hier auszulassen: /api/plan gibt dem Modell „keine Art über 119 cm"
+   * vor, filtert die Kandidaten danach und meldet einen Verstoß hinterher als harten Befund.
+   * Ein Klick auf „Alternative vorschlagen" holte bis zum 23.09.2026 trotzdem eine 150-cm-
+   * Staude in dasselbe 2,5-m²-Beet — wortlos, und die Schlussprüfung erfährt davon nie.
+   *
+   * Die Fläche ist optional: Diese Route wird auch ohne sie aufgerufen (ältere Clients, der
+   * geteilte Plan). Ohne Fläche entfällt die Bedingung ganz, wie beim Stil — eine geratene
+   * Grenze wäre schlechter als keine.
+   */
+  const altKante   = kanteFuer({ gartenflaeche, beetLaenge, beetBreite }).kante;
+  const altMaxHoehe = altKante ? maxHoeheFuer(gartenflaeche, altKante) : null;
+  const HOEHE_WHERE = altMaxHoehe ? 'AND COALESCE(hoehe_cm_max, 0) <= ?' : '';
+  const HOEHE_ARGS  = altMaxHoehe ? [altMaxHoehe] : [];
 
   const exclude = Array.isArray(ausschliessen) && ausschliessen.length ? ausschliessen : null;
   const exClause = exclude ? `AND name_botanisch NOT IN (${exclude.map(() => '?').join(',')})` : '';
@@ -2118,16 +2571,27 @@ app.post('/api/alternativ', alternativLimiter, (req, res) => {
   // gebraucht: Die Stufe Licht+Feuchtigkeit liefert gemessen 231 bis 356 Kandidaten, sie war
   // über alle 36 Standortkombinationen nie leer.
   let pflanze = holen(
-    `licht LIKE ? AND (boden LIKE ? OR boden LIKE ?) AND stil LIKE ? ${FEUCHT_WHERE} AND ${PLANBAR}`,
-    [`%${lichtTerm}%`, `%${bodenTerm}%`, '%normal%', `%${stilTerm}%`, ...feuchTerms]);
+    `licht LIKE ? AND (boden LIKE ? OR boden LIKE ?) ${STIL_WHERE} ${FEUCHT_WHERE} ${LB_WHERE} ${HOEHE_WHERE} AND ${PLANBAR}`,
+    [`%${lichtTerm}%`, `%${bodenTerm}%`, '%normal%', ...STIL_ARGS, ...feuchTerms, ...LB_ARGS, ...HOEHE_ARGS]);
 
   if (!pflanze) pflanze = holen(
-    `licht LIKE ? AND (boden LIKE ? OR boden LIKE ?) ${FEUCHT_WHERE} AND ${PLANBAR}`,
-    [`%${lichtTerm}%`, `%${bodenTerm}%`, '%normal%', ...feuchTerms]);
+    `licht LIKE ? AND (boden LIKE ? OR boden LIKE ?) ${FEUCHT_WHERE} ${LB_WHERE} ${HOEHE_WHERE} AND ${PLANBAR}`,
+    [`%${lichtTerm}%`, `%${bodenTerm}%`, '%normal%', ...feuchTerms, ...LB_ARGS, ...HOEHE_ARGS]);
 
   if (!pflanze) pflanze = holen(
-    `licht LIKE ? ${FEUCHT_WHERE} AND ${PLANBAR}`,
-    [`%${lichtTerm}%`, ...feuchTerms]);
+    `licht LIKE ? ${FEUCHT_WHERE} ${LB_WHERE} ${HOEHE_WHERE} AND ${PLANBAR}`,
+    [`%${lichtTerm}%`, ...feuchTerms, ...LB_ARGS, ...HOEHE_ARGS]);
+
+  /* Letzte Stufe OHNE Höhengrenze. Bei einem sehr kleinen Beet und der Rolle „Leitstaude"
+   * kann die Grenze alles wegnehmen — dann ist eine zu hohe Alternative immer noch besser
+   * als die Meldung „keine gefunden". Der Verstoß ist protokolliert und fällt der
+   * Schlussprüfung des nächsten Plans auf. */
+  if (!pflanze && altMaxHoehe) {
+    pflanze = holen(`licht LIKE ? ${FEUCHT_WHERE} ${LB_WHERE} AND ${PLANBAR}`,
+      [`%${lichtTerm}%`, ...feuchTerms, ...LB_ARGS]);
+    if (pflanze) console.warn('alternativ ohne Höhengrenze ≤%d cm: %s (%s cm)',
+      altMaxHoehe, pflanze.name_botanisch, pflanze.hoehe_cm_max);
+  }
 
   if (!pflanze) return res.status(404).json({ error: 'Keine Alternative gefunden, die zu Standort und Feuchtigkeit passt.' });
 
@@ -2644,6 +3108,34 @@ app.get('/plan/:id', (req, res) => {
 
 // Read-only-Ansicht eines geteilten Plans — kompletter Plan inkl. grafischem Plan (Draufsicht),
 // Pflanzenkarten, Jahreskalender & Pflegetipps. ALLE Plan-Felder werden in den SSR-Renderern escaped.
+/*
+ * Die Hinweise aus /api/plan als HTML — fuer den GETEILTEN Plan.
+ *
+ * Der Link aus „Plan per E-Mail sichern" ist das, was weitergegeben wird („Wer sie oeffnet,
+ * sieht deinen kompletten Plan"). Bis zum 23.09.2026 zeigte der Bildschirm einen harten
+ * Befund und die geteilte Seite denselben Plan ohne ein Wort davon — obwohl _hinweise in
+ * geteilte_plaene mitgespeichert wird. Dieselbe Entscheidung wie bei der Giftwarnung und der
+ * KI-Bildkennzeichnung: Was den Plan einordnet, muss mit ihm reisen.
+ *
+ * KEIN „Nochmal mit KI versuchen"-Knopf: Auf einer fremden Seite gibt es nichts zu wiederholen.
+ * Die Farben entsprechen denen im Portal (renderHinweise), damit derselbe Befund nicht je nach
+ * Ansicht anders gewichtet aussieht.
+ */
+function hinweiseHtml(hinweise) {
+  const liste = Array.isArray(hinweise) ? hinweise : [];
+  if (!liste.length) return '';
+  const OPTIK = {
+    pruefung:  { stil: 'background:#fffbeb;border:1px solid #fde68a;color:#92400e', titel: '⚠️ Fachlicher Hinweis zu diesem Plan: ' },
+    gelockert: { stil: 'background:#eef6ff;border:1px solid #bfdbfe;color:#1e40af', titel: 'ℹ️ ' },
+    notplan:   { stil: 'background:#eef6ff;border:1px solid #bfdbfe;color:#1e40af', titel: 'ℹ️ ' },
+  };
+  return liste.map(h => {
+    const o = OPTIK[h && h.art] || OPTIK.gelockert;
+    return `<div style="margin-bottom:8px;padding:12px 14px;border-radius:8px;font-size:.85rem;line-height:1.55;${o.stil}">`
+      + o.titel + escHtml(String((h && h.text) || '')) + '</div>';
+  }).join('');
+}
+
 function renderSharedPlan(plan, id) {
   const pflanzen = Array.isArray(plan.pflanzen) ? plan.pflanzen : [];
   const g = sanitizeGrafikOpts(plan._grafik);
@@ -2717,6 +3209,7 @@ function renderSharedPlan(plan, id) {
     <h1 style="font-size:clamp(1.3rem,4vw,1.9rem);font-weight:800;margin:0 auto;max-width:640px;line-height:1.3">${konzept}</h1>
   </div>
   <div style="max-width:900px;margin:0 auto;padding:32px 16px 60px">
+    ${hinweiseHtml(plan._hinweise)}
     ${renderBeispielPlanSSR(plan, flaeche, g)}
     <div style="background:linear-gradient(135deg,#1b4332,#2d6a4f);border-radius:14px;padding:28px;color:#fff;margin-bottom:24px;text-align:center">
       <h2 style="font-size:1.2rem;margin:0 0 8px">Erstelle deinen eigenen Bepflanzungsplan</h2>
@@ -2805,6 +3298,9 @@ app.get('/admin/anfragen', (req, res) => {
       try {
         const plan = JSON.parse(a.ki_plan);
         const n = Array.isArray(plan.pflanzen) ? plan.pflanzen.length : 0;
+        /* BEWUSST EIN GENAUER BETRAG, keine Spanne. Diese Ansicht ist die interne
+         * Kalkulation hinter dem Anmeldeschutz; wer hier ein Angebot rechnet, braucht die
+         * Zahl, die im Plan steht. Die Spanne gilt fuer das, was der Kunde sieht. */
         const kosten = typeof plan.gesamtkosten_geschaetzt === 'number'
           ? Math.round(plan.gesamtkosten_geschaetzt) + ' €' : (plan.gesamtkosten_geschaetzt || '');
         planInfo = esc(`${n} Pflanzen${kosten ? ' · ' + kosten : ''}`);
@@ -5222,10 +5718,13 @@ app.get('/pflanze/:slug', (req, res) => {
             ['↕ Höhe', hoehe],
             ['🎨 Farbe', (pflanze.farbe||'—').replace(/\|/g,' · ')],
             ['🌱 Pflege', pflegeSterne],
-            // "Richtpreis" statt "Preis": die DB-Werte sind Kalkulationsgrößen für die Plansumme,
-            // keine Kassenpreise — eine Stichprobe gegen echte Listenpreise wich bei einzelnen
-            // Arten um mehr als die Hälfte ab (Echinacea purpurea 8,00 € hier gegen 5,10 € dort).
-            ['💶 Richtpreis', pflanze.preis_stueck_eur ? 'ca. ' + pflanze.preis_stueck_eur.toFixed(2)+' €/Stück' : '—'],
+            /* "Richtpreis" statt "Preis": die DB-Werte sind Kalkulationsgrößen für die Plansumme,
+             * keine Kassenpreise — eine Stichprobe gegen echte Listenpreise wich bei einzelnen
+             * Arten um mehr als die Hälfte ab (Echinacea purpurea 8,00 € hier gegen 5,10 € dort).
+             * Seit dem 23.09.2026 steht deshalb eine Spanne da und kein Betrag: "6,90 €" liest
+             * sich wie ein Kassenpreis, egal welches Wort davorsteht. Dieselbe Ableitung wie im
+             * Planer (scripts/preis-spanne.js), nicht eine zweite fürs Lexikon. */
+            ['💶 Richtpreis', (einzelSpanne(pflanze.preis_stueck_eur)?.text || '—') + (pflanze.preis_stueck_eur ? ' je Stück' : '')],
           ].map(([l,v]) => `
             <div style="background:#fff;border-radius:10px;padding:12px 14px;box-shadow:0 1px 6px rgba(0,0,0,.06)">
               <div style="font-size:.72rem;color:#aaa;margin-bottom:3px;text-transform:uppercase;letter-spacing:.05em">${l}</div>
@@ -6941,7 +7440,9 @@ function renderBeispielPlanSSR(plan, flaeche, grafikOpts) {
       kostenZahl = Number(i < 0 ? roh : roh.slice(0, i).replace(/[.,]/g, '') + '.' + roh.slice(i + 1));
     }
   }
-  const kostenText = Number.isFinite(kostenZahl) && kostenZahl > 0 ? `${Math.round(kostenZahl)} €` : '–';
+  // Als Spanne, aus derselben Datei wie im Browser. Die Seite wird geteilt und gedruckt —
+  // ein gerundeter Betrag wandert damit ohne die Einordnung weiter, die daneben steht.
+  const kostenText = (Number.isFinite(kostenZahl) && kostenZahl > 0 && summeSpanne(kostenZahl)?.text) || '–';
   const meta = `<div class="em-bar">
     <div class="em-item"><strong>${pflanzen.length}</strong> Pflanzenarten</div>
     <div class="em-item"><strong>${gesamt}</strong> Pflanzen gesamt</div>
@@ -6956,7 +7457,9 @@ function renderBeispielPlanSSR(plan, flaeche, grafikOpts) {
       ? `<span class="tag" style="background:${hexLightenSSR(c,50)};color:${hexDarkenSSR(c,40)}">${escHtml(p.farbe)}</span>` : '';
     const st = Math.max(0, Math.min(Math.floor(Number(p.pflege_sterne) || 1), 3));
     const stars = '★'.repeat(st) + '☆'.repeat(3 - st);
-    const preis = ((p.preis_stueck_eur||0) * (p.stueckzahl||1)).toFixed(2);
+    // Posten (Stückpreis × Stückzahl) bekommt die Einzelspanne, die Plansumme oben die
+    // Summenspanne — dieselbe Aufteilung wie im Planer, damit Kopf und Karten zusammenpassen.
+    const preis = einzelSpanne((p.preis_stueck_eur||0) * (p.stueckzahl||1))?.text || '—';
     /* Kennzeichnung IN der Karte, nicht in einer Leiste darüber: Der Ausdruck
      * (stauden-portal.html, @media print) blendet Leisten aus und druckt die Pflanzenkarten
      * mit Bild. Ein Hinweis in einer Leiste wäre auf Papier verschwunden, das Bild nicht. */
@@ -6979,7 +7482,7 @@ function renderBeispielPlanSSR(plan, flaeche, grafikOpts) {
         </div>
         <div class="pflanze-preis">
           <span>Pflege: <span class="pflege-sterne">${stars}</span></span>
-          <span>Richtpreis <strong>ca. ${preis} €</strong></span>
+          <span>Richtpreis <strong>${escHtml(preis)}</strong></span>
         </div>
       </div>
     </div>`;

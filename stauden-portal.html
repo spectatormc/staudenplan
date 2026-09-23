@@ -1224,8 +1224,11 @@
       <div class="option-card" onclick="selectProOption('stil','Bauerngarten / Romantisch',this)"><div class="oc-icon">🌹</div><div class="oc-label">Bauerngarten</div><div class="oc-sub">üppig, bunt</div></div>
       <div class="option-card" onclick="selectProOption('stil','Modern / Minimalistisch',this)"><div class="oc-icon">🏛️</div><div class="oc-label">Modern</div><div class="oc-sub">klar, strukturiert</div></div>
       <div class="option-card" onclick="selectProOption('stil','Cottage-Garten / Englisch',this)"><div class="oc-icon">🏡</div><div class="oc-label">Cottage</div><div class="oc-sub">englisch, verspielt</div></div>
-      <div class="option-card" onclick="selectProOption('stil','Prairie-Stil / Naturalistisch',this)"><div class="oc-icon">🌾</div><div class="oc-label">Prairie</div><div class="oc-sub">Piet Oudolf, gräserbetont</div></div>
-      <div class="option-card" onclick="selectProOption('stil','Japanischer Garten',this)"><div class="oc-icon">⛩️</div><div class="oc-label">Japanisch</div><div class="oc-sub">zen, harmonisch, klar</div></div>
+      <!-- Prairie und Japanisch sind am 23.09.2026 aus der Auswahl genommen: KEINE der
+           711 Pflanzen traegt eines der beiden Schlagwoerter. Wer sie waehlte, bekam einen
+           generischen Kandidatentopf und erfuhr es nicht. Sie kommen zurueck, sobald
+           Pflanzen das Schlagwort tragen — die Zuordnung steht in stauden-server.js
+           (STIL_SCHLAGWORT), und nur dort. -->
       <div class="option-card" onclick="selectProOption('stil','Mediterraner Garten',this)"><div class="oc-icon">🌞</div><div class="oc-label">Mediterran</div><div class="oc-sub">trockenheitsstabil, warm</div></div>
       <div class="option-card" onclick="selectProOption('stil','Steingarten / Alpin',this)"><div class="oc-icon">🪨</div><div class="oc-label">Steingarten</div><div class="oc-sub">felsig, robust, alpin</div></div>
     </div>
@@ -1553,16 +1556,8 @@
         <div class="oc-label">Cottage</div>
         <div class="oc-sub">englisch, verspielt</div>
       </div>
-      <div class="option-card" onclick="selectOption('stil', 'Prairie-Stil / Naturalistisch', this)">
-        <div class="oc-icon">🌾</div>
-        <div class="oc-label">Prairie</div>
-        <div class="oc-sub">Piet Oudolf, gräserbetont</div>
-      </div>
-      <div class="option-card" onclick="selectOption('stil', 'Japanischer Garten', this)">
-        <div class="oc-icon">⛩️</div>
-        <div class="oc-label">Japanisch</div>
-        <div class="oc-sub">zen, harmonisch, klar</div>
-      </div>
+      <!-- Prairie und Japanisch: siehe die Anmerkung im Profi-Fragebogen weiter oben.
+           Kein Bestand, also keine Auswahlkarte. -->
       <div class="option-card" onclick="selectOption('stil', 'Mediterraner Garten', this)">
         <div class="oc-icon">🌞</div>
         <div class="oc-label">Mediterran</div>
@@ -1674,12 +1669,13 @@
          Garten mit Kindern plant, darf das nicht erst beim Durchscrollen der Pflanzenkarten
          erfahren. Der Bestand enthält 141 giftige und 22 stark giftige Arten. -->
     <div id="gift-warnung" style="display:none;margin:12px 0 4px;padding:12px 14px;background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;font-size:.85rem;line-height:1.6;color:#991b1b;text-align:left"></div>
-    <!-- Hinweis, wenn der Plan ohne KI aus der Staudendatenbank kam. Muss sichtbar sein:
-         ein Regelplan darf nie als KI-Plan durchgehen. -->
-    <div id="notplan-hinweis" style="display:none;margin:12px 0 4px;padding:12px 14px;background:#eef6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:.85rem;color:#1e40af;text-align:left">
-      <span id="notplan-text"></span>
-      <button type="button" onclick="planErstellen()" style="margin-left:8px;background:#1e40af;color:#fff;border:0;border-radius:6px;padding:6px 12px;font-size:.8rem;font-weight:600;cursor:pointer">Nochmal mit KI versuchen</button>
-    </div>
+    <!-- Hinweise zum Plan. Bis zum 23.09.2026 stand hier eine Box, die NUR bei einem
+         Notplan erschien (an der Plan-Herkunft festgemacht). Der Server schickte im selben Feld
+         aber auch den Lockerungshinweis — und den ausschliesslich fuer KI-Plaene. Die beiden
+         Bedingungen schlossen einander aus, der Lockerungshinweis konnte in keinem Fall
+         erscheinen. Jetzt kommt eine Liste an, und es werden ALLE gezeigt: Ein Notplan kann
+         gleichzeitig auf gelockerten Kriterien beruhen und einen fachlichen Befund haben. -->
+    <div id="plan-hinweise" style="display:none;margin:12px 0 4px;text-align:left"></div>
   </div>
 
   <!-- Beetkonzept -->
@@ -1953,7 +1949,11 @@
     updateStilHints();
   }
 
-  // ── Stil-Empfehlungen nach Standort ──────────────────────────────────────────
+  /* ── Stil-Empfehlungen nach Standort ──────────────────────────────────────────
+   * Ein Eintrag je angebotenem Stil. Prairie und Japanisch sind am 23.09.2026 mit ihren
+   * Auswahlkarten entfallen — ein Stil, den es nicht mehr gibt, darf auch hier nicht als
+   * "top fuer Vollsonne" uebrigbleiben. Wer unten einen Stil ergaenzt, traegt ihn zuerst
+   * in STIL_SCHLAGWORT (stauden-server.js) ein; ohne Schlagwort gibt es keine Kandidaten. */
   function getStilFitness(stilValue, licht, boden) {
     const isSun     = /Vollsonne/i.test(licht);
     const isSemi    = /Halbschatten/i.test(licht);
@@ -1974,11 +1974,6 @@
         if (isSun) return ['top', 'Sonne und gute Drainage — Alpenpflanzen fühlen sich wohl'];
         return ['ok', ''];
       },
-      'Prairie-Stil / Naturalistisch': () => {
-        if (isShade) return ['ungeeignet', 'Präriegräser und -stauden brauchen viel Sonne'];
-        if (isSun) return ['top', 'Vollsonne: ideal für Piet-Oudolf-Stil mit Gräsern und robusten Stauden'];
-        return ['ok', ''];
-      },
       'Bauerngarten / Romantisch': () => {
         if (isShade) return ['ungeeignet', 'Rosen, Malven und Dahlien brauchen Sonne'];
         if (isSun && !isHeavy) return ['top', 'Sonne + guter Boden: klassischer Bauerngarten mit üppiger Blütenpracht'];
@@ -1989,8 +1984,12 @@
         if (isSun && !isDry && !isHeavy) return ['top', 'Sonne + humoser Boden: perfekt für englischen Cottage-Stil'];
         return ['ok', ''];
       },
-      'Japanischer Garten': () => {
-        if (isSemi || isShade) return ['top', 'Halbschatten oder Schatten: ideal für Farne, Bambus und Hosta'];
+      'Modern / Minimalistisch': () => {
+        // Moderne Pflanzungen leben von Struktur, Blattform und Graesern, nicht von
+        // Bluetenfuelle. Deshalb ist Schatten hier KEIN Ausschluss, anders als beim
+        // Bauern- und Cottagegarten — und lehmiger Boden auch nicht.
+        if (isSun && isDry) return ['top', 'Vollsonne + Drainage: Graeser und Steppenstauden zeichnen klare Bloecke'];
+        if (isShade) return ['ok', 'Im Schatten traegt die Blattform — Funkien, Segge und Farn statt Bluetenfuelle'];
         return ['ok', ''];
       },
       'Naturgarten / Wildgarten': () => {
@@ -2675,6 +2674,10 @@
     try {
       const payload = {
         gartenflaeche: formData.gartenflaeche,
+        // Nur im L×B-Modus gesetzt. Die Schlussprüfung braucht die ECHTE kurze Kante:
+        // Ohne sie nimmt sie ein Quadrat an, und bei 4,0 × 0,64 m stand dann „Kante rund
+        // 1,6 m“ im Hinweis an den Kunden — eine Zahl, die er nie eingegeben hat.
+        beetLaenge: formData.beetLaenge, beetBreite: formData.beetBreite,
         licht: formData.licht, boden: formData.boden,
         standort_beschreibung: formData.standort_beschreibung || null,
         stil: formData.stil, sichtseite: formData.sichtseite,
@@ -2710,9 +2713,11 @@
       document.getElementById('ls-4').classList.add('done');
       if (window.plausible) plausible(data.quelle === 'datenbank' ? 'Plan erstellt (Notplan)' : 'Plan erstellt');
       currentPlan = data.plan;
-      // Herkunft merken, damit renderErgebnis den Hinweis zeigen kann.
-      currentPlan._quelle = data.quelle || 'ki';
-      currentPlan._hinweis = data.hinweis || null;
+      /* _quelle wurde hier bis zum 23.09.2026 gesetzt, damit renderErgebnis daran die
+       * Hinweisbox festmachen konnte. Seit die Hinweise als Liste kommen (der Notplan
+       * steht als eigener Eintrag drin), liest es niemand mehr — es reiste nur noch
+       * stumm in jedes geteilte und jeder Anfrage beigelegte Plan-JSON mit. */
+      currentPlan._hinweise = Array.isArray(data.hinweise) ? data.hinweise : [];
       // Leitstauden immer mind. 3 Exemplare (Profipraxis)
       currentPlan.pflanzen.forEach(p => {
         if (p.rolle === 'Leitstaude' && (p.stueckzahl || 1) < 3) p.stueckzahl = 3;
@@ -2777,6 +2782,79 @@
    * Ob eine Karte ueberhaupt ein Bild zeigt und was im alt-Text steht, sagt das Merkmal
    * p.bild_herkunft aus der Serverantwort — auch diese Regel wird hier nicht wiederholt. */
   const KI_MARKE = __KI_MARKE__;
+
+  /* PREISE ALS SPANNE. Derselbe Weg wie bei der KI-Marke: Der Server setzt hier beim
+   * Ausliefern den QUELLTEXT von scripts/preis-spanne.js ein, statt dass die Regel hier
+   * ein zweites Mal geschrieben stuende. Das ist nicht Bequemlichkeit — der Browser bildet
+   * nach jedem Klick auf „Locker/Normal/Dicht" neue Summen, und eine zweite Fassung wuerde
+   * unweigerlich von der des Servers abweichen. Dann wuerden Stueckliste, Kopfzeile, PDF
+   * und geteilter Plan fuer dieselbe Sache verschiedene Spannen nennen.
+   *
+   * Warum ueberhaupt eine Spanne: preis_stueck_eur sind Kalkulationsgroessen fuer die
+   * Plansumme, keine Kassenpreise. Ein Betrag mit zwei Nachkommastellen liest sich trotzdem
+   * wie ein Preis, egal welcher Satz daneben steht.
+   *
+   * In eine IIFE gekapselt, damit die internen Namen der Datei (zahl, euro, BREITE) nicht
+   * mit denen dieser Seite zusammenstossen. */
+  (function () {
+__PREIS_SPANNE_JS__
+    window.einzelSpanne = einzelSpanne;
+    window.summeSpanne  = summeSpanne;
+  })();
+
+  /* SCHLUSSPRUEFUNG, derselbe Weg und derselbe Grund. Der Server prueft den Plan einmal, bevor
+   * er ihn schickt — danach aendert ihn der Browser aber noch: „Alternative vorschlagen"
+   * tauscht eine Art aus, „Locker/Normal/Dicht" rechnet alle Stueckzahlen um. Bis zum
+   * 23.09.2026 blieb der gelbe Kasten dabei unveraendert stehen und nannte namentlich
+   * Pflanzen, die nicht mehr im Plan standen — oder schwieg, wenn der Tausch den Verstoss
+   * gerade erst herbeifuehrte. Ein stehengebliebener Befund ist schlechter als keiner. */
+  (function () {
+__PLAN_PRUEFEN_JS__
+    window.planPruefen = planPruefen;
+  })();
+
+  /* Bildet die Befunde der Art 'pruefung' neu und laesst 'notplan' und 'gelockert' stehen —
+   * die beiden sagen etwas ueber die ENTSTEHUNG des Plans und werden durch einen Tausch nicht
+   * falsch. Die Reihenfolge bleibt erhalten (Herkunft zuerst, Befunde darunter).
+   *
+   * Die uebergebenen Felder sind dieselben, die der Server an planPruefen gibt — samt des
+   * Rueckfalls von hoehe_cm_max auf die Modellhoehe. Steht hier eine andere Zusammenstellung,
+   * rechnet der Browser eine andere Frage aus als der Server und widerspricht ihm sichtbar. */
+  function pruefungNeuRechnen(plan) {
+    if (!plan || typeof window.planPruefen !== 'function') return;
+    const alt = Array.isArray(plan._hinweise) ? plan._hinweise : [];
+    let ergebnis;
+    try {
+      ergebnis = window.planPruefen(
+        { pflanzen: (plan.pflanzen || []).map(p => ({
+            name_deutsch: p.name_deutsch, name_botanisch: p.name_botanisch,
+            rolle: p.rolle, stueckzahl: p.stueckzahl,
+            hoehe_cm_max: p.hoehe_cm_max != null ? p.hoehe_cm_max : p.hoehe_cm,
+            feuchtigkeit: p.feuchtigkeit || null,
+            lebensbereich: p.lebensbereich || null,
+          })) },
+        { gartenflaeche: formData.gartenflaeche,
+          beetLaenge: formData.beetLaenge, beetBreite: formData.beetBreite });
+    } catch (e) {
+      // Eine Pruefung darf den Plan melden, aber nie verhindern — dieselbe Regel wie auf
+      // dem Server. Im Zweifel bleiben die alten Befunde weg statt falsch stehen.
+      console.warn('Pruefung im Browser nicht gelaufen:', e && e.message);
+      plan._hinweise = alt.filter(h => h && h.art !== 'pruefung');
+      return;
+    }
+    plan._hinweise = alt.filter(h => h && h.art !== 'pruefung')
+      .concat(ergebnis.befunde.filter(b => b.schwere === 'hart')
+        .map(b => ({ art: 'pruefung', regel: b.regel, text: b.text })));
+  }
+
+  /* Einheitlich fuer die ganze Seite: Stueckpreis und Posten (Stueckpreis x Stueckzahl)
+   * bekommen die Einzelspanne, die PLANSUMME die Summenspanne.
+   * Warum nicht die Summenspanne auch fuer Posten: Sie rundet in Zehnerschritten, was bei
+   * einer Plansumme von 380 EUR richtig ist („ca. 330–430 €"), bei einem Posten von 10,50 EUR
+   * aber „ca. 10–20 €" ergaebe — eine Unsicherheit von zwei Dritteln, wo zwoelf Prozent
+   * gemeint sind. Beide Funktionen stammen aus derselben Datei, nachgebaut wird nichts. */
+  const preisText = (betrag) => { const s = einzelSpanne(betrag); return s ? s.text : '—'; };
+  const summeText = (betrag) => { const s = summeSpanne(betrag); return s ? s.text : '—'; };
 
   // Beschriftung der Giftstufen. MUSS mit GIFT_REIHENFOLGE/GIFT_LABEL in stauden-server.js
   // synchron bleiben — dieselbe Regel wie bei BLOOM_COLORS. Die Reihenfolge ist die
@@ -3634,14 +3712,14 @@
         </td>
         <td style="font-style:italic;color:#888;font-size:.82rem">${escapeHtml(p.name_botanisch)}</td>
         <td style="font-weight:700;font-size:1.05rem">${p.stueckzahl || 1}</td>
-        <td>${p.preis_stueck_eur ? p.preis_stueck_eur.toFixed(2) + ' €' : '—'}</td>
-        <td style="font-weight:700;color:var(--earth)">${gesamt.toFixed(2)} €</td>
+        <td>${preisText(p.preis_stueck_eur)}</td>
+        <td style="font-weight:700;color:var(--earth)">${preisText(gesamt)}</td>
         <td style="font-size:.82rem;color:#666">${escapeHtml(p.bluehzeit || '—')}</td>
         <td style="font-size:.82rem;color:#666">${escapeHtml(p.standort || '—')}</td>
       </tr>`;
     }).join('');
     document.getElementById('sl-total-stueck').textContent = totalStueck + ' Stück';
-    document.getElementById('sl-total-preis').textContent = totalPreis.toFixed(2) + ' €';
+    document.getElementById('sl-total-preis').textContent = summeText(totalPreis);
 
     // Hier wurde bis zum 23.09.2026 unter der Tabelle je Pflanze ein Kauflink gerendert
     // (#sl-kauf-liste) und mit kaufUrl() um einen Herkunftsmarker ergänzt. Beides ist weg:
@@ -4018,10 +4096,10 @@
       ['Standort', formData.licht || '?'],
       ['Bodentyp', formData.boden || '?'],
       ['Gartenstil', formData.stil || '?'],
-      // Gerundet und mit Währung — sonst steht im PDF eine rohe Fließkommazahl wie "487.4",
-      // während die Tabelle darunter "487,40 €" ausweist.
+      // Als Spanne, damit im PDF nicht steht, was auf dem Bildschirm bewusst nicht steht —
+      // ein ausgedrucktes "487,40 €" liest sich endgültiger als jedes Wort daneben.
       ['Richtpreis gesamt', typeof plan.gesamtkosten_geschaetzt === 'number'
-        ? 'ca. ' + Math.round(plan.gesamtkosten_geschaetzt) + ' €'
+        ? summeText(plan.gesamtkosten_geschaetzt)
         : (plan.gesamtkosten_geschaetzt || '?')],
     ];
     doc.autoTable({ startY: y, head: [], body: gData, margin: { left: MARGIN, right: MARGIN },
@@ -4035,6 +4113,30 @@
       doc.setFontSize(10); doc.setFont('helvetica', 'bolditalic'); doc.setTextColor(27, 67, 50);
       const konzeptLines = doc.splitTextToSize('Konzept: ' + plan.konzept, CW);
       doc.text(konzeptLines, MARGIN, y); y += konzeptLines.length * 5 + 4;
+    }
+
+    // ── Hinweise zum Plan ──
+    // Aus demselben Grund wie die Giftwarnung darunter: Das PDF ist das Blatt, das der Kunde
+    // ausdruckt, mitnimmt und in der Gaertnerei auf den Tresen legt. Ein Plan mit zehn Arten
+    // auf 2,6 m² ist dort ohne den Satz, der ihn einordnet, genau das, was die Gaertnerei am
+    // 23.09.2026 beanstandet hat. Bis dahin standen die Hinweise nur auf dem Bildschirm.
+    const hinweisePdf = Array.isArray(plan._hinweise) ? plan._hinweise : [];
+    if (hinweisePdf.length) {
+      // Ohne Emoji — jsPDF nutzt Helvetica, das keine Emoji-Glyphen hat (siehe unten).
+      const hTexte = hinweisePdf.map(h => (h.art === 'pruefung' ? 'Fachlicher Hinweis: ' : 'Hinweis: ')
+        + String((h && h.text) || ''));
+      const hText = doc.splitTextToSize(hTexte.join('\n'), CW - 8);
+      const hHoehe = hText.length * 4.6 + 9;
+      if (y + hHoehe > 275) { doc.addPage(); y = 20; }
+      const hart = hinweisePdf.some(h => h && h.art === 'pruefung');
+      if (hart) { doc.setFillColor(255, 251, 235); doc.setDrawColor(253, 230, 138); }
+      else      { doc.setFillColor(238, 246, 255); doc.setDrawColor(191, 219, 254); }
+      doc.roundedRect(MARGIN, y, CW, hHoehe, 2, 2, 'FD');
+      doc.setFontSize(8.5); doc.setFont('helvetica', 'normal');
+      doc.setTextColor(...(hart ? [146, 64, 14] : [30, 64, 175]));
+      doc.text(hText, MARGIN + 4, y + 6);
+      y += hHoehe + 6;
+      doc.setTextColor(60, 60, 60);
     }
 
     // ── Giftige Arten ──
@@ -4088,10 +4190,10 @@
       p.stueckzahl || 1,
       p.bluehzeit || '–',
       p.farbe || '–',
-      p.preis_stueck_eur ? ((p.preis_stueck_eur * (p.stueckzahl || 1)).toFixed(2) + ' €') : '–',
+      p.preis_stueck_eur ? preisText(p.preis_stueck_eur * (p.stueckzahl || 1)) : '–',
     ]);
     const gesamtpreis = plan.pflanzen.reduce((s, p) => s + (p.preis_stueck_eur || 0) * (p.stueckzahl || 1), 0);
-    rows.push(['', '', { content: 'Gesamt', styles: { fontStyle: 'bold' } }, plan.pflanzen.reduce((s,p) => s + (p.stueckzahl||1), 0), '', '', { content: gesamtpreis.toFixed(2) + ' €', styles: { fontStyle: 'bold' } }]);
+    rows.push(['', '', { content: 'Gesamt', styles: { fontStyle: 'bold' } }, plan.pflanzen.reduce((s,p) => s + (p.stueckzahl||1), 0), '', '', { content: summeText(gesamtpreis), styles: { fontStyle: 'bold' } }]);
     doc.autoTable({
       startY: y,
       head: [['#', 'Pflanze', 'Botanisch', 'Stk.', 'Blüte', 'Farbe', 'Richtpreis']],
@@ -4099,7 +4201,9 @@
       margin: { left: MARGIN, right: MARGIN },
       styles: { fontSize: 8, cellPadding: 2 },
       headStyles: { fillColor: [45, 106, 79], textColor: 255, fontStyle: 'bold' },
-      columnStyles: { 0: { cellWidth: 8 }, 3: { cellWidth: 12 }, 6: { cellWidth: 22 } },
+      // Die Richtpreis-Spalte traegt seit dem 23.09.2026 eine Spanne ("ca. 49–63 €") statt
+      // eines Betrags und braucht dafuer mehr Platz; bei 22 mm brach sie bei 8 pt um.
+      columnStyles: { 0: { cellWidth: 8 }, 3: { cellWidth: 12 }, 6: { cellWidth: 30 } },
       alternateRowStyles: { fillColor: [245, 250, 247] },
       theme: 'striped'
     });
@@ -4192,9 +4296,10 @@
       const se = document.getElementById('stueck-' + i);
       const pe = document.getElementById('preis-' + i);
       if (se) se.textContent = '× ' + p.stueckzahl + ' Stück';
-      // "ca. " mitschreiben: das Element ist nur das <strong> innerhalb von "Richtpreis …",
-      // ein nacktes textContent würde die Angabe beim ersten Dichte-Klick wieder entwerten.
-      if (pe) pe.textContent = 'ca. ' + ((p.preis_stueck_eur||0) * p.stueckzahl).toFixed(2) + ' €';
+      // Die Spanne muss mitgeschrieben werden: Das Element ist nur das <strong> innerhalb
+      // von "Richtpreis …", ein nackter Betrag würde die Angabe beim ersten Dichte-Klick
+      // wieder zu einem Preis machen.
+      if (pe) pe.textContent = preisText((p.preis_stueck_eur||0) * p.stueckzahl);
     });
     // Staudenzahl nur über Nicht-Geophyten (Kachel ist mit "Stauden" beschriftet);
     // Gesamtkosten über alle. Kacheln über stabile data-Attribute, nicht Positionsindex
@@ -4204,12 +4309,15 @@
     const staudenEl = document.querySelector('#ergebnis-meta [data-meta="stauden"]');
     const kostenEl = document.querySelector('#ergebnis-meta [data-meta="kosten"]');
     if (staudenEl) staudenEl.textContent = totalStueck;
-    if (kostenEl) kostenEl.textContent = totalKosten.toFixed(0) + ' €';
+    if (kostenEl) kostenEl.textContent = summeText(totalKosten);
     // Das Feld muss mitwandern: PDF-Kopfzeile, geteilter Plan und der mit einer Anfrage
     // gespeicherte ki_plan (/admin/anfragen) lesen gesamtkosten_geschaetzt, während die Stückliste live aus
     // stueckzahl summiert. Ohne diese Zeile nennen beide im selben Dokument verschiedene Preise —
     // nach einem Klick auf "Dicht" bis zu 50 % auseinander.
     currentPlan.gesamtkosten_geschaetzt = totalKosten;
+    // Die Dichteregel haengt an den Stueckzahlen, die gerade alle neu gesetzt wurden.
+    pruefungNeuRechnen(currentPlan);
+    renderHinweise(currentPlan);
     renderStueckliste(currentPlan);
   }
 
@@ -4263,6 +4371,51 @@
 
   // planIstNeu=false beim Neuzeichnen desselben Plans (z. B. nach "Alternative vorschlagen"):
   // dann bleiben Basiszahlen und gewählte Dichte erhalten.
+  /* Hinweise zum Plan. Der Zweig muss auch wieder ausblenden, sonst bliebe ein Hinweis
+   * beim naechsten (sauberen) Plan stehen.
+   *
+   * Drei Arten, drei Aussagen — deshalb drei Anmutungen statt einer Sammelbox:
+   *   notplan   = Herkunft des Plans (sachlich, blau)
+   *   gelockert = deine Angabe konnte nicht durchgesetzt werden (blau)
+   *   pruefung  = an diesem Plan stimmt fachlich etwas nicht (gelb, auffaellig)
+   * Der "Nochmal mit KI"-Knopf haengt am Notplan und an nichts anderem: Ein zweiter Lauf
+   * hilft gegen eine ausgefallene KI, nicht gegen ein zu kleines Beet.
+   *
+   * Als eigene Funktion, weil zwei Wege hier landen:
+   * renderErgebnis (neuer oder getauschter Plan) und setDichte (geaenderte Stueckzahlen —
+   * die Dichteregel haengt daran). Stuende der Code nur in renderErgebnis, zeigte der Kasten
+   * nach einem Klick auf „Dicht" weiter den Stand von davor. */
+  function renderHinweise(plan) {
+    const hBox = document.getElementById('plan-hinweise');
+    if (!hBox) return;
+    const hinweise = Array.isArray(plan && plan._hinweise) ? plan._hinweise : [];
+    if (hinweise.length) {
+      // "optik", nicht "stil": In dieser Datei heisst stil der Gartenstil.
+      const optik = {
+        pruefung:  'background:#fffbeb;border:1px solid #fde68a;color:#92400e',
+        gelockert: 'background:#eef6ff;border:1px solid #bfdbfe;color:#1e40af',
+        notplan:   'background:#eef6ff;border:1px solid #bfdbfe;color:#1e40af',
+      };
+      const titel = {
+        pruefung:  '⚠️ Fachlicher Hinweis zu diesem Plan: ',
+        gelockert: 'ℹ️ ',
+        notplan:   'ℹ️ ',
+      };
+      hBox.innerHTML = hinweise.map(h => {
+        const art = optik[h && h.art] ? h.art : 'gelockert';
+        const knopf = art === 'notplan'
+          ? '<button type="button" onclick="planErstellen()" style="margin-left:8px;background:#1e40af;color:#fff;border:0;border-radius:6px;padding:6px 12px;font-size:.8rem;font-weight:600;cursor:pointer">Nochmal mit KI versuchen</button>'
+          : '';
+        return '<div style="margin-bottom:8px;padding:12px 14px;border-radius:8px;font-size:.85rem;line-height:1.55;'
+          + optik[art] + '">' + titel[art] + escapeHtml(String((h && h.text) || '')) + knopf + '</div>';
+      }).join('');
+      hBox.style.display = 'block';
+    } else {
+      hBox.innerHTML = '';
+      hBox.style.display = 'none';
+    }
+  }
+
   function renderErgebnis(plan, planIstNeu = true) {
     if (planIstNeu || !_baseStueck || _baseStueck.length !== plan.pflanzen.length) {
       _baseStueck = plan.pflanzen.map(p => p.stueckzahl);
@@ -4274,17 +4427,7 @@
     document.getElementById('ergebnis-subtitle').textContent =
       `${plan.pflanzen.length} Pflanzenarten · ${formData.gartenflaeche} m² · ${formData.licht} · ${formData.stil}`;
 
-    // Notplan kennzeichnen. escapeHtml ist hier nicht nötig, weil der Text per textContent
-    // gesetzt wird — aber der Zweig muss auch wieder ausblenden, sonst bliebe der Hinweis
-    // beim nächsten (erfolgreichen) Plan stehen.
-    const npBox = document.getElementById('notplan-hinweis');
-    if (plan._quelle === 'datenbank') {
-      document.getElementById('notplan-text').textContent = plan._hinweis
-        || 'Dieser Plan wurde ohne KI aus unserer Staudendatenbank zusammengestellt.';
-      npBox.style.display = 'block';
-    } else {
-      npBox.style.display = 'none';
-    }
+    renderHinweise(plan);
 
     const stauden = plan.pflanzen.filter(p => p.rolle !== 'Geophyt');
     const geos = plan.pflanzen.filter(p => p.rolle === 'Geophyt');
@@ -4293,7 +4436,7 @@
       <div class="em-item"><strong>${stauden.length}</strong> Staudenarten</div>
       <div class="em-item"><strong data-meta="stauden">${stauden.reduce((s,p)=>s+p.stueckzahl,0)}</strong> Stauden</div>
       ${geos.length > 0 ? `<div class="em-item" style="background:rgba(157,23,77,.15)"><strong>${geos.reduce((s,p)=>s+p.stueckzahl,0)}</strong> 🌷 Zwiebeln (${geos.length} Arten)</div>` : ''}
-      <div class="em-item"><strong data-meta="kosten">${typeof plan.gesamtkosten_geschaetzt === 'number' ? plan.gesamtkosten_geschaetzt.toFixed(0) + ' €' : plan.gesamtkosten_geschaetzt || '—'}</strong> Richtpreis gesamt</div>
+      <div class="em-item"><strong data-meta="kosten">${typeof plan.gesamtkosten_geschaetzt === 'number' ? summeText(plan.gesamtkosten_geschaetzt) : escapeHtml(String(plan.gesamtkosten_geschaetzt || '—'))}</strong> Richtpreis gesamt</div>
     `;
 
     // Pflanzenkarten (mit Pflanzenbild oder farbigem Top)
@@ -4335,7 +4478,7 @@
           </div>
           <div class="pflanze-preis">
             <span>Pflege: <span class="pflege-sterne">${'★'.repeat(stars)}${'☆'.repeat(3-stars)}</span></span>
-            <span>Richtpreis <strong id="preis-${i}">ca. ${((p.preis_stueck_eur||0) * (p.stueckzahl||1)).toFixed(2)} €</strong></span>
+            <span>Richtpreis <strong id="preis-${i}">${preisText((p.preis_stueck_eur||0) * (p.stueckzahl||1))}</strong></span>
           </div>
           <button class="btn-alt" data-idx="${i}" onclick="alternativVorschlagen(${i})">🔄 Alternative vorschlagen</button>
           ${p.giftig ? `<div style="margin-top:8px;padding:9px 12px;background:${p.giftig.stufe === 'stark' ? '#fef2f2' : '#fffbeb'};border:1px solid ${p.giftig.stufe === 'stark' ? '#fca5a5' : '#fde68a'};border-radius:8px;font-size:.8rem;line-height:1.5;color:${p.giftig.stufe === 'stark' ? '#991b1b' : '#92400e'}"><strong>${GIFT_LABEL[p.giftig.stufe] || '⚠️ Giftig'}</strong> — ${escapeHtml(p.giftig.text)}</div>` : ''}
@@ -4434,6 +4577,12 @@
           // heraus als beim Planen — und der Tausch schlueg Pflanzen fuer einen Standort vor,
           // den der Nutzer gar nicht hat.
           standort_beschreibung: formData.standort_beschreibung || null,
+          // Muss ebenfalls mit: Der Server leitet daraus die Endhoehengrenze ab
+          // (maxHoeheFuer). Ohne sie holte der Tausch bis zum 23.09.2026 eine 150-cm-Staude
+          // in ein 2,5-m²-Beet zurueck, fuer das der Planer gerade „keine Art ueber 119 cm"
+          // durchgesetzt hatte.
+          gartenflaeche: formData.gartenflaeche,
+          beetLaenge: formData.beetLaenge, beetBreite: formData.beetBreite,
           rolle: p.rolle,
           ausschliessen: currentPlan.pflanzen.map(pp => pp.name_botanisch)
         })
@@ -4457,6 +4606,8 @@
         _baseStueck[idx] = Math.max(1, basis);
       }
       currentPlan.gesamtkosten_geschaetzt = currentPlan.pflanzen.reduce((s, pp) => s + (pp.preis_stueck_eur || 0) * (pp.stueckzahl || 1), 0);
+      // Der Plan ist jetzt ein anderer als der, den der Server geprueft hat.
+      pruefungNeuRechnen(currentPlan);
       renderErgebnis(currentPlan, false);
     } catch (e) {
       btn.textContent = origText;
