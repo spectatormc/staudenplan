@@ -281,8 +281,13 @@ function pflanzeNachschlagen(nameBot) {
     // Schlussprüfung (scripts/plan-pruefen.js) rechnet mit den DB-Werten, nicht mit denen,
     // die das Modell in den Plan geschrieben hat. Der Plan trägt nur ein gemitteltes
     // `hoehe_cm` und gar keine Feuchte- oder Lebensbereichsangabe.
+    // `stil` ebenso — und das Fehlen war kein stiller Fehler, sondern ein LAUTER: Ohne die
+    // Spalte war dbP.stil undefined, und die Stilprobe am fertigen Plan meldete jede Art als
+    // „dem Stil nicht zugeordnet". Live stand „5 Arten … nicht zugeordnet: … Zier-Oregano"
+    // unter einem Mediterran-Plan. Eine Pruefung, die alles beanstandet, ist so unbrauchbar
+    // wie eine, die nichts findet — nur auffaelliger.
     `SELECT name_deutsch, name_botanisch, ${BILD_SPALTEN_SQL}, inhalt_lang, preis_stueck_eur,
-            hoehe_cm_max, feuchtigkeit, lebensbereich
+            hoehe_cm_max, feuchtigkeit, lebensbereich, stil
        FROM pflanzen
       WHERE name_botanisch = ? OR name_botanisch LIKE ? OR name_botanisch LIKE ?
       ORDER BY CASE WHEN name_botanisch = ? THEN 0 WHEN name_botanisch LIKE ? THEN 1 ELSE 2 END
@@ -2687,19 +2692,33 @@ JSON-Format:
      * die Rolle war im Hinweis ausdrücklich als unberührt ausgewiesen. Der Satz darf
      * deshalb nur fallen, wenn er am fertigen Plan nachgerechnet wurde.
      *
-     * Gezählt wird nur, was sich zählen lässt: Arten mit Artbezug in der Datenbank. Eine
-     * vom Modell erfundene Art hat keinen Stileintrag — sie gilt hier als unbekannt, nicht
-     * als passend.
+     * GEZÄHLT WIRD NUR, WAS SICH ZÄHLEN LÄSST: Arten, zu denen wir eine Datenbankzeile auf
+     * Artebene haben. Eine vom Modell frei erfundene Art hat keinen Stileintrag — „wir
+     * wissen es nicht" ist etwas anderes als „sie passt nicht", und nur das Zweite darf dem
+     * Kunden als Befund hingestellt werden.
+     *
+     * DIE SICHERUNG DARUNTER hat sich sofort bezahlt gemacht: Beim ersten Lauf fehlte `stil`
+     * in der SELECT-Liste von pflanzeNachschlagen, jeder Wert war undefined, und der Hinweis
+     * meldete „5 Arten … nicht zugeordnet" unter einem Plan mit Zier-Oregano und
+     * Silberraute. Schlägt eine Probe bei ALLEN an, ist fast immer die Probe kaputt und
+     * nicht der Bestand.
      */
     const stilSchlag = stilSchlagwort(stil);
-    const stilFremd = stilSchlag
-      ? (Array.isArray(plan.pflanzen) ? plan.pflanzen : [])
-          .filter(p => (p.rolle || '') !== 'Geophyt')
-          .filter(p => {
-            const f = fachwerte.get((p.name_botanisch || '').trim());
-            return !f || !String(f.stil || '').toLowerCase().includes(stilSchlag.toLowerCase());
-          })
+    const planStauden = (Array.isArray(plan.pflanzen) ? plan.pflanzen : [])
+      .filter(p => (p.rolle || '') !== 'Geophyt');
+    const stilBekannt = stilSchlag
+      ? planStauden.filter(p => fachwerte.has((p.name_botanisch || '').trim()))
       : [];
+    const stilFremd = stilBekannt.filter(p => {
+      const f = fachwerte.get((p.name_botanisch || '').trim());
+      return !String(f.stil || '').toLowerCase().includes(stilSchlag.toLowerCase());
+    });
+    if (stilBekannt.length >= 3 && stilFremd.length === stilBekannt.length) {
+      console.warn('stilprobe verdaechtig: ALLE %d bekannten Arten gelten als stilfremd (stil=%j, schlagwort=%j) '
+        + '— eher ein Fehler in der Probe als im Bestand; Hinweis wird nicht gezeigt',
+        stilBekannt.length, stil, stilSchlag);
+      stilFremd.length = 0;
+    }
     if (gelockertEingaben.length) hinweise.push({
       art: 'gelockert',
       text: anlaesse.length
