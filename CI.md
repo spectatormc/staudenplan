@@ -58,11 +58,15 @@ durchlaufen koennen.
 | `scripts/check-pin-metadaten.js` | `check:pin-meta` | gefuelltes `public/pins/` | nach jedem Lauf von `pins-erzeugen.js` |
 | `scripts/check-beispielplaene.js` | `check:beispiele` | Produktions-`stauden.db` | vor jedem Deploy, der `scripts/plan-pruefen.js`, die Schwellen darin oder einen Beispielplan beruehrt |
 
-Ausserhalb der Kette laeuft `scripts/check-lebensbereich.js` (`npm run check:lebensbereich`).
-Sie ist bewusst NICHT in `ci:daten`: Sie meldet einen offenen Befund, den unsere eigenen Daten
-nicht entscheiden koennen (`Clematis x durandii`), und ein Gate, das jede Nacht rot ist, liest
-nach zwei Wochen niemand mehr. Der Grund steht im Kopf der Datei. Sobald die Zeile geklaert
-ist, gehoert sie zurueck in die Kette.
+| `scripts/check-lebensbereich.js` | `check:lebensbereich` | Produktions-`stauden.db` | vor jedem Deploy, der Pflanzendaten aendert |
+
+`check:lebensbereich` lief am 23.09.2026 kurzzeitig ausserhalb der Kette, weil sie einen
+offenen Befund meldete (`Clematis x durandii`: `lebensbereich=Gehoelz` gegen `licht=Sonne`).
+Entschieden hat das eine Recherche AUSSERHALB unserer Daten — aus den eigenen Feldern war
+nicht zu sagen, welches der beiden falsch ist. Die Zeile steht jetzt auf
+`Freiflaeche,Gehoelzrand`, der Lauf ist gruen, und die Pruefung ist zurueck in der Kette.
+Wer kuenftig einen Befund bekommt, klaert ihn an einer externen Quelle — und nimmt die
+Pruefung nicht heraus.
 
 1. `check:ki` — Traegt jeder Ausgabepfad mit KI-Bild die Kennzeichnung, und traegt sie kein
    anderer? Startet den Server als Kindprozess (Port ueber `KI_PRUEF_PORT`, Vorgabe 3311) und

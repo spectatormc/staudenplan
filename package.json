@@ -19,7 +19,7 @@
     "ci:smoke": "npm run check:smoke && npm run check:selbsttest",
     "check:lebensbereich": "node scripts/check-lebensbereich.js",
     "check:beispiele": "node scripts/check-beispielplaene.js",
-    "ci:daten": "npm run check:ki && npm run check:pins && npm run check:pin-meta && npm run check:beispiele"
+    "ci:daten": "npm run check:ki && npm run check:pins && npm run check:pin-meta && npm run check:beispiele && npm run check:lebensbereich"
   },
   "dependencies": {
     "@resvg/resvg-js": "^2.6.2",

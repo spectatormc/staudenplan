@@ -19,13 +19,17 @@
  * Dafür braucht es einen Abgleich gegen eine Quelle außerhalb unserer Daten; die eigenen
  * Pflegetexte taugen dafür nicht, weil sie aus denselben Feldern erzeugt wurden.
  *
- * NICHT IN ci:daten, und das ist Absicht. Der Lauf meldet am 23.09.2026 genau einen harten
- * Widerspruch: Clematis x durandii traegt lebensbereich='Gehölz' (der schattige Bereich unter
- * Bäumen) und licht='Sonne'. Die Meldung stimmt — aber WELCHES der beiden Felder falsch ist,
- * lässt sich aus unseren eigenen Daten nicht entscheiden (dieselbe Lage wie beim Enzian: die
- * Pflegetexte stammen aus genau diesen Feldern und belegen sie deshalb nicht). Solange die
- * Zeile offen ist, würde der nächtliche ci:daten-Lauf jede Nacht rot melden, und eine Prüfung,
- * die immer rot ist, liest nach zwei Wochen niemand mehr. Sie läuft deshalb auf Zuruf:
+ * WIEDER IN ci:daten, seit die eine offene Zeile geklaert ist. Sie lief vom 23.09.2026 an
+ * kurzzeitig nur auf Zuruf, weil Clematis x durandii lebensbereich='Gehoelz' (der schattige
+ * Bereich unter Baeumen) und licht='Sonne' trug und aus unseren eigenen Daten nicht zu
+ * entscheiden war, welches der beiden Felder falsch ist. Eine Recherche ausserhalb der
+ * eigenen Daten hat es entschieden: Der Lebensbereich war falsch, das Licht stimmte. Die
+ * Zeile steht jetzt auf 'Freiflaeche,Gehoelzrand' und der Lauf ist gruen.
+ *
+ * WER HIER EINEN NEUEN BEFUND BEKOMMT, klaert ihn an einer Quelle ausserhalb unserer Daten
+ * und nimmt die Pruefung NICHT aus der Kette. Ein Gate, das jede Nacht rot ist, liest nach
+ * zwei Wochen niemand mehr — aber eines, das man bei jedem Befund herausnimmt, hat nie
+ * etwas geleistet.
  *
  * Aufrufen:  npm run check:lebensbereich
  *            node scripts/check-lebensbereich.js --alle     (auch die schwachen Hinweise)
