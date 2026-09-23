@@ -2248,9 +2248,17 @@ app.get('/newsletter/abmelden', (req, res) => {
   res.send(seite('Abgemeldet', 'Du bekommst keine Gartentipps mehr von uns. Deinen Planlink kannst du weiterhin aufrufen.'));
 });
 
-// Die Anfrage geht an die Partnergärtnerei, die das Paket liefert. Über EMAIL_GAERTNEREI
-// umstellbar — lokal auf die eigene Adresse setzen, sonst läuft jeder Test bei Gaißmayer auf.
-const GAERTNEREI_EMAIL = process.env.EMAIL_GAERTNEREI || 'info@gaissmayer.de';
+/* KEINE WEITERLEITUNG AN EINE GÄRTNEREI MEHR (23.09.2026).
+ *
+ * Bis hierher ging jede Paketanfrage automatisch an info@gaissmayer.de. Die Gärtnerei hat
+ * mitgeteilt, dass sie keine Zusammenarbeit wünscht; der Versand ist deshalb eingestellt.
+ *
+ * KEIN Vorgabewert mehr: Stünde hier weiterhin eine Adresse als Rückfall, genügte ein
+ * fehlendes EMAIL_GAERTNEREI in der Umgebung, und der Versand liefe wieder an. Wer je wieder
+ * eine Gärtnerei anbinden will, setzt die Variable bewusst — und muss dann auch die
+ * Kundenbestätigung, die Datenschutzerklärung und den Hinweis im Formular wieder anpassen.
+ * Ohne Variable geht die Anfrage nur an den Betreiber. */
+const GAERTNEREI_EMAIL = process.env.EMAIL_GAERTNEREI || '';
 
 app.post('/api/anfrage', anfrageLimiter, async (req, res) => {
   const { name, email, plz, telefon, anmerkungen, gartenparameter, ki_plan } = req.body;
@@ -2326,12 +2334,12 @@ Staudenplan.de`;
 
   const kundenText = `Hallo ${name},
 
-vielen Dank für Ihre Anfrage! Wir haben Ihren Bepflanzungsplan erhalten und an die Staudengärtnerei Gaißmayer weitergeleitet. Sie meldet sich mit einem verbindlichen Angebot für Ihr Pflanzenpaket bei Ihnen.
+vielen Dank für Ihre Anfrage! Wir haben Ihren Bepflanzungsplan erhalten und melden uns bei Ihnen.
 
 Ihr Bepflanzungsplan umfasst:
 ${pflanzenListe}
 
-Die Preise im Planer sind unsere Schätzung — was Ihr Paket tatsächlich kostet, steht im Angebot der Gärtnerei.
+Die Preise im Planer sind unsere Schätzung und kein Angebot.
 
 Freundliche Grüße
 Ihr Staudenplan-Team`;
@@ -2340,8 +2348,10 @@ Ihr Staudenplan-Team`;
     // Zeilenumbrüche aus dem Freitext nehmen: nodemailer weist einen Header mit Umbruch ab,
     // dann ginge gar keine Mail raus und der Lead läge nur noch in der Datenbank.
     const betreff = `Neue Bepflanzungsanfrage von ${name} (PLZ ${plz})`.replace(/[\r\n]+/g, ' ');
-    // Jeder Empfänger einzeln: fällt die Gärtnerei-Mail aus, sollen Betreiber-Kopie und
-    // Kundenbestätigung trotzdem rausgehen (und umgekehrt).
+    /* Jeder Empfänger einzeln: fällt eine Mail aus, sollen die übrigen trotzdem rausgehen.
+     * GAERTNEREI_EMAIL ist seit dem 23.09.2026 leer — der Eintrag bleibt stehen, damit die
+     * Stelle sichtbar ist, an der eine Gärtnerei wieder angebunden würde; leer wird er
+     * übersprungen (if (!ziel) continue). */
     for (const [rolle, ziel] of [['Betreiber', process.env.EMAIL_BETREIBER], ['Gärtnerei', GAERTNEREI_EMAIL]]) {
       if (!ziel) continue;
       try {
