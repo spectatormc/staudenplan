@@ -19,7 +19,15 @@
  * Dafür braucht es einen Abgleich gegen eine Quelle außerhalb unserer Daten; die eigenen
  * Pflegetexte taugen dafür nicht, weil sie aus denselben Feldern erzeugt wurden.
  *
- * Aufrufen:  node scripts/check-lebensbereich.js
+ * NICHT IN ci:daten, und das ist Absicht. Der Lauf meldet am 23.09.2026 genau einen harten
+ * Widerspruch: Clematis x durandii traegt lebensbereich='Gehölz' (der schattige Bereich unter
+ * Bäumen) und licht='Sonne'. Die Meldung stimmt — aber WELCHES der beiden Felder falsch ist,
+ * lässt sich aus unseren eigenen Daten nicht entscheiden (dieselbe Lage wie beim Enzian: die
+ * Pflegetexte stammen aus genau diesen Feldern und belegen sie deshalb nicht). Solange die
+ * Zeile offen ist, würde der nächtliche ci:daten-Lauf jede Nacht rot melden, und eine Prüfung,
+ * die immer rot ist, liest nach zwei Wochen niemand mehr. Sie läuft deshalb auf Zuruf:
+ *
+ * Aufrufen:  npm run check:lebensbereich
  *            node scripts/check-lebensbereich.js --alle     (auch die schwachen Hinweise)
  */
 const path = require('path');
