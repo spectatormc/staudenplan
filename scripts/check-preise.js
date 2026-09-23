@@ -1,6 +1,11 @@
 /*
  * Prüft die Preise NACH dem Abgleich — die zweite Stufe zu scripts/preise-gaissmayer.js.
  *
+ * STAND 23.09.2026: Die Zusammenarbeit mit der Gärtnerei ist beendet (Begründung im Kopf von
+ * preise-gaissmayer.js). Diese Prüfung arbeitet weiter gegen den eingefrorenen Katalog vom
+ * 31.08.2026, weil die Preise in der Datenbank aus ihm stammen. Sie belegt damit die
+ * Herkunft der Zahlen — nicht eine bestehende Geschäftsbeziehung.
+ *
  *   node scripts/check-preise.js
  *
  * Der Abgleich selbst kann nicht sein eigener Zeuge sein: Er hat die Zahlen geschrieben, also

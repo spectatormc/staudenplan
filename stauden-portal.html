@@ -374,25 +374,9 @@
     }
     .pflanze-preis strong { color: var(--earth); font-size: 1rem; }
     .pflege-sterne { color: var(--green-light); letter-spacing: 2px; }
-    .btn-kaufen {
-      display: block;
-      width: 100%;
-      background: var(--green-mid);
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      padding: 10px;
-      font-size: 0.9rem;
-      font-weight: 600;
-      text-decoration: none;
-      text-align: center;
-      cursor: pointer;
-      transition: background 0.15s;
-    }
-    .btn-kaufen:hover { background: var(--green-dark); }
-    /* Zielt der Button ins Nichts? Nein — Empfänger und neues Tab werden ausgeschrieben,
-       damit der Klick keine Überraschung ist. */
-    .kauf-hinweis { text-align: center; font-size: .7rem; color: #999; margin-top: 4px; line-height: 1.4; }
+    /* .btn-kaufen und .kauf-hinweis sind am 23.09.2026 entfallen: Der Kaufknopf nannte eine
+       Gärtnerei namentlich und verlinkte dorthin; es gibt keine Bezugsquelle mehr, also auch
+       keinen Knopf und keine Fußnote dazu. */
     .btn-alt {
       display: block; width: 100%; background: transparent;
       color: var(--green-mid); border: 1px solid var(--green-light);
@@ -436,34 +420,11 @@
       margin: 4px 0 28px;
     }
     .anfrage-zeile a { color: var(--earth); font-weight: 600; text-decoration: underline; }
-    /* Kaufblock unter der Stückliste: bewusst UNTER der Tabelle statt als 9. Spalte — die Tabelle
-       hat min-width 560px und scrollt auf Mobil bereits horizontal, eine weitere Spalte läge auf
-       einem 390px-Gerät garantiert außerhalb des Sichtfensters. */
-    .sl-kauf {
-      background: #fff;
-      border: 1px solid #e8e2d9;
-      border-radius: var(--radius);
-      padding: 22px;
-      margin-bottom: 20px;
-    }
-    .sl-kauf h3 { font-size: 1.1rem; margin-bottom: 6px; color: var(--green-dark); }
-    .sl-kauf-hinweis { font-size: .84rem; color: #777; line-height: 1.5; margin-bottom: 16px; }
-    .sl-kauf-liste { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
-    .sl-kauf-item {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      background: var(--green-mid, #2d6a4f);
-      color: #fff;
-      border-radius: 50px;
-      padding: 8px 16px;
-      font-size: .85rem;
-      font-weight: 600;
-      text-decoration: none;
-      transition: background .15s;
-    }
-    .sl-kauf-item:hover { background: var(--green-dark, #1b4332); }
-    .sl-kauf-item .slk-anzahl { opacity: .75; font-weight: 400; }
+    /* Unter der Stückliste stand bis zum 23.09.2026 der Block "Pflanzen beziehen" (.sl-kauf,
+       .sl-kauf-hinweis, .sl-kauf-liste, .sl-kauf-item): ein Knopf je Pflanze, alle zur selben
+       namentlich genannten Gärtnerei. Block und Regeln sind entfallen — ohne Bezugsquelle gibt
+       es nichts zu verlinken, und ein leerer Kasten wäre nur eine Einladung, ihn wieder zu
+       füllen. Die Stückliste selbst bleibt unverändert. */
     .btn-neustart {
       display: block;
       width: 100%;
@@ -601,8 +562,9 @@
     .sl-color-dot { width: 14px; height: 14px; border-radius: 50%; display: inline-block; margin-right: 6px; vertical-align: middle; border: 1.5px solid rgba(0,0,0,.15); }
     .sl-number { background: var(--green-mid); color: #fff; border-radius: 50%; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 700; }
     .sl-total-row { background: var(--green-pale); }
-    /* Bewusst NICHT in .sl-kauf: der Block wird beim Drucken ausgeblendet, dieser Hinweis
-       muss aber gerade auf dem Ausdruck stehenbleiben. */
+    /* Gehört zur Tabelle, nicht zu den ausgeblendeten Bedienelementen: Der Hinweis muss
+       gerade auf dem Ausdruck stehenbleiben, wo die Stückliste am ehesten als Preisliste
+       missverstanden wird. */
     .sl-preis-hinweis { font-size: .78rem; color: #888; line-height: 1.5; margin: 10px 14px 0; }
 
     /* ── BEPFLANZUNGSPLAN ───────────────────────────────── */
@@ -981,9 +943,9 @@
     .wl-chip button:hover { color: #fff; }
 
     @media print {
-      /* .sl-kauf/.anfrage-zeile mit ausblenden: Links drucken sich als toter Text. */
+      /* .anfrage-zeile mit ausblenden: Links drucken sich als toter Text. */
       header, .result-tabs, .rtab, .viz-toolbar, .btn-print, .btn-neustart,
-      .anfrage-zeile, .sl-kauf, .modal-overlay { display: none !important; }
+      .anfrage-zeile, .modal-overlay { display: none !important; }
       .tab-panel { display: block !important; }
       .sl-table { box-shadow: none; }
     }
@@ -1701,11 +1663,12 @@
     <p id="ergebnis-subtitle">Maßgeschneidert für deinen Garten</p>
     <div class="ergebnis-meta" id="ergebnis-meta"></div>
     <!-- Die Beträge im Plan stammen aus preis_stueck_eur — Kalkulationsgrößen für die Plansumme,
-         keine Handelspreise (Echinacea purpurea 8,00 € in der DB gegen 5,10 € bei Gaißmayer).
-         Zwei Zeilen unter jedem Betrag steht ein Link zu Gaißmayer; ohne diesen Satz liest sich
-         die Zahl als dessen Angebotspreis. Gleiche Klarstellung wie auf /pflanze/… und
-         /beispiel/… (renderBeispielPlanSSR in stauden-server.js). -->
-    <p class="preis-hinweis">Alle Beträge sind Richtwerte zur Budgetplanung — nicht die Preise der verlinkten Gärtnerei.</p>
+         keine Handelspreise (Stichprobe: Echinacea purpurea 8,00 € in der DB gegen 5,10 €
+         Listenpreis). Der Satz blieb auch nach dem Wegfall der Kauflinks am 23.09.2026 nötig:
+         Eine Zahl neben einer Pflanze liest sich als deren Preis, ob ein Link daneben steht
+         oder nicht. Gleiche Klarstellung wie auf /pflanze/… und /beispiel/…
+         (renderBeispielPlanSSR in stauden-server.js). -->
+    <p class="preis-hinweis">Alle Beträge sind Richtwerte zur Budgetplanung — keine Angebots- oder Verkaufspreise.</p>
     <div id="saison-warnung" style="display:none;margin:12px 0 4px;padding:10px 14px;background:#fef9c3;border:1px solid #fde047;border-radius:8px;font-size:.85rem;color:#854d0e"></div>
     <!-- Sammelwarnung für giftige Arten im Plan. Muss oben stehen: Wer ein Beet für einen
          Garten mit Kindern plant, darf das nicht erst beim Durchscrollen der Pflanzenkarten
@@ -1750,7 +1713,7 @@
       <div id="kalender-grid" style="display:none"></div>
       <div class="section-title">💡 Tipps</div>
       <ul class="tipps-list" id="tipps-list"></ul>
-      <p class="anfrage-zeile">Lieber alles auf einmal? <a href="#" onclick="openModal();return false">Komplettpaket bei der Staudengärtnerei Gaißmayer anfragen →</a></p>
+      <p class="anfrage-zeile">Lieber alles auf einmal? <a href="#" onclick="openModal();return false">Komplettpaket unverbindlich anfragen →</a></p>
       <button class="btn-neustart" onclick="showEmailGate()">✉️ Plan sichern &amp; teilen</button>
       <button class="btn-neustart" onclick="neustart()">↩ Neuen Plan erstellen</button>
     </div>
@@ -1789,21 +1752,18 @@
         </tfoot>
       </table>
       </div>
-      <!-- Die Stückliste ist die Fläche, die ausgedruckt und zur Gärtnerei mitgenommen wird,
-           und sie steht unmittelbar über den Gaißmayer-Links. Ohne diese Zeile liest sie sich
-           als Preisliste des Händlers. -->
-      <p class="sl-preis-hinweis">Alle Beträge sind Richtwerte zur Budgetplanung — nicht die Preise der verlinkten Gärtnerei.</p>
+      <!-- Die Stückliste ist die Fläche, die ausgedruckt und mitgenommen wird — ohne diese
+           Zeile liest sie sich als Preisliste. Das gilt seit dem Wegfall der Kauflinks am
+           23.09.2026 unverändert: Eine Zahl neben einer Pflanze wird als ihr Preis gelesen,
+           auch wenn nirgends mehr etwas zu kaufen ist. -->
+      <p class="sl-preis-hinweis">Alle Beträge sind Richtwerte zur Budgetplanung — keine Angebots- oder Verkaufspreise.</p>
       <div style="margin-top:24px">
-        <!-- Beide Kaufwege führen zu Gaißmayer: einzeln über die Sortimentslinks (unentgeltliche
-             Empfehlung) oder als Komplettpaket über die Anfrage, auf die Gaißmayer selbst mit einem
-             Angebot antwortet. Namentlich benannt, damit der Kunde vorher weiß, wer sich meldet —
-             seit 23.08.2026 geht die Anfrage automatisch dorthin, nicht mehr an die Gartenschmiede. -->
-        <div class="sl-kauf" id="sl-kauf">
-          <h3>🌿 Pflanzen beziehen</h3>
-          <p class="sl-kauf-hinweis">Einzeln bei der Staudengärtnerei Gaißmayer ansehen — jeder Link öffnet die Sortimentssuche in einem neuen Tab. Wir verdienen an diesen Links nichts.</p>
-          <div class="sl-kauf-liste" id="sl-kauf-liste"></div>
-          <p class="anfrage-zeile">Lieber alles auf einmal? <a href="#" onclick="openModal();return false">Komplettpaket bei der Staudengärtnerei Gaißmayer anfragen →</a></p>
-        </div>
+        <!-- Hier stand bis zum 23.09.2026 der Block "Pflanzen beziehen": ein Link je Pflanze zu
+             einer namentlich genannten Staudengärtnerei. Die Gärtnerei hat der Nennung
+             widersprochen, der Betreiber nennt seither gar keine Bezugsquelle mehr — also ist
+             der Block ersatzlos weg, samt der Liste, die ihn füllte (renderStueckliste). Die
+             Anfrage bleibt, sie geht an uns und verspricht nur eine Rückmeldung. -->
+        <p class="anfrage-zeile">Lieber alles auf einmal? <a href="#" onclick="openModal();return false">Komplettpaket unverbindlich anfragen →</a></p>
         <button class="btn-neustart" onclick="showEmailGate()">✉️ Plan sichern &amp; teilen</button>
         <button class="btn-neustart" onclick="neustart()">↩ Neuen Plan erstellen</button>
       </div>
@@ -1872,7 +1832,7 @@
         </div>
       </div>
 
-      <p class="anfrage-zeile">Lieber alles auf einmal? <a href="#" onclick="openModal();return false">Komplettpaket bei der Staudengärtnerei Gaißmayer anfragen →</a></p>
+      <p class="anfrage-zeile">Lieber alles auf einmal? <a href="#" onclick="openModal();return false">Komplettpaket unverbindlich anfragen →</a></p>
       <button class="btn-neustart" onclick="showEmailGate()">✉️ Plan sichern &amp; teilen</button>
       <button class="btn-neustart" onclick="neustart()">↩ Neuen Plan erstellen</button>
 
@@ -1886,8 +1846,12 @@
   <div class="modal">
     <button class="modal-close" onclick="closeModal()">✕</button>
     <div id="modal-content">
-      <h3>Paket bei der Gärtnerei anfragen</h3>
-      <p class="modal-sub">Wir leiten deine Anfrage an die Staudengärtnerei Gaißmayer weiter — sie meldet sich mit einem Angebot für dein komplettes Pflanzenpaket bei dir.</p>
+      <h3>Komplettpaket anfragen</h3>
+      <!-- Sagt genau das zu, was die Bestätigungsmail in /api/anfrage sagt: Wir melden uns.
+           Kein Angebot, keine Weiterleitung, kein Dritter — seit dem 23.09.2026 geht die
+           Anfrage nur noch an den Betreiber. Wer hier mehr verspricht, verspricht etwas, das
+           im Code niemand einlöst. -->
+      <p class="modal-sub">Schick uns deinen Plan — wir schauen ihn uns an und melden uns bei dir.</p>
       <div class="form-group">
         <label>Vor- und Nachname *</label>
         <input type="text" id="anfrage-name" placeholder="Max Mustermann">
@@ -1906,7 +1870,7 @@
       </div>
       <div class="form-group">
         <label>Anmerkungen <span class="optional-tag">(optional)</span></label>
-        <textarea id="anfrage-anmerkungen" rows="3" placeholder="z.B. bevorzugter Liefertermin, Besonderheiten …"></textarea>
+        <textarea id="anfrage-anmerkungen" rows="3" placeholder="z.B. Besonderheiten des Standorts, Wünsche …"></textarea>
       </div>
       <div id="modal-error" class="error-msg" style="display:none"></div>
       <button class="btn-primary" onclick="submitAnfrage(this)">Anfrage senden 📩</button>
@@ -3679,22 +3643,10 @@
     document.getElementById('sl-total-stueck').textContent = totalStueck + ' Stück';
     document.getElementById('sl-total-preis').textContent = totalPreis.toFixed(2) + ' €';
 
-    // Kaufwege unter der Tabelle: bis 08/2026 war die Stückliste eine Preisliste ohne
-    // Bezugsquelle — Menge, Einzelpreis und Summe, aber kein einziger Link zum Shop.
-    const kaufListe = document.getElementById('sl-kauf-liste');
-    if (kaufListe) {
-      kaufListe.innerHTML = plan.pflanzen.map((p, i) => !p.kauflink ? '' :
-        `<a class="sl-kauf-item" href="${escapeHtml(kaufUrl(p, 'stueckliste'))}" target="_blank" rel="noopener nofollow" onclick="trackKauf(${i},'stueckliste')"
-          >${escapeHtml(p.name_deutsch)}<span class="slk-anzahl">× ${p.stueckzahl || 1}</span> ↗</a>`
-      ).join('');
-    }
-  }
-
-  // Hängt den Herkunftsmarker an den Kauflink. Der Planer liegt für Karten und Stückliste auf
-  // derselben URL — ohne Marker kann der Server die beiden Flächen im Referer nicht trennen.
-  function kaufUrl(p, quelle) {
-    if (!p || !p.kauflink) return '#';
-    return p.kauflink + (p.kauflink.indexOf('?') === -1 ? '?' : '&') + 'q=' + encodeURIComponent(quelle);
+    // Hier wurde bis zum 23.09.2026 unter der Tabelle je Pflanze ein Kauflink gerendert
+    // (#sl-kauf-liste) und mit kaufUrl() um einen Herkunftsmarker ergänzt. Beides ist weg:
+    // /api/plan liefert kein kauflink-Feld mehr, es gibt keine Bezugsquelle und keine
+    // Klickzählung, an die ein Marker berichten könnte. Die Tabelle selbst bleibt.
   }
 
   // ── Höhenansicht (SVG) ────────────────────────────────────────────────────
@@ -4153,13 +4105,13 @@
     });
     // Das PDF wird ausgedruckt und weitergereicht — losgelöst von der Seite, auf der der
     // Richtwert-Hinweis steht. Deshalb muss er hier mit, sonst wandert eine Preisliste ohne
-    // Einordnung zur Gärtnerei. y wandert um die tatsächliche Zeilenzahl weiter, sonst
+    // Einordnung aus dem Haus. y wandert um die tatsächliche Zeilenzahl weiter, sonst
     // schreibt der Pflanzkalender darüber.
     // Schrift VOR splitTextToSize setzen: autoTable stellt danach den Font der Überschrift
     // wieder her (11 pt fett), der Umbruch würde sonst in einer anderen Größe gemessen als
     // gezeichnet. Beim jetzigen Satz fällt das nicht auf — bei einem längeren schon.
     doc.setFontSize(7.5); doc.setFont('helvetica', 'italic'); doc.setTextColor(120, 120, 120);
-    const preisHinweis = doc.splitTextToSize('Alle Beträge sind Richtwerte zur Budgetplanung — nicht die Preise einer Gärtnerei.', CW);
+    const preisHinweis = doc.splitTextToSize('Alle Beträge sind Richtwerte zur Budgetplanung — keine Angebots- oder Verkaufspreise.', CW);
     // Die Fußzeile zieht auf jeder Seite eine Linie bei y=286. Endet die Stückliste-Tabelle
     // genau im untersten Zeilenband, liefe der Hinweis mitten hindurch. Schwelle bewusst eng:
     // ein früherer Umbruch träfe viel mehr Fälle und risse die Fußnote von ihrer Tabelle los.
@@ -4253,8 +4205,8 @@
     const kostenEl = document.querySelector('#ergebnis-meta [data-meta="kosten"]');
     if (staudenEl) staudenEl.textContent = totalStueck;
     if (kostenEl) kostenEl.textContent = totalKosten.toFixed(0) + ' €';
-    // Das Feld muss mitwandern: PDF-Kopfzeile, geteilter Plan, Anfrage-Mail an die Gärtnerei und
-    // die Kundenbestätigung lesen gesamtkosten_geschaetzt, während die Stückliste live aus
+    // Das Feld muss mitwandern: PDF-Kopfzeile, geteilter Plan und der mit einer Anfrage
+    // gespeicherte ki_plan (/admin/anfragen) lesen gesamtkosten_geschaetzt, während die Stückliste live aus
     // stueckzahl summiert. Ohne diese Zeile nennen beide im selben Dokument verschiedene Preise —
     // nach einem Klick auf "Dicht" bis zu 50 % auseinander.
     currentPlan.gesamtkosten_geschaetzt = totalKosten;
@@ -4385,8 +4337,6 @@
             <span>Pflege: <span class="pflege-sterne">${'★'.repeat(stars)}${'☆'.repeat(3-stars)}</span></span>
             <span>Richtpreis <strong id="preis-${i}">ca. ${((p.preis_stueck_eur||0) * (p.stueckzahl||1)).toFixed(2)} €</strong></span>
           </div>
-          <a class="btn-kaufen" href="${escapeHtml(kaufUrl(p, 'karte'))}" target="_blank" rel="noopener nofollow" onclick="trackKauf(${i},'karte')">Bei Gaißmayer ansehen ↗</a>
-          <div class="kauf-hinweis">Staudengärtnerei Gaißmayer · öffnet in neuem Tab</div>
           <button class="btn-alt" data-idx="${i}" onclick="alternativVorschlagen(${i})">🔄 Alternative vorschlagen</button>
           ${p.giftig ? `<div style="margin-top:8px;padding:9px 12px;background:${p.giftig.stufe === 'stark' ? '#fef2f2' : '#fffbeb'};border:1px solid ${p.giftig.stufe === 'stark' ? '#fca5a5' : '#fde68a'};border-radius:8px;font-size:.8rem;line-height:1.5;color:${p.giftig.stufe === 'stark' ? '#991b1b' : '#92400e'}"><strong>${GIFT_LABEL[p.giftig.stufe] || '⚠️ Giftig'}</strong> — ${escapeHtml(p.giftig.text)}</div>` : ''}
           ${p.fehler && p.fehler.length ? `<details class="pflanze-fehler"><summary>⚠️ Häufige Fehler (${p.fehler.length})</summary><ul>${p.fehler.map(f=>`<li>${escapeHtml(f)}</li>`).join('')}</ul></details>` : ''}
@@ -4563,7 +4513,7 @@
         <div class="success-msg">
           <div class="success-icon">✅</div>
           <h3>Anfrage gesendet!</h3>
-          <p>Danke, ${escapeHtml(name)}! Wir haben deine Anfrage erhalten und leiten sie an unsere Gärtnerei weiter — sie meldet sich mit einem Angebot für dein Pflanzenpaket bei dir.</p>
+          <p>Danke, ${escapeHtml(name)}! Wir haben deine Anfrage erhalten und melden uns bei dir.</p>
         </div>
       `;
     } catch (err) {
@@ -4647,14 +4597,10 @@
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  // Gaißmayer-Kaufklick als Plausible-Custom-Event (Link öffnet in neuem Tab,
-  // die Seite bleibt bestehen → das Event hat Zeit zu senden).
-  function trackKauf(i, quelle) {
-    try {
-      const p = currentPlan && currentPlan.pflanzen && currentPlan.pflanzen[i];
-      if (window.plausible) plausible('Gärtnerei-Klick', { props: { pflanze: p ? (p.name_botanisch || p.name_deutsch || '') : '', quelle: 'planer-' + (quelle || 'karte') } });
-    } catch {}
-  }
+  // Hier meldete trackKauf() jeden Kaufklick als Plausible-Event „Gärtnerei-Klick". Mit den
+  // Kauflinks ist die Funktion entfallen — sie hätte nur noch auf einen Klick gewartet, den
+  // niemand mehr auslösen kann. Das Event „Anfrage" (submitAnfrage) und „Anfrage-Modal"
+  // (openModal) bleiben: Sie messen den Weg, den es noch gibt.
 </script>
 
 <!-- E-Mail-Gate Modal -->

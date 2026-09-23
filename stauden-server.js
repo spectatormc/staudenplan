@@ -117,6 +117,10 @@ db.exec(`
     quelle TEXT DEFAULT 'pdf-download'
   );
 
+  /* Bestandstabelle: Sie hat die Kaufklicks bis zum 23.09.2026 aufgenommen. Seither gibt es
+     keinen Kaufknopf und keine Weiterleitung mehr, also auch keinen Schreiber — die Zeilen
+     bleiben trotzdem erhalten und sind unter /admin/klicks einsehbar. Nicht löschen: Das
+     wäre der einzige Verlust, den dieser Rückbau anrichten könnte. */
   CREATE TABLE IF NOT EXISTS klicks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     erstellt_am TEXT DEFAULT (datetime('now')),
@@ -170,16 +174,13 @@ for (const [spalte, typ] of [
   try { db.exec(`ALTER TABLE email_gate ADD COLUMN ${spalte} ${typ}`); } catch { /* Spalte existiert schon */ }
 }
 
-// ─── Gaißmayer-Kaufweiterleitung (ersetzt Amazon-Affiliate) ───────────────────
-// Ziel-URL zentral gepflegt: sobald ein Deep-Link / eine Kooperation existiert, hier ändern.
-const GAISSMAYER_URL = 'https://www.gaissmayer.de/web/shop/';
-// Deeplink in Gaißmayers Produktsuche (verifiziert liefert Treffer). Param-Name aus dem Suchformular.
-// Der Schrägstrich hinter "produkte" gehört dazu: ohne ihn antwortet der Shop mit 301 auf
-// dieselbe URL mit Schrägstrich — und zwar auf http://, sodass jeder Kaufklick über einen
-// unverschlüsselten Zwischenschritt lief, bevor HSTS ihn wieder auf https zog.
-const GAISSMAYER_SEARCH = 'https://www.gaissmayer.de/web/shop/suche/produkte/?filter%5Bartikel%5D%5Btext_suche%5D%5Bwerte%5D%5B%5D=';
-// Interner Zähl-Link: leitet auf Gaißmayer weiter und protokolliert den Klick pro Pflanze.
-const goLink = (botanisch) => `/go/gaissmayer?p=${encodeURIComponent(botanisch || '')}`;
+// ─── Keine Bezugsquelle mehr (23.09.2026) ─────────────────────────────────────
+// Hier standen die Shop-URL einer Staudengärtnerei, ihr Such-Deeplink und goLink() — die eine
+// Ableitung, aus der jeder Kaufknopf auf jeder Fläche entstand. Die Gärtnerei hat der Nennung
+// widersprochen, der Betreiber hat entschieden, gar keine Bezugsquelle mehr zu nennen.
+// Ersatzlos: Ein Platzhalter oder ein anderer Shop wäre sofort die nächste unabgestimmte
+// Nennung. Wer je wieder eine anbindet, baut sie wieder als EINE Ableitung — der Knopf hing an
+// sechs Ausgabestellen, aber nur an dieser einen Regel.
 // Nur http(s)- oder relative URLs zulassen (blockt javascript:/data: aus geteilten Plänen).
 const safeUrl = (u) => /^(https?:\/\/|\/)/i.test(String(u == null ? '' : u).trim())
   ? String(u).trim() : '#';
@@ -332,10 +333,12 @@ function pflanzeNachschlagen(nameBot) {
   // STARTSEITE mit HTTP 500 ("no such column: lebensdauer") — auf dem Produktivserver ist sie
   // durch ein Skript vorhanden, eine frisch nach DEPLOY.md aufgebaute DB hätte sie nicht.
   'ALTER TABLE pflanzen ADD COLUMN lebensdauer TEXT',
-  // Klicks: maschinelle Aufrufe werden markiert statt verworfen — die Weiterleitung
-  // funktioniert weiter, die Statistik zeigt aber nur echte Nachfrage.
+  // Klicks: Die Spalten tragen Bestandsdaten aus der Zeit bis zum 23.09.2026, als es noch
+  // Kaufklicks zu zählen gab (bot = maschinell erkannt, quelle = Herkunftsfläche aus dem
+  // Referer). Seither schreibt nichts mehr in die Tabelle. Die Migrationen bleiben trotzdem
+  // stehen: Sie sind idempotent, und ohne die Spalten kann /admin/klicks den Bestand nicht
+  // mehr lesen.
   'ALTER TABLE klicks ADD COLUMN bot INTEGER DEFAULT 0',
-  // Herkunftsfläche des Klicks (aus dem Referer abgeleitet) — zeigt, welche Seite verkauft.
   'ALTER TABLE klicks ADD COLUMN quelle TEXT',
 ].forEach(sql => { try { db.exec(sql); } catch (_) {} });
 
@@ -1036,8 +1039,7 @@ function buildNotplan({ kandidaten, geophytenKandidaten, geophyten, gartenflaech
       pflege_sterne: Number(p.pflege_sterne) || 2,
       rolle,
       stueckzahl: Math.max(min, Math.round(n * faktor)),
-      preis_stueck_eur: Number(p.preis_stueck_eur) || 0,
-      kauflink: ''
+      preis_stueck_eur: Number(p.preis_stueck_eur) || 0
     };
   });
 
@@ -1058,8 +1060,7 @@ function buildNotplan({ kandidaten, geophytenKandidaten, geophyten, gartenflaech
         pflege_sterne: 1,
         rolle: 'Geophyt',
         stueckzahl: proArt,
-        preis_stueck_eur: Number(g.preis_stueck_eur) || 0,
-        kauflink: ''
+        preis_stueck_eur: Number(g.preis_stueck_eur) || 0
       });
       gewaehlt.push(g);
     });
@@ -1172,7 +1173,6 @@ Du empfiehlst ausschließlich in Deutschland winterharte Pflanzen. Antworte imme
       const kombi = p.kombinationspartner ? ` | Kombi:${p.kombinationspartner}` : '';
       return `- [${rolle}] ${p.name_deutsch} (${p.name_botanisch}): ${p.licht} | Blüte: ${p.bluehzeit || '?'} | ${p.farbe || '?'} | ${hoehe}${breite ? ' ' + breite : ''} | ${p.preis_stueck_eur || '?'}€ | Pflege: ${'★'.repeat(p.pflege_sterne || 2)}${lebensb}${kombi}${extras ? ' | ' + extras : ''}`;
     }).join('\n');
-    prompt += '\n\nDas Feld "kauflink" bitte leer lassen ("") — es wird serverseitig gesetzt.';
   }
 
   if (wissen.length > 0) {
@@ -1256,7 +1256,7 @@ app.get('/', (req, res) => {
   const homeFaq = [
     { q: 'Wie erstelle ich einen Bepflanzungsplan?', a: `Beschreibe deinen Garten — Fläche, Lichtbedingungen, Bodentyp und Gartenstil — und unser KI-Gartenplaner erstellt in rund 2 Minuten einen individuellen Bepflanzungsplan aus ${planbarCount}+ winterharten Stauden. Du bekommst einen grafischen Plan, eine Stückliste und einen Blühkalender — kostenlos und ohne Anmeldung.` },
     { q: 'Gibt es einen kostenlosen Beetplaner online?', a: 'Ja. Staudenplan.de ist ein komplett kostenloser Beetplaner online: Du kannst dein Staudenbeet planen, ohne Konto und ohne E-Mail. Der KI-Planer schlägt standortgerechte Stauden vor und berechnet Stückzahlen und Kosten automatisch.' },
-    { q: 'Was kostet ein Bepflanzungsplan?', a: 'Das Erstellen des Bepflanzungsplans bei Staudenplan.de ist kostenlos. Bezahlt wird nur, wenn du die vorgeschlagenen Pflanzen tatsächlich kaufst — so kannst du dein Staudenbeet unverbindlich online planen.' },
+    { q: 'Was kostet ein Bepflanzungsplan?', a: 'Der Bepflanzungsplan ist kostenlos — Stückliste, Pflanzplan und Pflegekalender. Die Stauden kaufst du dort, wo du möchtest: Staudengärtnerei, Gartencenter oder Versand. Wir verkaufen keine Pflanzen und verdienen an deinem Einkauf nichts.' },
     { q: 'Kann ich mein Staudenbeet online planen?', a: 'Ja, genau dafür ist der Planer da. Du zeichnest die Beetfläche direkt ein oder gibst Maße ein, wählst Standort und Stil, und erhältst einen fertigen Pflanzplan mit Höhenstaffelung, Blütenfolge und bewährten Pflanzenkombinationen.' },
     { q: 'Wie viele Stauden brauche ich pro Quadratmeter?', a: 'Je nach Pflanzdichte etwa 2–3 (locker), 4–5 (normal) oder 6–8 Stauden pro m². Der Pflanzplan berechnet die Stückzahlen automatisch aus Fläche und Pflanzabständen — du musst nichts selbst rechnen.' },
   ];
@@ -1280,7 +1280,7 @@ app.get('/', (req, res) => {
     <div class="seo-intro-inner">
       <h2>Bepflanzungsplan online kostenlos erstellen — KI-gestützt & individuell</h2>
       <p>Ein professioneller <strong>Bepflanzungsplan</strong> ist die Grundlage für ein schönes, pflegeleichtes Staudenbeet. Unser KI-Gartenplaner erstellt dir in wenigen Minuten einen maßgeschneiderten Plan — abgestimmt auf Standort, Bodentyp, Gartenstil und deine persönlichen Wünsche. Mit über <strong>${planbarCount} geprüften, winterharten Stauden</strong> für deutsche Gärten.</p>
-      <p>Anders als generische KI-Tools nutzt unser Planer eine kuratierte Pflanzendatenbank mit echten Staudenexperten-Wissen: Lebensbereiche nach Hansen &amp; Stahl, ökologisch wertvolle Heimische, bewährte Pflanzenkombinationen. Das Ergebnis ist ein <strong>Bepflanzungsplan der wirklich funktioniert</strong> — mit Stückliste, grafischem Plan und direkter Bestellmöglichkeit.</p>
+      <p>Anders als generische KI-Tools nutzt unser Planer eine kuratierte Pflanzendatenbank mit echten Staudenexperten-Wissen: Lebensbereiche nach Hansen &amp; Stahl, ökologisch wertvolle Heimische, bewährte Pflanzenkombinationen. Das Ergebnis ist ein <strong>Bepflanzungsplan der wirklich funktioniert</strong> — mit Stückliste, grafischem Plan und Pflanzkalender.</p>
       <p style="margin-top:16px;font-size:.88rem;color:#666;border-top:1px solid #dde8e0;padding-top:14px">💡 <strong>Was kostet Gartenplanung?</strong> Einen Überblick über typische Kosten für Gartenplanung findest du bei <a href="https://gartenbau-kosten.de/gartenplanung/gartenplanung-kosten/" target="_blank" rel="noopener" style="color:#2d6a4f;font-weight:600">gartenbau-kosten.de →</a></p>
     </div>
   </section>
@@ -1292,12 +1292,12 @@ app.get('/', (req, res) => {
       <div class="seo-steps">
         <div class="seo-step"><div class="ss-num">1</div><h3>Garten beschreiben</h3><p>Fläche, Lichtbedingungen, Bodentyp und gewünschten Gartenstil eingeben — oder die Fläche direkt im Plan einzeichnen.</p></div>
         <div class="seo-step"><div class="ss-num">2</div><h3>KI generiert deinen Plan</h3><p>Unsere KI durchsucht ${planbarCount} geprüfte Stauden und ${wissenCount} Expertentexte — und erstellt einen individuellen, standortgerechten Bepflanzungsplan.</p></div>
-        <!-- Nicht "bestellen": Auf staudenplan.de wird nichts verkauft und nichts bestellt. Es gibt
-             genau zwei Wege — pro Staude ein Link zur Gärtnerei, oder eine unverbindliche Anfrage
-             fürs Komplettpaket, auf die die Gärtnerei mit einem Angebot antwortet (Modal
-             "Paket bei der Gärtnerei anfragen"). "Direkt als Komplettpaket bestellt werden"
-             versprach einen Bestellvorgang, den es hier nicht gibt. -->
-        <div class="seo-step"><div class="ss-num">3</div><h3>Pflanzen besorgen</h3><p>Mit Stückliste, grafischem Pflanzplan und Jahreskalender. Jede Staude ist zur Gärtnerei verlinkt — oder du fragst das Komplettpaket unverbindlich an und bekommst ein Angebot.</p></div>
+        <!-- Nicht "bestellen" und keine Bezugsquelle: Auf staudenplan.de wird nichts verkauft,
+             nichts bestellt und seit dem 23.09.2026 kein Betrieb mehr genannt, bei dem die
+             Stauden zu holen wären. Schritt 3 darf deshalb nur versprechen, was der Plan selbst
+             liefert — Stückliste, Pflanzplan, Kalender. Wer hier wieder einen Bezugsweg
+             hineinschreibt, muss ihn auch im Plan zeigen können. -->
+        <div class="seo-step"><div class="ss-num">3</div><h3>Pflanzen besorgen</h3><p>Mit Stückliste, grafischem Pflanzplan und Jahreskalender. Die Stückliste nennt jede Art mit Stückzahl und Pflanzabstand — zum Ausdrucken und Mitnehmen.</p></div>
       </div>
     </div>
   </section>
@@ -1799,8 +1799,7 @@ JSON-Format:
     "pflege_sterne": 1,
     "rolle": "Leitstaude",  // Leitstaude | Begleitstaude | Füllstaude | Geophyt
     "stueckzahl": 0,
-    "preis_stueck_eur": 0.00,
-    "kauflink": ""
+    "preis_stueck_eur": 0.00
   }],
   "beetbeschreibung": "2–3 Sätze die den Charakter und die Gesamtwirkung des Beetes beschreiben — Stil, Farbstimmung, saisonale Höhepunkte, Atmosphäre. Formuliere so, als würdest du einem Gartenbesucher das Konzept erklären.",
   "gesamtkosten_geschaetzt": "...",
@@ -1974,7 +1973,7 @@ JSON-Format:
          * die auch die Kennzeichnung bildet: Ohne belegte Herkunft geht schon die URL nicht
          * mit, sonst könnte ein anderer Empfänger sie doch anzeigen. */
         const bildZeile = zeigbar(dbP) ? dbP : null;
-        return { ...p, preis_stueck_eur, kauflink: goLink(nameBot), bild_url: bildZeile?.bild_url || null,
+        return { ...p, preis_stueck_eur, bild_url: bildZeile?.bild_url || null,
                  bild_herkunft: bildZeile ? herkunftFuerJson(bildZeile) : null,
                  pflanzabstand_cm, fehler,
                  giftig: gift ? { stufe: gift.stufe, text: gift.text } : null };
@@ -2151,7 +2150,6 @@ app.post('/api/alternativ', alternativLimiter, (req, res) => {
       // der Nutzer gerade selbst ausgewechselt hat. Die Prüfung auf bild_url steckt in der
       // Ableitung (bildZeigbar), sie wird hier nicht noch einmal geschrieben.
       bild_herkunft: herkunftFuerJson(pflanze),
-      kauflink: goLink(pflanze.name_botanisch),
       rolle: rolle || (hoehe_cm >= 80 ? 'Leitstaude' : hoehe_cm >= 40 ? 'Begleitstaude' : 'Füllstaude'),
     }
   });
@@ -2287,23 +2285,25 @@ app.post('/api/anfrage', anfrageLimiter, async (req, res) => {
     return res.status(500).json({ error: 'Datenbankfehler beim Speichern.' });
   }
 
-  // Ohne Preise: Unsere Schätzung ist nicht die Kalkulation der Gärtnerei. In deren Mail läse
-  // sie sich wie eine Preisvorgabe, im Kundenpostfach wie eine Zusage, die wir nicht geben
-  // können. Was das Paket kostet, sagt das Angebot der Gärtnerei — nicht der Planer.
+  // Ohne Preise: Die Beträge im Planer sind Richtwerte zur Budgetplanung, keine Angebotspreise.
+  // In einer Mail, die eine Rückmeldung ankündigt, läsen sie sich als Zusage — und zugesagt ist
+  // nichts außer dieser Rückmeldung. Die kalkulierten Zahlen bleiben deshalb im gespeicherten
+  // ki_plan (/admin/anfragen), wo sie als das lesbar sind, was sie sind.
   const pflanzenListe = Array.isArray(ki_plan?.pflanzen)
     ? ki_plan.pflanzen.map(p =>
         `  • ${p.stueckzahl || 1}x ${p.name_deutsch} (${p.name_botanisch})`
       ).join('\n')
     : '  — keine Pflanzenliste vorhanden';
 
-  // Ein Text, zwei Empfänger: Betreiber und Gärtnerei sollen bei einer Rückfrage dasselbe Blatt
-  // vor sich haben — die Betreiber-Kopie ist bewusst der Durchschlag dessen, was die Gärtnerei
-  // liest, Anrede eingeschlossen. Die kalkulierten Preise bleiben im ki_plan (/admin/anfragen).
-  const anfrageText = `Guten Tag,
+  // Ein Empfänger, ein Zweck: Bis zum 23.09.2026 war dieser Text an eine Gärtnerei adressiert
+  // und bat sie um ein Angebot; der Betreiber bekam denselben Wortlaut als Durchschlag. Die
+  // Weiterleitung ist eingestellt, also ist der Text jetzt das, was er tatsächlich ist — die
+  // Benachrichtigung des Betreibers über einen Lead, der auf eine Antwort wartet. Wer je wieder
+  // eine Gärtnerei in die Empfängerliste unten einträgt, muss ihn zuerst nach außen
+  // formulieren: Er spricht niemanden an und nennt keinen Absender.
+  const anfrageText = `Neue Anfrage über den Bepflanzungsplaner auf staudenplan.de.
 
-über den Bepflanzungsplaner auf staudenplan.de ist eine Anfrage für ein Komplettpaket eingegangen. Können Sie dafür ein Angebot erstellen und direkt auf die Kundin oder den Kunden zugehen? Kontaktdaten, Standort und die gewünschte Pflanzenliste stehen unten.
-
-Bei Rückfragen genügt eine Antwort auf diese Mail, sie erreicht uns direkt.
+Die Kundin oder der Kunde hat ein Komplettpaket angefragt und wartet auf eine Rückmeldung — genau das sagt die Bestätigungsmail zu. Kontaktdaten, Standort und die gewünschte Pflanzenliste stehen unten.
 
 ────────────────────────────────────────
 
@@ -2328,9 +2328,7 @@ Anmerkungen:
 
 ────────────────────────────────────────
 
-Viele Grüße
-Bastian Rohrhuber
-Staudenplan.de`;
+Diese Nachricht geht nur an den Betreiber. Die vollständigen Angaben stehen mit den kalkulierten Richtpreisen in /admin/anfragen.`;
 
   const kundenText = `Hallo ${name},
 
@@ -2408,97 +2406,34 @@ app.post('/api/feedback', feedbackLimiter, async (req, res) => {
   res.json({ success: true });
 });
 
-// ─── Gaißmayer-Weiterleitung + Klickzählung ──────────────────────────────────
-// Bot-Erkennung: maschinelle Klicks werden als bot=1 gespeichert, nicht verworfen.
-// Grund: die Zahl muss belastbar sein, wenn sie Gaißmayer als Nachfragebeleg vorgelegt wird —
-// ein einzelner Scraper hat die Statistik am 03.08.2026 um 58 Klicks aufgebläht.
-const BOT_UA = /bot|crawler|spider|slurp|headless|python|curl|wget|scrapy|axios|okhttp|java\/|go-http|libwww|perl|phantom|puppeteer|playwright|semrush|ahrefs|mj12|dotbot|bytespider|gptbot|claudebot|ccbot|petalbot|yandex|baidu|facebookexternalhit|preview/i;
-const KLICK_FENSTER_MS = 60 * 60 * 1000;  // Beobachtungsfenster: 1 Stunde
-const KLICK_MAX = 5;                      // mehr als 5 Kaufklicks/Stunde ist kein echter Kaufinteressent
-const KLICK_VERLAUF_MAX = 5000;           // Obergrenze gegen Speicherwachstum bei IP-Rotation
-// Nur im Arbeitsspeicher und nur als Hash mit prozess-zufälligem Salt — die IP selbst wird
-// nirgends gespeichert und ist nach einem Neustart auch nicht mehr rekonstruierbar.
-const KLICK_SALT = crypto.randomBytes(16);
-const klickVerlauf = new Map();
-
-// Ein echter Kaufklick startet immer auf einer eigenen Seite (Planer, Pflanzenseite,
-// geteilter Plan, Beispielbeet). Wegen Referrer-Policy strict-origin-when-cross-origin
-// senden Browser dabei den Referer mit — fehlt er, war kein Klick im Spiel.
-// Belegt am nginx-Log: von 13 refererlosen Klicks waren 12 bingbot/Amazonbot, eine
-// Scraper-Flotte mit gefälschtem iPhone-UA aus Rechenzentrums-IPs oder eigene Tests.
-const EIGENE_HERKUNFT = /^https?:\/\/([a-z0-9-]+\.)*staudenplan\.de(\/|$|\?)/i;
-
-// Herkunftsfläche aus dem Referer, damit auf /admin/klicks sichtbar wird, welche Seite
-// tatsächlich verkauft. Serverseitig und damit adblockerfest — die gleichnamige
-// Plausible-Property sieht nur die Hälfte der Klicks und braucht einen teureren Tarif.
-const QUELLEN = [
-  [/^\/pflanze\//i,      'Pflanzenseite'],
-  [/^\/plan\//i,         'Geteilter Plan'],
-  [/^\/beispiel(e\/?$|\/)/i, 'Beispielbeet'],
-  [/^\/ratgeber/i,       'Ratgeber'],
-  [/^\/pflanzen\/?$/i,   'Pflanzenlexikon'],
-  [/^\/(blueht-im|winterbeet)(\/|$)/i, 'Saison-Seite'],   // Landeseiten der Pinterest-Sechser-Raster
-  [/^\/$/,               'Planer'],
-];
-
-// Innerhalb des Planers liegen Pflanzenkarten und Stückliste auf derselben URL ("/"), der Referer
-// kann sie also nicht trennen. Dafür hängt das Frontend ein &q=… an den Kauflink. Der Marker
-// verfeinert nur, was der Referer ohnehin schon erlaubt — fälschen lässt sich damit nichts.
-// Object.create(null): ein einfaches Objektliteral würde bei ?q=constructor oder ?q=toString
-// einen Treffer aus der Prototypenkette liefern. Die Folge wäre kein Sicherheitsproblem, aber
-// ein stiller Datenverlust — die Zeile ginge mit einem Funktionsobjekt als quelle in den INSERT
-// und der Klick fehlte in genau der Statistik, die den Gaißmayer-Nachweis trägt.
-const QUELLE_MARKER = Object.assign(Object.create(null), {
-  karte: 'Planer (Karte)', stueckliste: 'Planer (Stückliste)',
-});
-
-function klickQuelle(req) {
-  const ref = String(req.get('referer') || '');
-  if (!EIGENE_HERKUNFT.test(ref)) return null;
-  let pfad;
-  try { pfad = new URL(ref).pathname || '/'; } catch { return null; }
-  const treffer = QUELLEN.find(([muster]) => muster.test(pfad));
-  const quelle = treffer ? treffer[1] : 'Sonstige';
-  if (quelle === 'Planer' && typeof req.query.q === 'string' && QUELLE_MARKER[req.query.q]) {
-    return QUELLE_MARKER[req.query.q];
+// ─── Alte Kauf-Links (/go/…) auffangen ───────────────────────────────────────
+/* Bis zum 23.09.2026 lag hier eine Zähl-Weiterleitung zu einer Staudengärtnerei samt
+ * Bot-Erkennung (BOT_UA, KLICK_*, klickVerlauf, EIGENE_HERKUNFT, QUELLEN, klickQuelle,
+ * istBotKlick, insertKlick). Die Weiterleitung ist weg — sie darf niemanden mehr dorthin
+ * schicken. Die Zählung ist mit ihr gegangen: Sie hat den Kaufklick gemessen, und den gibt
+ * es nicht mehr; sie stand außerdem im Dienst eines Nachweises gegenüber genau dieser
+ * Gärtnerei. Ohne Klick und ohne Adressat wäre sie eine Zahl ohne Gegenstand.
+ *
+ * Die Tabelle klicks und ihre Bestandszeilen bleiben unberührt — sie sind unter
+ * /admin/klicks als abgeschlossener Zeitraum einsehbar. Es kommt nur nichts mehr hinzu.
+ *
+ * Die Route selbst bleibt, weil die alten Links weiterlaufen: in Suchergebnissen, in
+ * Lesezeichen, in ausgedruckten Plänen und in den eingefrorenen Plänen in geteilte_plaene,
+ * die ihr kauflink-Feld noch mitführen. Sie landen jetzt auf der eigenen Pflanzenseite,
+ * sonst im Lexikon — 301, damit Google die alte URL durch die neue ersetzt, statt sie als
+ * Fehler zu führen (nach jedem Rückbau in diesem Projekt standen tote URLs im Bericht).
+ * Der Zielname im Pfad wird nicht mehr ausgewertet: Es gibt kein Ziel mehr, das zählt. */
+app.get('/go/:ziel', (req, res) => {
+  const roh = typeof req.query.p === 'string' ? req.query.p : '';
+  const pflanze = roh.replace(/[^\p{L}0-9 .×'’()\-]/gu, '').trim().slice(0, 120);
+  let ziel = '/pflanzen';
+  if (pflanze) {
+    try {
+      const treffer = db.prepare('SELECT name_botanisch FROM pflanzen WHERE name_botanisch = ? COLLATE NOCASE').get(pflanze);
+      if (treffer) ziel = '/pflanze/' + pflanzeToSlug(treffer.name_botanisch);
+    } catch { /* Kein Treffer ist kein Fehler: das Lexikon fängt den Besucher auf */ }
   }
-  return quelle;
-}
-
-// quelle === null bedeutet: kein Referer von der eigenen Seite → keine Nutzerinteraktion.
-function istBotKlick(req, quelle) {
-  if (!quelle) return true;
-
-  const ua = String(req.get('user-agent') || '');
-  if (!ua || ua.length < 15 || BOT_UA.test(ua)) return true;
-
-  const jetzt = Date.now();
-  const kennung = crypto.createHash('sha256').update(KLICK_SALT).update(String(req.ip || '')).digest('hex').slice(0, 16);
-  const bisher = (klickVerlauf.get(kennung) || []).filter(t => jetzt - t < KLICK_FENSTER_MS);
-  bisher.push(jetzt);
-  klickVerlauf.set(kennung, bisher);
-
-  // Aufräumen: abgelaufene Einträge raus, notfalls die ältesten opfern.
-  if (klickVerlauf.size > KLICK_VERLAUF_MAX) {
-    for (const [k, ts] of klickVerlauf) {
-      if (!ts.length || jetzt - ts[ts.length - 1] >= KLICK_FENSTER_MS) klickVerlauf.delete(k);
-      if (klickVerlauf.size <= KLICK_VERLAUF_MAX) break;
-    }
-    while (klickVerlauf.size > KLICK_VERLAUF_MAX) klickVerlauf.delete(klickVerlauf.keys().next().value);
-  }
-  return bisher.length > KLICK_MAX;
-}
-
-const insertKlick = db.prepare('INSERT INTO klicks (ziel, pflanze, bot, quelle) VALUES (?, ?, ?, ?)');
-app.get('/go/gaissmayer', (req, res) => {
-  const raw = typeof req.query.p === 'string' ? req.query.p : '';
-  const pflanze = raw.replace(/[^\p{L}0-9 .×'’()\-]/gu, '').trim().slice(0, 120) || null;
-  const quelle = klickQuelle(req);
-  try { insertKlick.run('gaissmayer', pflanze, istBotKlick(req, quelle) ? 1 : 0, quelle); } catch { /* Zählung darf die Weiterleitung nie blockieren */ }
-  res.set('X-Robots-Tag', 'noindex, nofollow');
-  // Deeplink auf die Produktsuche mit Binomial (Gattung+Art) für robuste Treffer; sonst generischer Shop.
-  const suchbegriff = pflanze ? pflanze.split(' ').slice(0, 2).join(' ') : '';
-  res.redirect(302, suchbegriff ? GAISSMAYER_SEARCH + encodeURIComponent(suchbegriff) : GAISSMAYER_URL);
+  res.redirect(301, ziel);
 });
 
 // ─── Plan teilen: öffentlicher Read-only-Link (viral + Backlinks) ─────────────
@@ -2750,8 +2685,6 @@ function renderSharedPlan(plan, id) {
   .pflanze-preis{display:flex;align-items:center;justify-content:space-between;font-size:.88rem;color:var(--tl);margin-bottom:12px}
   .pflanze-preis strong{color:var(--ea);font-size:1rem}
   .pflege-sterne{color:var(--gl);letter-spacing:2px}
-  .btn-kaufen{display:block;width:100%;background:var(--gm);color:#fff;border:none;border-radius:8px;padding:10px;font-size:.9rem;font-weight:600;text-decoration:none;text-align:center;cursor:pointer;transition:background .15s;box-sizing:border-box}
-  .btn-kaufen:hover{background:var(--gd)}
   .kalender-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:36px}
   .kalender-card{background:#fff;border-radius:var(--r);box-shadow:var(--sh);padding:16px}
   .kalender-card h4{font-size:.95rem;color:var(--gd);margin:0 0 10px}
@@ -2784,7 +2717,7 @@ function renderSharedPlan(plan, id) {
     <h1 style="font-size:clamp(1.3rem,4vw,1.9rem);font-weight:800;margin:0 auto;max-width:640px;line-height:1.3">${konzept}</h1>
   </div>
   <div style="max-width:900px;margin:0 auto;padding:32px 16px 60px">
-    ${renderBeispielPlanSSR(plan, flaeche, g, 'geteilter-plan')}
+    ${renderBeispielPlanSSR(plan, flaeche, g)}
     <div style="background:linear-gradient(135deg,#1b4332,#2d6a4f);border-radius:14px;padding:28px;color:#fff;margin-bottom:24px;text-align:center">
       <h2 style="font-size:1.2rem;margin:0 0 8px">Erstelle deinen eigenen Bepflanzungsplan</h2>
       <p style="opacity:.88;font-size:.92rem;margin:0 0 18px;line-height:1.6">Kostenlos, in 2 Minuten, ohne Anmeldung — abgestimmt auf deine Fläche, deinen Boden und deine Vorlieben.</p>
@@ -2795,60 +2728,63 @@ function renderSharedPlan(plan, id) {
   </body></html>`;
 }
 
-// Admin: Klick-Statistik (gesamt + pro Pflanze, Fortschritt Richtung 100)
+// Admin: Kaufklicks aus dem abgeschlossenen Zeitraum bis zum 23.09.2026.
+// Die Ansicht zählt nichts mehr mit — Kaufknopf und Weiterleitung sind weg, es kommt keine
+// Zeile mehr hinzu. Sie liest nur den Bestand, und sie sagt das auch: Ein Fortschrittsbalken
+// auf ein Ziel von 100 Klicks („Gesprächsgrundlage für die Gärtnerei") stünde hier sonst für
+// ein Vorhaben, das es nicht mehr gibt.
 app.get('/admin/klicks', (req, res) => {
   if (!isAdmin(req)) return res.redirect('/admin/login?next=/admin/klicks');
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const ZIEL = 100;
-  // Nur bot=0 zählt: Scraper und Klickserien aus derselben Quelle sind als bot=1 markiert
-  // (siehe istBotKlick), damit die Zahl gegenüber Gaißmayer belastbar bleibt.
-  const ECHT = "ziel = 'gaissmayer' AND COALESCE(bot,0) = 0";
-  const gesamt = db.prepare(`SELECT COUNT(*) AS n FROM klicks WHERE ${ECHT}`).get().n;
-  const bots = db.prepare("SELECT COUNT(*) AS n FROM klicks WHERE ziel = 'gaissmayer' AND COALESCE(bot,0) = 1").get().n;
+  // Der Wert in der Spalte ziel ist ein gespeicherter Schlüssel aus der Zeit vor dem
+  // 23.09.2026, kein Verweis auf einen Betrieb. Einmal benannt, damit die vier Abfragen nicht
+  // auseinanderlaufen; die Zeilen selbst bleiben unverändert stehen.
+  const ZIEL_ALTBESTAND = 'gaissmayer';
+  const ECHT = 'ziel = ? AND COALESCE(bot,0) = 0';
+  const gesamt = db.prepare(`SELECT COUNT(*) AS n FROM klicks WHERE ${ECHT}`).get(ZIEL_ALTBESTAND).n;
+  const bots = db.prepare('SELECT COUNT(*) AS n FROM klicks WHERE ziel = ? AND COALESCE(bot,0) = 1').get(ZIEL_ALTBESTAND).n;
   const proPflanze = db.prepare(`
     SELECT pflanze, COUNT(*) AS n, MAX(erstellt_am) AS letzter
     FROM klicks WHERE ${ECHT} AND pflanze IS NOT NULL
-    GROUP BY pflanze ORDER BY n DESC, letzter DESC`).all();
+    GROUP BY pflanze ORDER BY n DESC, letzter DESC`).all(ZIEL_ALTBESTAND);
   const proQuelle = db.prepare(`
     SELECT COALESCE(quelle,'unbekannt') AS quelle, COUNT(*) AS n
-    FROM klicks WHERE ${ECHT} GROUP BY quelle ORDER BY n DESC`).all();
+    FROM klicks WHERE ${ECHT} GROUP BY quelle ORDER BY n DESC`).all(ZIEL_ALTBESTAND);
   const proTag = db.prepare(`
     SELECT substr(erstellt_am,1,10) AS tag,
            SUM(CASE WHEN COALESCE(bot,0) = 0 THEN 1 ELSE 0 END) AS n,
            SUM(CASE WHEN COALESCE(bot,0) = 1 THEN 1 ELSE 0 END) AS b
-    FROM klicks WHERE ziel = 'gaissmayer' GROUP BY tag ORDER BY tag DESC LIMIT 30`).all();
-  const pct = Math.min(100, Math.round(gesamt / ZIEL * 100));
+    FROM klicks WHERE ziel = ? GROUP BY tag ORDER BY tag DESC LIMIT 30`).all(ZIEL_ALTBESTAND);
+  const letzter = db.prepare('SELECT MAX(erstellt_am) AS t FROM klicks WHERE ziel = ?').get(ZIEL_ALTBESTAND).t;
   res.send(`<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
-  <title>Gaißmayer-Klicks · Admin</title>
+  <title>Kaufklicks (Altbestand) · Admin</title>
   <style>body{font-family:'Segoe UI',system-ui,sans-serif;background:#f8f4ef;color:#1a1a1a;max-width:820px;margin:0 auto;padding:32px 20px}
   h1{color:#1b4332;font-size:1.5rem}h2{font-size:1.05rem;color:#1b4332;margin-top:28px}
   .big{font-size:3rem;font-weight:800;color:#2d6a4f;line-height:1}
-  .bar{background:#e5e0d8;border-radius:50px;height:22px;overflow:hidden;margin:12px 0 4px}
-  .bar>span{display:block;height:100%;background:linear-gradient(90deg,#52b788,#1b4332)}
+  .hinweis{background:#fff;border-left:4px solid #b7b7b7;border-radius:8px;padding:12px 16px;margin:14px 0 4px;font-size:.86rem;line-height:1.6;color:#555}
   table{width:100%;border-collapse:collapse;margin-top:12px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.06)}
   th,td{text-align:left;padding:10px 14px;border-bottom:1px solid #eee;font-size:.9rem}
   th{background:#1b4332;color:#fff}td:nth-child(2),th:nth-child(2){text-align:right;font-weight:700}
   .muted{color:#999;font-size:.82rem}</style></head><body>
-  <h1>🌿 Gaißmayer-Kaufklicks <a href="/admin/logout" style="float:right;font-size:.8rem;font-weight:400;color:#999;text-decoration:none">Abmelden →</a></h1>
-  <div class="big">${gesamt}<span style="font-size:1rem;color:#999;font-weight:400"> / ${ZIEL}</span></div>
-  <div class="bar"><span style="width:${pct}%"></span></div>
-  <p class="muted">${pct}% des Ziels${gesamt >= ZIEL ? ' — erreicht! Gaißmayer kann jetzt mit Daten angesprochen werden 🎉' : ''}
-  ${bots ? ` · zusätzlich <strong>${bots}</strong> maschinelle Klicks erkannt und nicht mitgezählt` : ''}</p>
-  <h2>Welche Fläche verkauft?</h2>
+  <h1>🌿 Kaufklicks (Altbestand) <a href="/admin/logout" style="float:right;font-size:.8rem;font-weight:400;color:#999;text-decoration:none">Abmelden →</a></h1>
+  <div class="big">${gesamt}</div>
+  <p class="muted">echte Klicks im gesamten Zeitraum${bots ? ` · zusätzlich <strong>${bots}</strong> maschinelle Klicks erkannt und nicht mitgezählt` : ''}</p>
+  <div class="hinweis"><strong>Abgeschlossener Zeitraum.</strong> Diese Zahlen stammen aus der Zeit bis zum 23.09.2026, als der Plan auf eine namentlich genannte Staudengärtnerei verlinkte. Kaufknopf und Weiterleitung sind entfernt, die Zählung ist eingestellt — es kommt nichts mehr hinzu.${letzter ? ` Letzter erfasster Klick: ${esc(letzter)}.` : ''} Die Zeilen bleiben als Bestand erhalten, sie werden nicht gelöscht.</div>
+  <h2>Welche Fläche hat verkauft?</h2>
   ${proQuelle.length ? `<table><tr><th>Herkunft des Klicks</th><th>Klicks</th><th>Anteil</th></tr>
   ${proQuelle.map(r => `<tr><td>${esc(r.quelle)}</td><td>${r.n}</td><td class="muted" style="text-align:right">${gesamt ? Math.round(r.n / gesamt * 100) : 0} %</td></tr>`).join('')}</table>
-  <p class="muted">Aus dem Referer abgeleitet, serverseitig — erfasst im Gegensatz zu Plausible auch Besucher mit Adblocker. „unbekannt“ sind Klicks von vor der Einführung dieser Spalte.</p>`
+  <p class="muted">Aus dem Referer abgeleitet, serverseitig — erfasste im Gegensatz zu Plausible auch Besucher mit Adblocker. „unbekannt“ sind Klicks von vor der Einführung dieser Spalte.</p>`
     : ''}
   <h2>Nachfrage pro Pflanze</h2>
   ${proPflanze.length ? `<table><tr><th>Pflanze (botanisch)</th><th>Klicks</th><th>Letzter Klick</th></tr>
   ${proPflanze.map(r => `<tr><td>${esc(r.pflanze)}</td><td>${r.n}</td><td class="muted">${esc(r.letzter)}</td></tr>`).join('')}</table>`
-    : '<p class="muted">Noch keine Klicks erfasst.</p>'}
-  <h2>Klicks pro Tag (letzte 30)</h2>
+    : '<p class="muted">Keine Klicks erfasst.</p>'}
+  <h2>Klicks pro Tag (letzte 30 Tage mit Klicks)</h2>
   ${proTag.length ? `<table><tr><th>Tag</th><th>Echt</th><th>Bots</th></tr>
   ${proTag.map(r => `<tr><td>${esc(r.tag)}</td><td>${r.n}</td><td class="muted" style="text-align:right">${r.b || '—'}</td></tr>`).join('')}</table>` : '<p class="muted">—</p>'}
-  <p class="muted">Als maschinell gilt: Klick ohne Referer von der eigenen Seite, fehlender oder verdächtiger User-Agent, oder mehr als ${KLICK_MAX} Kaufklicks pro Stunde von derselben IP-Adresse. Die IP wird dafür nur als gesalzener Hash im Arbeitsspeicher gehalten und nie gespeichert.<br>
-  Hinweis zur Einordnung: Die Bot-Erkennung läuft seit dem 06.08.2026. Ältere Markierungen stammen aus einer einmaligen rückwirkenden Bereinigung anhand der nginx-Logs, nicht aus dieser Live-Prüfung.</p>
+  <p class="muted">Als maschinell galt: Klick ohne Referer von der eigenen Seite, fehlender oder verdächtiger User-Agent, oder mehr als fünf Kaufklicks pro Stunde von derselben IP-Adresse. Die IP wurde dafür nur als gesalzener Hash im Arbeitsspeicher gehalten und nie gespeichert.<br>
+  Hinweis zur Einordnung: Die Bot-Erkennung lief vom 06.08.2026 bis zum 23.09.2026. Ältere Markierungen stammen aus einer einmaligen rückwirkenden Bereinigung anhand der nginx-Logs, nicht aus dieser Live-Prüfung.</p>
   </body></html>`);
 });
 
@@ -2946,7 +2882,7 @@ app.get('/admin/quiz', (req, res) => {
   th,td{text-align:left;padding:10px 14px;border-bottom:1px solid #eee;font-size:.9rem}th{background:#1b4332;color:#fff}
   td:nth-child(2),th:nth-child(2){text-align:right;font-weight:700}.muted{color:#999;font-size:.82rem}a{color:#2d6a4f}</style></head><body>
   <h1>🧠 Quiz-Auswertung <a href="/admin/logout" style="float:right;font-size:.8rem;font-weight:400;color:#999;text-decoration:none">Abmelden →</a></h1>
-  <p class="muted">Serverseitig gezählt — unabhängig von Adblockern/Plausible. <a href="/admin/klicks">Gaißmayer-Klicks</a> · <a href="/admin/anfragen">Anfragen</a></p>
+  <p class="muted">Serverseitig gezählt — unabhängig von Adblockern/Plausible. <a href="/admin/klicks">Kaufklicks (Altbestand)</a> · <a href="/admin/anfragen">Anfragen</a></p>
   <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:16px">${card('Wissenstest', 'wissen')}${card('Gartentyp-Quiz', 'gartentyp')}</div>
   <h2 style="font-size:1.05rem;color:#1b4332;margin-top:28px">Quiz-Starts pro Tag (letzte 30)</h2>
   ${proTag.length ? `<table><tr><th>Tag</th><th>Starts</th></tr>${proTag.map(r => `<tr><td>${esc(r.tag)}</td><td>${r.n}</td></tr>`).join('')}</table>` : '<p class="muted">Noch keine Quiz-Aktivität.</p>'}
@@ -3000,7 +2936,7 @@ app.get('/admin/plaene', (req, res) => {
   .karte{background:#fff;border-radius:12px;padding:20px 24px;box-shadow:0 2px 10px rgba(0,0,0,.06);flex:1;min-width:200px}</style></head><body>
   <h1>📍 Planungen <a href="/admin/logout" style="float:right;font-size:.8rem;font-weight:400;color:#999;text-decoration:none">Abmelden →</a></h1>
   <p class="muted">Anonyme Statistik je erstelltem Plan, ohne IP und ohne Personenbezug.
-    <a href="/admin/klicks">Kaufklicks</a> · <a href="/admin/anfragen">Anfragen</a> · <a href="/admin/quiz">Quiz</a></p>
+    <a href="/admin/klicks">Kaufklicks (Altbestand)</a> · <a href="/admin/anfragen">Anfragen</a> · <a href="/admin/quiz">Quiz</a></p>
   <div class="karten">
     <div class="karte"><div class="big">${gesamt}</div><div class="muted">Pläne erfasst</div></div>
     <div class="karte"><div class="big">${mitPlz}</div><div class="muted">davon mit PLZ</div></div>
@@ -3029,13 +2965,12 @@ app.get(`/${INDEXNOW_KEY}.txt`, (req, res) => {
 app.get('/robots.txt', (req, res) => {
   const base = process.env.SITE_URL || `${req.protocol}://${req.hostname}`;
   res.type('text/plain');
-  // Kein Disallow für /go/ — bewusst. Gesperrte URLs kann Google nicht abrufen und deshalb
-  // auch nicht sauber verwerfen: Sie standen dauerhaft als "Durch robots.txt blockiert" im
-  // Indexierungsbericht (Stand 14.08.2026: 262 von 445 Meldungen) und verdeckten die echten
-  // Probleme. Die Route selbst sendet X-Robots-Tag: noindex, nofollow und die Links tragen
-  // rel="nofollow" — Google darf den Redirect also abrufen, sieht das noindex und wirft die
-  // URLs endgültig raus. Die Crawls zählen nicht als Nachfrage mit: istBotKlick wertet sie
-  // über fehlenden Referer und Googlebot-UA als maschinell.
+  // Kein Disallow für /go/ — bewusst, jetzt aus einem anderen Grund als früher. Die alten
+  // Kauf-Links leiten seit dem 23.09.2026 mit 301 auf die eigene Pflanzenseite; gesperrt
+  // könnte Google diese Weiterleitung nicht abrufen und die alten URLs stünden dauerhaft als
+  // "Durch robots.txt blockiert" im Indexierungsbericht (so wie im August 2026: 262 von 445
+  // Meldungen), statt endgültig durch ihr neues Ziel ersetzt zu werden. Gezählt wird an
+  // /go/ nichts mehr, Crawls können die Statistik also auch nicht mehr verfälschen.
   //
   // SEO-Tool- und Fremdsuchmaschinen-Crawler sind dagegen gesperrt. In der Woche vom
   // 15.–22.08.2026 haben PetalBot (1222), SemrushBot (809), AhrefsBot (151) und MJ12bot (44)
@@ -3656,7 +3591,6 @@ function saisonSeiteHTML(e, alle) {
           <div style="font-size:.8rem;color:#555;line-height:1.5">${escHtml(daten(p))}</div>
           <div style="margin-top:auto;padding-top:10px;display:flex;gap:8px;flex-wrap:wrap">
             <a href="/pflanze/${escHtml(slug)}" style="background:#f0faf3;color:#1b4332;border-radius:50px;padding:7px 14px;text-decoration:none;font-weight:700;font-size:.8rem">Zur Pflanze →</a>
-            <a href="${escHtml(goLink(p.name_botanisch))}" target="_blank" rel="noopener nofollow" data-kauf="${escHtml(p.name_botanisch)}" data-quelle="saison-seite" style="background:#6b4226;color:#fff;border-radius:50px;padding:7px 14px;text-decoration:none;font-weight:700;font-size:.8rem">In der Gärtnerei ansehen →</a>
           </div>
         </div>
       </article>`;
@@ -3923,7 +3857,7 @@ app.get('/impressum', (req, res) => {
          fehl: Zahl 0 und Satz noch da, oder Zahl > 0 und Satz weg. -->
     <!-- data-beleg: siehe Kommentar oben. Wer den Satz entfernt, muss nichts weiter tun;
          wer ihn umformuliert, behält das Attribut. -->
-    <p>Ein Teil der Pflanzenbilder auf dieser Website ist mit künstlicher Intelligenz erzeugt. Diese Bilder sind <strong>Illustrationen der jeweiligen Art und keine Fotografien der konkret gelieferten Pflanze</strong>: Sie zeigen einen typischen Habitus, nicht das Exemplar, das die Gärtnerei versendet. Blütenfarbe, Wuchsform und Blütezeitpunkt können im Garten abweichen. Auf den öffentlichen Seiten dieser Website ist jedes dieser Bilder am Bild selbst als „KI-Bild“ bzw. „KI-erzeugte Illustration“ gekennzeichnet. Zwei Stellen sind davon ausgenommen: die Bilddateien, die wir für Pinterest erzeugen und unter <code>/pins/</code> ausliefern, tragen im Bild selbst keine solche Beschriftung, und die passwortgeschützte Redaktionsansicht zeigt Bildvorschauen ohne Kennzeichnung.</p>
+    <p>Ein Teil der Pflanzenbilder auf dieser Website ist mit künstlicher Intelligenz erzeugt. Diese Bilder sind <strong>Illustrationen der jeweiligen Art und keine Fotografien einer konkreten Pflanze</strong>: Sie zeigen einen typischen Habitus, nicht das Exemplar, das Sie später in der Hand halten. Blütenfarbe, Wuchsform und Blütezeitpunkt können im Garten abweichen. Auf den öffentlichen Seiten dieser Website ist jedes dieser Bilder am Bild selbst als „KI-Bild“ bzw. „KI-erzeugte Illustration“ gekennzeichnet. Zwei Stellen sind davon ausgenommen: die Bilddateien, die wir für Pinterest erzeugen und unter <code>/pins/</code> ausliefern, tragen im Bild selbst keine solche Beschriftung, und die passwortgeschützte Redaktionsansicht zeigt Bildvorschauen ohne Kennzeichnung.</p>
     <p>Die übrigen Pflanzenbilder sind Fotografien von Pixabay und werden unter der Pixabay License verwendet.</p>
     <h3>5. Externe Links</h3>
     <p>Diese Website enthält Links zu externen Websites Dritter, auf deren Inhalte wir keinen Einfluss haben. Für die Inhalte der verlinkten Seiten ist stets der jeweilige Anbieter verantwortlich. Eine permanente inhaltliche Kontrolle der verlinkten Seiten ist ohne konkrete Anhaltspunkte einer Rechtsverletzung nicht zumutbar.</p>
@@ -3957,7 +3891,7 @@ app.get('/datenschutz', (req, res) => {
     Ortsstraße 7, 85354 Freising<br>
     E-Mail: <a href="mailto:info@gartenschmiede.de">info@gartenschmiede.de</a></p>
     <h2>3. Erhebung und Speicherung personenbezogener Daten</h2>
-    <p><strong>Bepflanzungsplan-Anfragen:</strong> Wenn Sie über unser Kontaktformular eine Anfrage senden, speichern wir Ihren Namen, Ihre E-Mail-Adresse, Ihre Postleitzahl, Ihre Telefonnummer (sofern angegeben) sowie die von Ihnen eingegebenen Gartenparameter. Diese Daten werden ausschließlich zur Bearbeitung Ihrer Anfrage und zur Erstellung eines Pflanzenangebots verwendet. Damit Ihnen ein verbindliches Angebot gemacht werden kann, leiten wir Ihre Anfrage einschließlich dieser Angaben und der Pflanzenliste an unsere Partnergärtnerei weiter — die Staudengärtnerei Gaißmayer in Illertissen, die das Pflanzenpaket liefert. Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO: Die Weitergabe ist zur Bearbeitung der von Ihnen angeforderten Anfrage erforderlich. Preise aus unserem Planer werden dabei nicht übermittelt.</p>
+    <p><strong>Bepflanzungsplan-Anfragen:</strong> Wenn Sie über unser Kontaktformular eine Anfrage senden, speichern wir Ihren Namen, Ihre E-Mail-Adresse, Ihre Postleitzahl, Ihre Telefonnummer (sofern angegeben) sowie die von Ihnen eingegebenen Gartenparameter. Diese Daten werden ausschließlich zur Bearbeitung Ihrer Anfrage verwendet und bleiben bei uns. <strong>Eine Weitergabe an Dritte findet nicht statt</strong> — insbesondere leiten wir Ihre Anfrage nicht an eine Gärtnerei oder einen Händler weiter. Bis zum 23.09.2026 war das anders: Anfragen wurden an eine Staudengärtnerei weitergeleitet, damit diese Ihnen ein Angebot machen konnte. Diese Weiterleitung ist eingestellt. Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO: Die Verarbeitung ist zur Bearbeitung der von Ihnen angeforderten Anfrage erforderlich.</p>
     <p><strong>Server-Logfiles:</strong> Beim Besuch unserer Website werden automatisch technische Daten (IP-Adresse, Browsertyp, Betriebssystem, Uhrzeit) in Server-Logfiles gespeichert. Diese Daten werden ausschließlich zur technischen Fehleranalyse verwendet und nach 7 Tagen gelöscht.</p>
     <p><strong>KI-Verarbeitung:</strong> Ihre Gartenparameter werden zur Erstellung des Bepflanzungsplans an die OpenAI API übermittelt. Es werden keine personenbezogenen Daten (Name, E-Mail) an OpenAI übertragen.</p>
     <p><strong>Plan per E-Mail:</strong> Wenn Sie sich den Link zu Ihrem Bepflanzungsplan zuschicken lassen, speichern wir Ihre E-Mail-Adresse zusammen mit den Eckdaten des Plans (Fläche, Lichtverhältnisse, Bodenart, Gartenstil, Postleitzahl). Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO — Sie haben diese Zusendung ausdrücklich angefordert. Wir verwenden die Adresse für diesen Zweck und löschen sie auf Wunsch jederzeit.</p>
@@ -3969,11 +3903,10 @@ app.get('/datenschutz', (req, res) => {
     <h2>5. Webanalyse (Plausible)</h2>
     <p>Diese Website nutzt <strong>Plausible Analytics</strong> zur datenschutzfreundlichen Besucherstatistik. Plausible erhebt keine personenbezogenen Daten, setzt keine Cookies und ist vollständig DSGVO-konform. Es werden ausschließlich aggregierte, anonymisierte Seitenaufrufstatistiken erfasst (Seitenaufrufe, Verweildauer, Herkunftsland). Ihre IP-Adresse wird dabei nicht gespeichert. Betreiber: Plausible Insights OÜ, Västriku tn 2, 50403 Tartu, Estland. Weitere Informationen: <a href="https://plausible.io/data-policy" target="_blank" rel="noopener">plausible.io/data-policy</a></p>
     <h2>6. Cookies</h2>
-    <p>Diese Website verwendet keine eigenen Tracking-Cookies und keine Werbe-Cookies. Es werden ausschließlich technisch notwendige Funktionen ohne Cookie-Einsatz verwendet. Bitte beachten Sie, dass externe Websites (z.B. die verlinkte Staudengärtnerei Gaißmayer), die Sie über Links auf dieser Website aufrufen, eigene Cookies setzen können. Für diese gilt die jeweilige Datenschutzerklärung des Anbieters.</p>
-    <h2>6. Empfehlungslinks (Staudengärtnerei)</h2>
-    <p>Diese Website verweist von einzelnen Pflanzenseiten sowie aus den KI-Bepflanzungsplänen auf die Staudengärtnerei Gaißmayer (gaissmayer.de), damit Sie die vorgestellten Stauden dort beziehen können. Es handelt sich um redaktionelle Empfehlungslinks. <strong>Es besteht derzeit keine bezahlte Partnerschaft und wir erhalten für diese Verweise keine Provision.</strong></p>
-    <p>Wenn Sie einen solchen Link anklicken, werden Sie über eine interne Weiterleitung (/go/…) zum Angebot des Drittanbieters geführt. Wir zählen dabei anonym und ohne Cookies mit, welche Pflanze angeklickt wurde; personenbezogene Daten (z.B. Ihre IP-Adresse) werden hierbei nicht gespeichert. Auf der Zielseite gilt die Datenschutzerklärung des jeweiligen Anbieters.</p>
-    <h2>7. Externe Links</h2>
+    <p>Diese Website verwendet keine eigenen Tracking-Cookies und keine Werbe-Cookies. Es werden ausschließlich technisch notwendige Funktionen ohne Cookie-Einsatz verwendet. Bitte beachten Sie, dass externe Websites, die Sie über Links auf dieser Website aufrufen, eigene Cookies setzen können. Für diese gilt die jeweilige Datenschutzerklärung des Anbieters.</p>
+    <h2>7. Empfehlungslinks und Kaufklicks</h2>
+    <p>Diese Website verweist <strong>nicht mehr</strong> auf eine Gärtnerei oder einen Händler und empfiehlt keine Bezugsquelle. Bis zum 23.09.2026 führten Links von den Pflanzenseiten und aus den Bepflanzungsplänen über eine interne Weiterleitung (/go/…) zu einer Staudengärtnerei; dabei wurde anonym und ohne Cookies gezählt, welche Pflanze angeklickt wurde. Diese Links und diese Zählung gibt es nicht mehr. Alte /go/-Adressen leiten seither auf die zugehörige Pflanzenseite dieser Website weiter, ohne dass dabei etwas gespeichert wird. Die bis dahin erfassten Zählwerte enthalten keine personenbezogenen Daten.</p>
+    <h2>8. Externe Links</h2>
     <p>Diese Website enthält Links zu externen Websites. Für den Inhalt dieser externen Seiten sind ausschließlich deren Betreiber verantwortlich. Zum Zeitpunkt der Verlinkung wurden die Seiten auf mögliche Rechtsverstöße überprüft — eine permanente inhaltliche Kontrolle ist ohne konkrete Anhaltspunkte nicht zumutbar.</p>
     <p style="margin-top:24px;color:#aaa;font-size:.83rem">Stand: ${new Date().toLocaleDateString('de-DE', {month:'long',year:'numeric'})}</p>
   </main>
@@ -4550,7 +4483,7 @@ app.post('/api/antwort-generieren', adminActionLimiter, async (req, res) => {
     const completion = await getOpenAI().chat.completions.create({
       model: 'gpt-4o',
       messages: [
-        { role: 'system', content: 'Du bist Gartenberater bei Staudenplan.de, einem Anbieter für KI-gestützte Bepflanzungspläne mit Pflanzenlieferung. Ein potenzieller Kunde hat eine Frage per E-Mail/Chat gestellt. Schreibe eine freundliche, fachlich fundierte, aber knappe Antwort (max. 150 Wörter) auf Deutsch, die konkret auf die Frage eingeht und beiläufig auf das kostenlose KI-Planungstool auf staudenplan.de hinweist. Kein Briefkopf, keine Anrede-/Grußformel-Floskeln — nur der copy-paste-fertige Fließtext.' },
+        { role: 'system', content: 'Du bist Gartenberater bei Staudenplan.de. Die Seite erstellt kostenlose, KI-gestützte Bepflanzungspläne — Stückliste, Pflanzplan und Pflegekalender. Wir verkaufen und liefern KEINE Pflanzen und vermitteln auch keine Bezugsquelle; sage das offen, wenn danach gefragt wird, und verspriche nichts dergleichen. Ein potenzieller Kunde hat eine Frage per E-Mail/Chat gestellt. Schreibe eine freundliche, fachlich fundierte, aber knappe Antwort (max. 150 Wörter) auf Deutsch, die konkret auf die Frage eingeht und beiläufig auf das kostenlose KI-Planungstool auf staudenplan.de hinweist. Kein Briefkopf, keine Anrede-/Grußformel-Floskeln — nur der copy-paste-fertige Fließtext.' },
         { role: 'user', content: frage },
       ],
       temperature: 0.6,
@@ -4569,7 +4502,7 @@ app.get('/pflanzen', (req, res) => {
   res.send(`<!DOCTYPE html><html lang="de"><head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Stauden suchen & filtern — ${total} winterharte Gartenstauden | Staudenplan.de</title>
-  <meta name="description" content="Alle ${total} winterharten Gartenstauden filtern nach Standort, Blühzeit, Farbe, Höhe, Feuchtigkeit und mehr — mit Bildern, Pflege-Tipps und Kauflink.">
+  <meta name="description" content="Alle ${total} winterharten Gartenstauden filtern nach Standort, Blühzeit, Farbe, Höhe, Feuchtigkeit und mehr — mit Bildern, Pflege-Tipps und Pflanzabständen.">
   <link rel="icon" href="/favicon.ico" sizes="any"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="canonical" href="https://www.staudenplan.de/pflanzen">
   <meta property="og:title" content="Stauden suchen — ${total} winterharte Arten">
@@ -5006,7 +4939,10 @@ app.get('/pflanze/:slug', (req, res) => {
 
   if (!pflanze) return res.status(404).send(`<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Pflanze nicht gefunden</title></head><body>${NAV_LINKS}<div style="text-align:center;padding:80px 20px"><h1>Pflanze nicht gefunden</h1><p><a href="/pflanzen">Zurück zum Staudenlexikon</a></p></div>${SITE_FOOTER}</body></html>`);
 
-  const kauflink = goLink(pflanze.name_botanisch);
+  // Hier wurde bis zum 23.09.2026 aus goLink() der Kaufknopf der Seite gebildet ("In der
+  // Gärtnerei ansehen"), darunter stand eine Fußnote mit dem Namen des Betriebs. Beides ist
+  // ersatzlos weg — kein Platzhalter, keine zweite Gärtnerei. In der Knopfreihe bleibt die
+  // Wunschliste, die in den eigenen Planer führt.
   const aehnliche = db.prepare(`
     SELECT name_deutsch, name_botanisch FROM pflanzen
     WHERE licht LIKE ? AND id != ? ORDER BY RANDOM() LIMIT 6
@@ -5064,7 +5000,7 @@ app.get('/pflanze/:slug', (req, res) => {
       // kostenloser Rückgabe — alles frei erfunden, auf jeder Pflanzenseite, ohne AGB und
       // ohne Widerrufsbelehrung. Die Preise in der DB sind Kalkulationsgrößen für die
       // Plansumme, keine Handelspreise (Stichprobe: Echinacea purpurea 8,00 € in der DB
-      // gegen 5,10 € bei Gaißmayer). Der Block entstand als Reaktion auf die
+      // gegen 5,10 € Listenpreis). Der Block entstand als Reaktion auf die
       // Search-Console-Warnung "Missing field offers" (Commit bd1e628).
       //
       // Das bloße Streichen von "offers" hat den Typ zurückgelassen und damit einen
@@ -5287,7 +5223,8 @@ app.get('/pflanze/:slug', (req, res) => {
             ['🎨 Farbe', (pflanze.farbe||'—').replace(/\|/g,' · ')],
             ['🌱 Pflege', pflegeSterne],
             // "Richtpreis" statt "Preis": die DB-Werte sind Kalkulationsgrößen für die Plansumme,
-            // keine Kassenpreise (Echinacea purpurea 8,00 € hier gegen 5,10 € bei Gaißmayer).
+            // keine Kassenpreise — eine Stichprobe gegen echte Listenpreise wich bei einzelnen
+            // Arten um mehr als die Hälfte ab (Echinacea purpurea 8,00 € hier gegen 5,10 € dort).
             ['💶 Richtpreis', pflanze.preis_stueck_eur ? 'ca. ' + pflanze.preis_stueck_eur.toFixed(2)+' €/Stück' : '—'],
           ].map(([l,v]) => `
             <div style="background:#fff;border-radius:10px;padding:12px 14px;box-shadow:0 1px 6px rgba(0,0,0,.06)">
@@ -5300,7 +5237,6 @@ app.get('/pflanze/:slug', (req, res) => {
 
         <!-- CTA Buttons -->
         <div style="display:flex;gap:10px;flex-wrap:wrap">
-          <a href="${kauflink}" target="_blank" rel="noopener nofollow" data-kauf="${escHtml(pflanze.name_botanisch || pflanze.name_deutsch || '')}" data-quelle="pflanzenseite" style="background:#6b4226;color:#fff;border-radius:50px;padding:13px 28px;text-decoration:none;font-weight:700;font-size:.9rem;transition:background .15s">In der Gärtnerei ansehen →</a>
           <button id="wl-btn" onclick="addToWunschliste()" style="background:#2d6a4f;color:#fff;border:none;border-radius:50px;padding:13px 28px;font-weight:700;font-size:.9rem;cursor:pointer;transition:background .2s">🌿 Zur Wunschliste</button>
           <script>
           (function(){
@@ -5312,7 +5248,6 @@ app.get('/pflanze/:slug', (req, res) => {
           })();
           </script>
         </div>
-        <p style="font-size:.72rem;color:#bbb;margin-top:8px">Externer Link zur Staudengärtnerei Gaißmayer.</p>
         </div>
       </div>
     </div>
@@ -5660,7 +5595,7 @@ app.get('/staudenbeet-planen', (req, res) => {
     if (gezeigt.length) pinterestBlock = `
     <div style="background:#fff;border:2px solid #52b788;border-radius:14px;padding:20px 22px;margin-bottom:30px">
       <h2 style="font-size:1.1rem;color:#1b4332;font-weight:700;margin-bottom:6px">Von Pinterest hier? Die sechs Stauden aus dem Pin</h2>
-      <p style="font-size:.92rem;color:#333;line-height:1.65;margin-bottom:12px">Jedes Sechser-Raster hat eine eigene Seite mit Höhe, Standort, Giftwarnung und Kauflink — und einem Knopf, der alle sechs in den Planer übernimmt.</p>
+      <p style="font-size:.92rem;color:#333;line-height:1.65;margin-bottom:12px">Jedes Sechser-Raster hat eine eigene Seite mit Höhe, Standort und Giftwarnung — und einen Knopf, der alle sechs in den Planer übernimmt.</p>
       <div style="display:flex;flex-wrap:wrap;gap:8px">${gezeigt.map(saisonChip).join('')}</div>
       <p style="font-size:.85rem;margin-top:12px"><a href="/blueht-im" style="color:#2d6a4f;font-weight:700">Alle Monate →</a> &nbsp; <a href="/winterbeet" style="color:#2d6a4f;font-weight:700">Alles fürs Winterbeet →</a></p>
     </div>`;
@@ -5801,14 +5736,14 @@ function readingTime(text) { return Math.max(1, Math.round(text.split(/\s+/).len
 
 const FAVICON = `<link rel="icon" href="/favicon.ico" sizes="any"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="apple-touch-icon" href="/apple-touch-icon.png">`;
 
+// Bis zum 23.09.2026 hing hier zusätzlich ein delegierter Klickzähler auf [data-kauf], der
+// jeden Kaufklick der server-gerenderten Flächen an Plausible meldete. Es gibt keine
+// Kaufknöpfe mehr und damit kein data-kauf — der Listener hätte nur noch auf ein Ereignis
+// gewartet, das niemand mehr auslösen kann. Die Kommentare stehen hier und nicht im HTML:
+// Sie erklären den Code, sie gehören nicht in die Seite jedes Besuchers.
 const PLAUSIBLE = `<!-- Privacy-friendly analytics by Plausible -->
 <script async src="https://plausible.io/js/pa-CQxds67VLWtj57jHuhY1V.js"></script>
-<script>window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};plausible.init()</script>
-<!-- Kaufklicks aller server-gerenderten Flaechen melden (Planer meldet selbst in stauden-portal.html).
-     Delegiert statt onclick pro Link: greift auch fuer spaeter ergaenzte Kaufflaechen. Der Link oeffnet
-     in einem neuen Tab, die Seite bleibt stehen -> das Event hat Zeit zu senden. -->
-<script>document.addEventListener('click',function(e){var a=e.target&&e.target.closest?e.target.closest('[data-kauf]'):null;
-if(a&&window.plausible)plausible('Gärtnerei-Klick',{props:{pflanze:a.getAttribute('data-kauf')||'',quelle:a.getAttribute('data-quelle')||''}});});</script>`;
+<script>window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};plausible.init()</script>`;
 
 const NAV_LINKS = `${FAVICON}${PLAUSIBLE}
 <style>
@@ -6352,7 +6287,7 @@ function loadBeispielPlan(slug) {
         }
         /* Der Preis folgt der Datenbank aus demselben Grund wie der Name: Er ist beim
          * Erzeugen des Plans eingefroren worden und würde sonst für immer den Stand von
-         * damals zeigen. Nach dem Abgleich mit den Gaißmayer-Listenpreisen stünde auf den
+         * damals zeigen. Nach dem Preisabgleich (scripts/preise-gaissmayer.js) stünde auf den
          * acht Beispielseiten sonst weiter der alte, zu hohe Betrag, während der Planer
          * daneben schon den neuen nennt. */
         if (akt && akt.preis_stueck_eur != null) pf.preis_stueck_eur = akt.preis_stueck_eur;
@@ -6952,8 +6887,9 @@ function bildherkunftAusDb(p) {
   return { zeile: treffer.zeile, marke: bildMarkeHTML(treffer.zeile), altZusatz: bildAltZusatz(treffer.zeile) };
 }
 
-// quelle: landet als Plausible-Property am Kaufklick, damit sichtbar wird, welche Fläche verkauft.
-function renderBeispielPlanSSR(plan, flaeche, grafikOpts, quelle = '') {
+// Der vierte Parameter hieß bis zum 23.09.2026 quelle und landete als Plausible-Property am
+// Kaufklick. Mit dem Kaufknopf ist er entfallen — es gibt keine Kauffläche mehr zu messen.
+function renderBeispielPlanSSR(plan, flaeche, grafikOpts) {
   if (!plan || !plan.pflanzen) return '';
   const emojis = ['🌸','🌺','🌼','🌻','🌹','💐','🌷','🌿','🍃','🌾'];
   const jez = {'Frühling':'🌱','Sommer':'☀️','Herbst':'🍂','Winter':'❄️'};
@@ -6961,11 +6897,12 @@ function renderBeispielPlanSSR(plan, flaeche, grafikOpts, quelle = '') {
 
   const gesamt = pflanzen.reduce((s,p) => s + (Number(p.stueckzahl) || 0), 0);
   // Die Beträge stammen aus preis_stueck_eur — Kalkulationsgrößen für die Plansumme, KEINE
-  // Handelspreise (Echinacea purpurea 8,00 € in der DB gegen 5,10 € bei Gaißmayer). Auf den
-  // Pflanzenseiten heißt derselbe Wert deshalb längst „💶 Richtpreis · ca. …". Hier stand
-  // bis 08/2026 ein blanker Eurobetrag unmittelbar über dem Button „Bei Gaißmayer ansehen",
-  // was sich unweigerlich als Preis des verlinkten Angebots liest. Die Zahlen bleiben — für
-  // die Budgetplanung sind sie der Sinn der Seite —, aber sie sagen jetzt, was sie sind.
+  // Handelspreise (Stichprobe: Echinacea purpurea 8,00 € in der DB gegen 5,10 € Listenpreis).
+  // Auf den Pflanzenseiten heißt derselbe Wert deshalb längst „💶 Richtpreis · ca. …". Hier
+  // stand bis 08/2026 ein blanker Eurobetrag unmittelbar über einem Kaufknopf, was sich
+  // unweigerlich als Preis des verlinkten Angebots las. Der Knopf ist seit dem 23.09.2026 weg;
+  // die Zahlen bleiben — für die Budgetplanung sind sie der Sinn der Seite —, aber sie sagen,
+  // was sie sind.
   // Der Kopf rechnet die Summe der Karten, statt gesamtkosten_geschaetzt zu glauben. In den
   // acht Beispielplänen war das Feld ein eingefrorener Modell-String und wich um bis zu 48 %
   // von den Preisen der Karten DERSELBEN Seite ab (Naturgarten: 406,50 € im Kopf gegen
@@ -7010,7 +6947,7 @@ function renderBeispielPlanSSR(plan, flaeche, grafikOpts, quelle = '') {
     <div class="em-item"><strong>${gesamt}</strong> Pflanzen gesamt</div>
     <div class="em-item"><strong>${escHtml(kostenText)}</strong> Richtpreis gesamt</div>
   </div>
-  <p style="font-size:.78rem;color:#888;line-height:1.5;margin:-16px 0 20px">Alle Beträge sind Richtwerte zur Budgetplanung — nicht die Preise der verlinkten Gärtnerei.</p>`;
+  <p style="font-size:.78rem;color:#888;line-height:1.5;margin:-16px 0 20px">Alle Beträge sind Richtwerte zur Budgetplanung — keine Angebots- oder Verkaufspreise.</p>`;
 
   const cards = pflanzen.map((p, i) => {
     const c = bloomColorSSR(p.farbe);
@@ -7027,7 +6964,6 @@ function renderBeispielPlanSSR(plan, flaeche, grafikOpts, quelle = '') {
     const imgTop = hb
       ? `<img src="${escHtml(safeUrl(p.bild_url))}" alt="${escHtml(p.name_deutsch)}${escHtml(hb.altZusatz)}" style="width:100%;height:100%;object-fit:cover;display:block" loading="lazy">${hb.marke}`
       : `<div style="font-size:2.2rem;display:flex;align-items:center;justify-content:center;height:100%">${emojis[i%10]}</div>`;
-    const kaufHref = p.name_botanisch ? goLink(p.name_botanisch) : safeUrl(p.kauflink || '/');
     return `<div class="pflanze-card">
       <div class="pflanze-card-top" style="background:linear-gradient(135deg,${cLight},${c})">${imgTop}</div>
       <div class="pflanze-card-body">
@@ -7045,8 +6981,6 @@ function renderBeispielPlanSSR(plan, flaeche, grafikOpts, quelle = '') {
           <span>Pflege: <span class="pflege-sterne">${stars}</span></span>
           <span>Richtpreis <strong>ca. ${preis} €</strong></span>
         </div>
-        <a class="btn-kaufen" href="${escHtml(kaufHref)}" target="_blank" rel="noopener nofollow" data-kauf="${escHtml(p.name_botanisch || p.name_deutsch || '')}" data-quelle="${escHtml(quelle)}">Bei Gaißmayer ansehen ↗</a>
-        <div style="text-align:center;font-size:.7rem;color:#999;margin-top:4px;line-height:1.4">Staudengärtnerei Gaißmayer · öffnet in neuem Tab</div>
       </div>
     </div>`;
   }).join('');
@@ -7230,8 +7164,6 @@ ${NAV_LINKS}
 .pflanze-preis{display:flex;align-items:center;justify-content:space-between;font-size:.88rem;color:var(--tl);margin-bottom:12px}
 .pflanze-preis strong{color:var(--ea);font-size:1rem}
 .pflege-sterne{color:var(--gl);letter-spacing:2px}
-.btn-kaufen{display:block;width:100%;background:var(--gm);color:#fff;border:none;border-radius:8px;padding:10px;font-size:.9rem;font-weight:600;text-decoration:none;text-align:center;cursor:pointer;transition:background .15s;box-sizing:border-box}
-.btn-kaufen:hover{background:var(--gd)}
 .kalender-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:36px}
 .kalender-card{background:#fff;border-radius:var(--r);box-shadow:var(--sh);padding:16px}
 .kalender-card h4{font-size:.95rem;color:var(--gd);margin:0 0 10px}
@@ -7280,7 +7212,7 @@ ${NAV_LINKS}
     <p style="color:#444;line-height:1.75">${b.intro2}</p>
   </div>
 
-  ${renderBeispielPlanSSR(plan, b.flaeche, undefined, 'beispielbeet')}
+  ${renderBeispielPlanSSR(plan, b.flaeche, undefined)}
 
   <div style="background:linear-gradient(135deg,#1b4332,#2d6a4f);border-radius:14px;padding:28px;color:#fff;margin-bottom:32px">
     <h2 style="font-size:1.1rem;margin-bottom:8px">Diesen Plan für deinen Garten anpassen</h2>

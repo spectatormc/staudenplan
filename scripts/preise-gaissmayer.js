@@ -1,6 +1,17 @@
 /*
  * Gleicht preis_stueck_eur mit den echten Listenpreisen der Staudengärtnerei Gaißmayer ab.
  *
+ * STAND 23.09.2026 — DIE ZUSAMMENARBEIT IST BEENDET. Die Gärtnerei hat der Nennung auf
+ * staudenplan.de widersprochen; die Website verlinkt sie nicht mehr, nennt sie nicht mehr und
+ * leitet keine Anfragen mehr dorthin. Dieses Skript und data/gaissmayer-katalog.json bleiben
+ * trotzdem bestehen, weil die Planpreise aus diesem Abgleich stammen: Sie einfach zu löschen
+ * hieße, den Beleg für 433 von 711 Preisen wegzuwerfen, die weiter in der Datenbank stehen.
+ * Was mit den Preisen selbst geschieht, ist eine offene Entscheidung des Betreibers und
+ * wurde mit dem Rückbau der Nennungen NICHT mitentschieden. Bis dahin gilt: Der Katalog ist
+ * ein Datenstand vom 31.08.2026, kein laufender Bezug. Kein neuer --holen-Lauf ohne neue
+ * Abstimmung — ein Crawl auf deren Shop wäre nach diesem Brief das Gegenteil dessen, was
+ * zugesagt wurde.
+ *
  *   node scripts/preise-gaissmayer.js --holen        # Katalog laden (17 Abrufe, ~17 Min)
  *   node scripts/preise-gaissmayer.js                # Bericht, ändert nichts
  *   node scripts/preise-gaissmayer.js --schreiben    # Preise in die DB übernehmen

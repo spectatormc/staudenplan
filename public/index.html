@@ -322,22 +322,7 @@
     }
     .pflanze-preis strong { color: var(--earth); font-size: 1rem; }
     .pflege-sterne { color: var(--green-light); letter-spacing: 2px; }
-    .btn-kaufen {
-      display: block;
-      width: 100%;
-      background: var(--green-mid);
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      padding: 10px;
-      font-size: 0.9rem;
-      font-weight: 600;
-      text-decoration: none;
-      text-align: center;
-      cursor: pointer;
-      transition: background 0.15s;
-    }
-    .btn-kaufen:hover { background: var(--green-dark); }
+    /* .btn-kaufen ist am 23.09.2026 entfallen — siehe Kommentar an der Pflanzenkarte. */
 
     /* Jahreskalender */
     .kalender-grid {
@@ -1613,8 +1598,10 @@
   <div class="modal">
     <button class="modal-close" onclick="closeModal()">✕</button>
     <div id="modal-content">
-      <h3>Paket bei Gaißmayer anfragen</h3>
-      <p class="modal-sub">Wir leiten deine Anfrage an die Staudengärtnerei Gaißmayer weiter — sie meldet sich mit einem Angebot für dein komplettes Pflanzenpaket bei dir.</p>
+      <h3>Komplettpaket anfragen</h3>
+      <!-- Gleicher Wortlaut wie in stauden-portal.html: Die Anfrage geht seit dem 23.09.2026
+           nur noch an den Betreiber, und zugesagt ist nur eine Rückmeldung. -->
+      <p class="modal-sub">Schick uns deinen Plan — wir schauen ihn uns an und melden uns bei dir.</p>
       <div class="form-group">
         <label>Vor- und Nachname *</label>
         <input type="text" id="anfrage-name" placeholder="Max Mustermann">
@@ -1633,7 +1620,7 @@
       </div>
       <div class="form-group">
         <label>Anmerkungen <span class="optional-tag">(optional)</span></label>
-        <textarea id="anfrage-anmerkungen" rows="3" placeholder="z.B. bevorzugter Liefertermin, Besonderheiten …"></textarea>
+        <textarea id="anfrage-anmerkungen" rows="3" placeholder="z.B. Besonderheiten des Standorts, Wünsche …"></textarea>
       </div>
       <div id="modal-error" class="error-msg" style="display:none"></div>
       <button class="btn-primary" onclick="submitAnfrage()">Anfrage senden 📩</button>
@@ -2543,7 +2530,9 @@
             <span>Pflege: <span class="pflege-sterne">${'★'.repeat(stars)}${'☆'.repeat(3-stars)}</span></span>
             <strong>${((p.preis_stueck_eur||0) * (p.stueckzahl||1)).toFixed(2)} €</strong>
           </div>
-          <a class="btn-kaufen" href="${p.kauflink}" target="_blank" rel="noopener">Kaufen →</a>
+<!-- Kaufknopf entfernt am 23.09.2026 (wie in stauden-portal.html): Er hat p.kauflink
+               benutzt, und /api/plan liefert dieses Feld nicht mehr — der Knopf hätte ins
+               Leere gezeigt. Es gibt keine Bezugsquelle, also auch keinen Ersatz. -->
         </div>
       </div>`;
     }).join('');
@@ -2619,7 +2608,7 @@
         <div class="success-msg">
           <div class="success-icon">✅</div>
           <h3>Anfrage gesendet!</h3>
-          <p>Danke, ${name}! Wir haben deinen Bepflanzungsplan erhalten und melden uns schnellstmöglich mit einem Angebot für die Lieferung deiner Stauden.</p>
+          <p>Danke, ${name}! Wir haben deine Anfrage erhalten und melden uns bei dir.</p>
         </div>
       `;
     } catch (err) {

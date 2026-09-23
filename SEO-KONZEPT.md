@@ -1,5 +1,13 @@
 # SEO-Konzept — Mein Bepflanzungsplan
 
+> **Stand 23.09.2026 — überholt, soweit es Bezugsquellen betrifft.** Die Staudengärtnerei
+> Gaißmayer hat schriftlich widersprochen, auf staudenplan.de als Bezugsquelle genannt zu
+> werden. Die Website nennt seither **gar keine** Gärtnerei und keinen Shop mehr: keine
+> Kauflinks, keine Weiterleitung, keine Anfrage an einen Betrieb. Alles, was in diesem
+> Dokument von Partnerschaft, Lieferung oder Affiliate-Provision handelt, ist damit ein
+> Planungsstand vom Juni 2026 und nicht der heutige Zustand. Es bleibt als Dokument stehen,
+> weil daran hängt, wie die Seite gewachsen ist — nicht als Vorhaben.
+
 ## Marktposition & USP
 
 **Niemand** auf dem deutschen Markt kombiniert aktuell:
@@ -108,7 +116,7 @@ Neue Ratgeber-Themen hinzufügen (via `node scripts/seed-wissen-seo.js` mit neue
 | Partner | Provision | Programm | Priorität |
 |---|---|---|---|
 | **Lubera.com** | 12% | AWIN | ⭐ Sofort starten |
-| **Staudengärtnerei Gaißmayer** | direkt verhandelbar | Direktvertrag | ⭐ Premium-Segment |
+| ~~Staudengärtnerei Gaißmayer~~ | — | — | **abgelehnt am 23.09.2026, keine Nennung mehr** |
 | **Bakker.com** | 10% (inaktiv, reaktivierbar) | — | Backup |
 | **Amazon Plants** | 3-5% | Amazon Associates | Fallback |
 
@@ -199,7 +207,7 @@ app.get('/sitemap.xml', (req, res) => {
 
 1. **SOFORT:** Lubera AWIN-Affiliate anmelden → alle Kauflinks tracken
 2. **Woche 1:** Sitemap.xml + robots.txt + Google Search Console
-3. **Woche 2:** Gaißmayer kontaktieren für Direktpartnerschaft
+3. ~~**Woche 2:** Gaißmayer kontaktieren für Direktpartnerschaft~~ — erledigt und abgelehnt (23.09.2026)
 4. **Monat 1:** 20 weitere Ratgeber (via seed-wissen-seo.js)
 5. **Monat 2:** Echte Produktbilder für Top-50-Pflanzen
 6. **Monat 3:** Social Media (Pinterest) mit Pflanzenkarten

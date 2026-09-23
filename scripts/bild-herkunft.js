@@ -46,7 +46,9 @@ const BILD_SPALTEN_LISTE = ['bild_url', 'bild_ki', 'bild_lizenz'];
 
 // ─── Texte ────────────────────────────────────────────────────────────────────
 // "Illustration", nicht "Foto": Die KI-Bilder zeigen die Art typisiert, nicht das Exemplar,
-// das die Gärtnerei liefert. Derselbe Wortlaut steht im Haftungsausschluss (/impressum).
+// das später im Garten steht. Derselbe Wortlaut steht im Haftungsausschluss (/impressum) —
+// dort stand bis zum 23.09.2026 "das die Gärtnerei versendet"; die Website nennt seither
+// keine Bezugsquelle mehr, und der Satz darf keine voraussetzen.
 const KI_TEXT = 'KI-erzeugte Illustration';
 const KI_MARKE_TEXT = 'KI-Bild';
 const FOTO_PIXABAY = 'Foto: Pixabay';
