@@ -1,19 +1,18 @@
 {
   "pflanzen": [
     {
-      "name_deutsch": "Silber-Chinaschilf",
-      "name_botanisch": "Miscanthus sinensis 'Silberfeder'",
-      "beschreibung": "Ein hohes Ziergras mit silbrig schimmernden Blütenständen, die im Herbst besonders auffallen.",
+      "name_deutsch": "Karl-Foerster-Gras",
+      "name_botanisch": "Calamagrostis x acutiflora",
+      "beschreibung": "Ein aufrecht wachsendes Ziergras mit schmalen, federartigen Halmen, die von Juni an stehen und bis in den Winter hinein Struktur geben.",
       "standort": "Hintergrund",
-      "bluehzeit": "August - Oktober",
-      "farbe": "Silber",
-      "hoehe_cm": 200,
+      "bluehzeit": "Juni - August",
+      "farbe": "Beige",
+      "hoehe_cm": 135,
       "pflege_sterne": 2,
       "rolle": "Leitstaude",
       "stueckzahl": 2,
-      "preis_stueck_eur": 9.5,
-      "kauflink": "https://www.amazon.de/s?k=Miscanthus+sinensis+Silberfeder&tag=gartenbaukosten-21",
-      "bild_url": "/images/pflanzen/chinaschilf-226.jpg",
+      "preis_stueck_eur": 6.3,
+      "bild_url": "/images/pflanzen/ki-karl-foerster-gras-225.jpg",
       "pflanzabstand_cm": null,
       "fehler": null
     },
@@ -29,7 +28,6 @@
       "rolle": "Leitstaude",
       "stueckzahl": 2,
       "preis_stueck_eur": 7.5,
-      "kauflink": "https://www.amazon.de/s?k=Thalictrum+delavayi&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/wiesenraute-62.jpg",
       "pflanzabstand_cm": null,
       "fehler": [
@@ -50,7 +48,6 @@
       "rolle": "Begleitstaude",
       "stueckzahl": 3,
       "preis_stueck_eur": 7.5,
-      "kauflink": "https://www.amazon.de/s?k=Amsonia+tabernaemontana&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/ki-amsonie-197.jpg",
       "pflanzabstand_cm": null,
       "fehler": [
@@ -71,7 +68,6 @@
       "rolle": "Begleitstaude",
       "stueckzahl": 3,
       "preis_stueck_eur": 6.5,
-      "kauflink": "https://www.amazon.de/s?k=Anemone+hupehensis+Pamina&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/ki-grosses-windroeschen-67.jpg",
       "pflanzabstand_cm": null,
       "fehler": [
@@ -92,7 +88,6 @@
       "rolle": "Füllstaude",
       "stueckzahl": 5,
       "preis_stueck_eur": 5,
-      "kauflink": "https://www.amazon.de/s?k=Heuchera+Silver+Scrolls&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/ki-purpurgloeckchen-91.jpg",
       "pflanzabstand_cm": null,
       "fehler": [
@@ -113,7 +108,6 @@
       "rolle": "Füllstaude",
       "stueckzahl": 5,
       "preis_stueck_eur": 6.5,
-      "kauflink": "https://www.amazon.de/s?k=Epimedium+x+warleyense+Ellen+Willmott&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/ki-elfenblume-72.jpg",
       "pflanzabstand_cm": null,
       "fehler": [
@@ -134,7 +128,6 @@
       "rolle": "Füllstaude",
       "stueckzahl": 4,
       "preis_stueck_eur": 3.5,
-      "kauflink": "https://www.amazon.de/s?k=Vinca+major&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/kleines-immergruen-112.jpg",
       "pflanzabstand_cm": null,
       "fehler": [
@@ -144,8 +137,8 @@
       ]
     }
   ],
-  "beetbeschreibung": "Dieses ansprechende Staudenbeet kombiniert elegante Gräser mit blühfreudigen Stauden und immergrünen Bodendeckern für eine ganzjährige Attraktivität. Die Farbpalette reicht von zartem Rosa über kräftiges Blau bis hin zu silbrigen Akzenten, die besonders im Herbst zur Geltung kommen. Die Mischung aus Struktur und Farbe sorgt für ein modernes, harmonisches Bild, das von Frühjahr bis Herbst blüht und auch im Winter durch immergrüne Blätter und dekorative Gräser besticht.",
-  "gesamtkosten_geschaetzt": 147.5,
+  "beetbeschreibung": "Dieses ansprechende Staudenbeet kombiniert elegante Gräser mit blühfreudigen Stauden und immergrünen Bodendeckern für eine ganzjährige Attraktivität. Die Farbpalette reicht von zartem Rosa über kräftiges Blau bis hin zu silbrigem Blattschmuck und den beigen Halmen des Grases, die bis in den Winter stehen bleiben. Die Mischung aus Struktur und Farbe sorgt für ein modernes, harmonisches Bild, das von Frühjahr bis Herbst blüht und auch im Winter durch immergrüne Blätter und dekorative Gräser besticht.",
+  "gesamtkosten_geschaetzt": 141.1,
   "pflanzabstand_hinweis": "Achten Sie darauf, die Pflanzen entsprechend ihrer Ausbreitung zu setzen, um eine dichte und harmonische Bepflanzung zu gewährleisten. Leitstauden sollten ca. 80-100 cm Abstand haben, während Füllstauden dichter gepflanzt werden können.",
   "pflanzkalender": {
     "Frühling": [
@@ -153,7 +146,7 @@
       "Großes Immergrün"
     ],
     "Sommer": [
-      "Silber-Chinaschilf",
+      "Karl-Foerster-Gras",
       "Silber-Glöckchen"
     ],
     "Herbst": [
@@ -161,7 +154,7 @@
       "Chinesische Wiesenraute"
     ],
     "Winter": [
-      "Silber-Chinaschilf",
+      "Karl-Foerster-Gras",
       "Großes Immergrün"
     ]
   },

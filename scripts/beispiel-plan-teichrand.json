@@ -12,7 +12,6 @@
       "rolle": "Leitstaude",
       "stueckzahl": 3,
       "preis_stueck_eur": 8.5,
-      "kauflink": "https://www.amazon.de/s?k=Iris+pseudacorus&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/ki-hohe-bart-iris-38.jpg",
       "pflanzabstand_cm": null,
       "fehler": [
@@ -33,7 +32,6 @@
       "rolle": "Begleitstaude",
       "stueckzahl": 3,
       "preis_stueck_eur": 7.5,
-      "kauflink": "https://www.amazon.de/s?k=Trollius+x+cultorum&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/trollblume-77.jpg",
       "pflanzabstand_cm": 35,
       "fehler": [
@@ -54,7 +52,6 @@
       "rolle": "Begleitstaude",
       "stueckzahl": 3,
       "preis_stueck_eur": 5.5,
-      "kauflink": "https://www.amazon.de/s?k=Caltha+palustris&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/sumpfdotterblume-144.jpg",
       "pflanzabstand_cm": null,
       "fehler": [
@@ -75,7 +72,6 @@
       "rolle": "Leitstaude",
       "stueckzahl": 3,
       "preis_stueck_eur": 7.5,
-      "kauflink": "https://www.amazon.de/s?k=Iris+laevigata&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/ki-hohe-bart-iris-38.jpg",
       "pflanzabstand_cm": null,
       "fehler": [
@@ -96,7 +92,6 @@
       "rolle": "Füllstaude",
       "stueckzahl": 4,
       "preis_stueck_eur": 5.99,
-      "kauflink": "https://www.amazon.de/s?k=Carex+elata+'Aurea'&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/haenge-segge-113.jpg",
       "pflanzabstand_cm": null,
       "fehler": [

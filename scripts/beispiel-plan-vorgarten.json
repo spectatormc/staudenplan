@@ -12,7 +12,6 @@
       "rolle": "Leitstaude",
       "stueckzahl": 3,
       "preis_stueck_eur": 8,
-      "kauflink": "https://www.amazon.de/s?k=Delphinium+elatum+Galahad&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/ki-rittersporn-162.jpg",
       "pflanzabstand_cm": null,
       "fehler": [
@@ -33,7 +32,6 @@
       "rolle": "Leitstaude",
       "stueckzahl": 3,
       "preis_stueck_eur": 5,
-      "kauflink": "https://www.amazon.de/s?k=Campanula+lactiflora&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/breitblaettrige-glockenblume-76.jpg",
       "pflanzabstand_cm": null,
       "fehler": [
@@ -54,7 +52,6 @@
       "rolle": "Begleitstaude",
       "stueckzahl": 5,
       "preis_stueck_eur": 5,
-      "kauflink": "https://www.amazon.de/s?k=Pulmonaria+officinalis&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/lungenkraut-70.jpg",
       "pflanzabstand_cm": null,
       "fehler": [
@@ -75,7 +72,6 @@
       "rolle": "Begleitstaude",
       "stueckzahl": 5,
       "preis_stueck_eur": 5.5,
-      "kauflink": "https://www.amazon.de/s?k=Molinia+caerulea&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/ki-hohes-pfeifengras-234.jpg",
       "pflanzabstand_cm": null,
       "fehler": null
@@ -92,7 +88,6 @@
       "rolle": "Füllstaude",
       "stueckzahl": 4,
       "preis_stueck_eur": 5,
-      "kauflink": "https://www.amazon.de/s?k=Heuchera+Palace+Purple&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/ki-purpurgloeckchen-91.jpg",
       "pflanzabstand_cm": null,
       "fehler": [
@@ -113,7 +108,6 @@
       "rolle": "Füllstaude",
       "stueckzahl": 6,
       "preis_stueck_eur": 3.5,
-      "kauflink": "https://www.amazon.de/s?k=Lamium+maculatum+White+Nancy&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/goldnessel-88.jpg",
       "pflanzabstand_cm": null,
       "fehler": [

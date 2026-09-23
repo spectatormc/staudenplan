@@ -12,7 +12,6 @@
       "rolle": "Leitstaude",
       "stueckzahl": 3,
       "preis_stueck_eur": 18.9,
-      "kauflink": "https://www.amazon.de/s?k=Meconopsis+betonicifolia&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/ki-scheinmohn-101.jpg",
       "pflanzabstand_cm": null,
       "fehler": [
@@ -33,7 +32,6 @@
       "rolle": "Leitstaude",
       "stueckzahl": 3,
       "preis_stueck_eur": 7.5,
-      "kauflink": "https://www.amazon.de/s?k=Delphinium+x+belladonna&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/ki-rittersporn-162.jpg",
       "pflanzabstand_cm": null,
       "fehler": [
@@ -54,7 +52,6 @@
       "rolle": "Begleitstaude",
       "stueckzahl": 5,
       "preis_stueck_eur": 6.5,
-      "kauflink": "https://www.amazon.de/s?k=Phlox+divaricata&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/polster-phlox-42.jpg",
       "pflanzabstand_cm": 23,
       "fehler": [
@@ -75,7 +72,6 @@
       "rolle": "Begleitstaude",
       "stueckzahl": 5,
       "preis_stueck_eur": 6.5,
-      "kauflink": "https://www.amazon.de/s?k=Platycodon+grandiflorus&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/ki-ballonblume-196.jpg",
       "pflanzabstand_cm": null,
       "fehler": [
@@ -96,7 +92,6 @@
       "rolle": "Füllstaude",
       "stueckzahl": 6,
       "preis_stueck_eur": 4.5,
-      "kauflink": "https://www.amazon.de/s?k=Alchemilla+mollis&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/frauenmantel-87.jpg",
       "pflanzabstand_cm": 35,
       "fehler": [
@@ -117,7 +112,6 @@
       "rolle": "Füllstaude",
       "stueckzahl": 10,
       "preis_stueck_eur": 5.5,
-      "kauflink": "https://www.amazon.de/s?k=Tiarella+cordifolia&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/ki-schaumbluete-90.jpg",
       "pflanzabstand_cm": null,
       "fehler": [

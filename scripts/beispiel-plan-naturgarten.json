@@ -12,7 +12,6 @@
       "rolle": "Leitstaude",
       "stueckzahl": 4,
       "preis_stueck_eur": 6.5,
-      "kauflink": "https://www.amazon.de/s?k=Dipsacus+fullonum&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/wilde-karde-187.jpg",
       "pflanzabstand_cm": null,
       "fehler": [
@@ -33,7 +32,6 @@
       "rolle": "Leitstaude",
       "stueckzahl": 5,
       "preis_stueck_eur": 7.5,
-      "kauflink": "https://www.amazon.de/s?k=Echinacea+angustifolia&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/sonnenhut-3.jpg",
       "pflanzabstand_cm": 45,
       "fehler": [
@@ -54,7 +52,6 @@
       "rolle": "Begleitstaude",
       "stueckzahl": 8,
       "preis_stueck_eur": 4.5,
-      "kauflink": "https://www.amazon.de/s?k=Lychnis+coronaria&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/pechnelke-140.jpg",
       "pflanzabstand_cm": null,
       "fehler": [
@@ -75,7 +72,6 @@
       "rolle": "Begleitstaude",
       "stueckzahl": 8,
       "preis_stueck_eur": 5.5,
-      "kauflink": "https://www.amazon.de/s?k=Coreopsis+grandiflora&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/maedchenauge-173.jpg",
       "pflanzabstand_cm": 35,
       "fehler": [
@@ -96,7 +92,6 @@
       "rolle": "Füllstaude",
       "stueckzahl": 10,
       "preis_stueck_eur": 5.5,
-      "kauflink": "https://www.amazon.de/s?k=Phlox+stolonifera&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/polster-phlox-42.jpg",
       "pflanzabstand_cm": 23,
       "fehler": [
@@ -117,7 +112,6 @@
       "rolle": "Füllstaude",
       "stueckzahl": 10,
       "preis_stueck_eur": 4,
-      "kauflink": "https://www.amazon.de/s?k=Sempervivum+tectorum&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/hauswurz-36.jpg",
       "pflanzabstand_cm": 18,
       "fehler": [
@@ -138,7 +132,6 @@
       "rolle": "Füllstaude",
       "stueckzahl": 8,
       "preis_stueck_eur": 4.5,
-      "kauflink": "https://www.amazon.de/s?k=Briza+media&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/zittergras-242.jpg",
       "pflanzabstand_cm": null,
       "fehler": null

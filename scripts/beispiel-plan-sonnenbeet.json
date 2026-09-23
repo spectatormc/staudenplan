@@ -12,7 +12,6 @@
       "rolle": "Leitstaude",
       "stueckzahl": 3,
       "preis_stueck_eur": 7,
-      "kauflink": "https://www.amazon.de/s?k=Phlomis+russeliana&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/brandkraut-12.jpg",
       "pflanzabstand_cm": null,
       "fehler": [
@@ -33,7 +32,6 @@
       "rolle": "Leitstaude",
       "stueckzahl": 3,
       "preis_stueck_eur": 5.99,
-      "kauflink": "https://www.amazon.de/s?k=Anemone+hupehensis+var.+japonica&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/ki-grosses-windroeschen-67.jpg",
       "pflanzabstand_cm": null,
       "fehler": [
@@ -54,7 +52,6 @@
       "rolle": "Begleitstaude",
       "stueckzahl": 5,
       "preis_stueck_eur": 6,
-      "kauflink": "https://www.amazon.de/s?k=Malva+moschata&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/moschusmalve-133.jpg",
       "pflanzabstand_cm": 35,
       "fehler": [
@@ -75,7 +72,6 @@
       "rolle": "Begleitstaude",
       "stueckzahl": 5,
       "preis_stueck_eur": 6,
-      "kauflink": "https://www.amazon.de/s?k=Nepeta+faassenii&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/katzenminze-45.jpg",
       "pflanzabstand_cm": null,
       "fehler": [
@@ -96,7 +92,6 @@
       "rolle": "Füllstaude",
       "stueckzahl": 7,
       "preis_stueck_eur": 3.5,
-      "kauflink": "https://www.amazon.de/s?k=Phlox+subulata+'Candy+Stripe'&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/polster-phlox-42.jpg",
       "pflanzabstand_cm": 23,
       "fehler": [
@@ -117,7 +112,6 @@
       "rolle": "Füllstaude",
       "stueckzahl": 5,
       "preis_stueck_eur": 4.5,
-      "kauflink": "https://www.amazon.de/s?k=Iberis+sempervirens&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/schleifenblume-407.jpg",
       "pflanzabstand_cm": null,
       "fehler": null
@@ -134,7 +128,6 @@
       "rolle": "Füllstaude",
       "stueckzahl": 4,
       "preis_stueck_eur": 5.5,
-      "kauflink": "https://www.amazon.de/s?k=Hylotelephium+telephium&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/purpur-fetthenne-399.jpg",
       "pflanzabstand_cm": null,
       "fehler": null

@@ -12,7 +12,6 @@
       "rolle": "Leitstaude",
       "stueckzahl": 3,
       "preis_stueck_eur": 6.5,
-      "kauflink": "https://www.amazon.de/s?k=Verbena+bonariensis&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/patagonisches-eisenkraut-26.jpg",
       "pflanzabstand_cm": null,
       "fehler": [
@@ -33,7 +32,6 @@
       "rolle": "Leitstaude",
       "stueckzahl": 3,
       "preis_stueck_eur": 7.5,
-      "kauflink": "https://www.amazon.de/s?k=Rudbeckia+subtomentosa&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/ki-roter-scheinsonnenhut-5.jpg",
       "pflanzabstand_cm": null,
       "fehler": [
@@ -54,7 +52,6 @@
       "rolle": "Begleitstaude",
       "stueckzahl": 8,
       "preis_stueck_eur": 6,
-      "kauflink": "https://www.amazon.de/s?k=Nepeta+faassenii&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/katzenminze-45.jpg",
       "pflanzabstand_cm": null,
       "fehler": [
@@ -75,7 +72,6 @@
       "rolle": "Begleitstaude",
       "stueckzahl": 8,
       "preis_stueck_eur": 5,
-      "kauflink": "https://www.amazon.de/s?k=Geranium+pratense&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/purpur-storchschnabel-56.jpg",
       "pflanzabstand_cm": null,
       "fehler": [
@@ -96,7 +92,6 @@
       "rolle": "Füllstaude",
       "stueckzahl": 10,
       "preis_stueck_eur": 4.5,
-      "kauflink": "https://www.amazon.de/s?k=Cerastium+tomentosum&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/hornkraut-52.jpg",
       "pflanzabstand_cm": 23,
       "fehler": [
@@ -117,7 +112,6 @@
       "rolle": "Füllstaude",
       "stueckzahl": 8,
       "preis_stueck_eur": 5,
-      "kauflink": "https://www.amazon.de/s?k=Potentilla+neumanniana&tag=gartenbaukosten-21",
       "bild_url": "/images/pflanzen/fingerkraut-134.jpg",
       "pflanzabstand_cm": 25,
       "fehler": [
