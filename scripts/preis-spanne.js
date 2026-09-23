@@ -32,96 +32,148 @@ const zahl = w => {
 };
 
 /* Nach außen runden, nie nach innen: Die Spanne soll den wahren Wert einschließen, nicht
- * knapp verfehlen. Bei 0,50-Schritten wird aus 6,07–7,73 also 6,00–8,00 und nicht 6,50–7,50. */
-const abRunden = (w, schritt) => Math.floor(w / schritt) * schritt;
-const aufRunden = (w, schritt) => Math.ceil(w / schritt) * schritt;
+ * knapp verfehlen. Bei 0,50-Schritten wird aus 6,07–7,73 also 6,00–8,00 und nicht 6,50–7,50.
+ *
+ * GEGEN FLIESSKOMMA-RESTE wird vor und nach dem Anlegen der Stufe geglaettet: 5000 * 1,12
+ * ergibt in JavaScript 5600.000000000001, und aufRunden() schoebe das eine ganze Stufe
+ * weiter — aus „ca. 4.400–5.600 €" wurde so „ca. 4.400–5.650 €". An jedem glatten
+ * Vielfachen passiert dasselbe. */
+const genau = w => Math.round(w * 1e10) / 1e10;
+const abRunden  = (w, schritt) => genau(Math.floor(genau(w / schritt)) * schritt);
+const aufRunden = (w, schritt) => genau(Math.ceil(genau(w / schritt)) * schritt);
 
 const euro = w => (Number.isInteger(w) ? String(w) : w.toFixed(2).replace('.', ','));
 
+/* Die Breite, auf die sich die Aufrufer verlassen. Sie ist die eigentliche Zusage dieser
+ * Datei — „der Betrag liegt in der Spanne" erfuellt auch „ca. 0–1000 €". 0,35 statt 0,24
+ * (= 2 × BREITE) laesst Raum fuer die Rundung nach aussen. */
+const MAX_BREITE = 0.35;
+
+/* Die moeglichen Schrittweiten, von grob nach fein. Eine Leiter und nicht zwei: Stueckpreise
+ * und Plansummen unterscheiden sich nur darin, wie grob sie hoechstens werden duerfen. */
+const STUFEN = [50, 25, 10, 5, 2, 1, 0.5, 0.25, 0.1, 0.05, 0.01];
+
 /**
- * Spanne für einen Einzelpreis. Gerundet wird in 0,50-Schritten, unter 5 € in
- * 0,25-Schritten — feiner wäre Scheingenauigkeit, gröber würde bei Bodendeckern
- * (2–3 €) mehr verschlucken als die Spanne breit ist.
+ * Die Spanne zu einem Betrag, gerundet in der GROEBSTEN Stufe, die MAX_BREITE noch einhaelt.
+ *
+ * WARUM GEMESSEN UND NICHT HERGELEITET: Bis zum 23.09.2026 stand die Stufe in einer Treppe
+ * („unter 5 € in Viertelschritten"), und die Treppe lag dreimal daneben. Zuletzt bekamen
+ * 321 von 711 Preisen eine Spanne ueber einem Drittel des Betrags, und sieben Zeilen lagen
+ * ausserhalb ihrer eigenen Spanne: 0,16 € stand live als „ca. 0,25–0,50 €" auf der Seite.
+ * Ursache war ein Boden Math.max(schritt, …), der `von` ueber den Betrag heben konnte.
+ * Jetzt entscheidet die Eigenschaft selbst ueber die Rundung, die der Selbsttest zusichert.
+ * Eine zweite Formel, die „ungefaehr passen" soll, liefe frueher oder spaeter von ihr weg.
+ *
+ * `von` bekommt keinen Boden mehr. Damit liegt der Betrag IMMER in seiner Spanne, in jeder
+ * Stufe — abRunden(n × 0,88) ist nie groesser als n, aufRunden(n × 1,12) nie kleiner.
+ *
+ * WO DIE ZUSAGE ENDET, ehrlich: Unter rund 0,15 € ist eine Spanne von ±12 % in ganzen Cent
+ * nicht mehr darstellbar — bei 0,10 € sind 0,08–0,12 € bereits 40 % breit. Dort gilt nur
+ * noch, dass der Betrag drinliegt. Der guenstigste Preis im Bestand ist 0,16 €.
+ */
+function spanne(n, maxSchritt) {
+  let letzte = null;
+  for (const schritt of STUFEN) {
+    if (schritt > maxSchritt) continue;
+    const von = abRunden(n * (1 - BREITE), schritt);
+    const bis = Math.max(aufRunden(n * (1 + BREITE), schritt), genau(von + schritt));
+    letzte = { von, bis };
+    if (bis - von <= n * MAX_BREITE) return letzte;
+  }
+  return letzte;   // feinste Stufe: der Betrag liegt drin, nur die Breite reicht nicht
+}
+
+/**
+ * Spanne fuer einen Einzelpreis. Hoechstens Fuenferschritte — ein Stueckpreis von 90 € in
+ * Fuenfzigerschritten waere keine Aussage mehr.
  * @returns {{von:number, bis:number, text:string}|null} null, wenn kein Preis hinterlegt ist
  */
 function einzelSpanne(betrag) {
   const n = zahl(betrag);
   if (n === null) return null;
-  /* Unter 5 € in Viertelschritten: Bei einem Bodendecker fuer 2,20 € verschluckt die
-   * 0,50-Rundung sonst mehr als die Spanne selbst und behauptet eine Unsicherheit von
-   * zwei Dritteln, wo zwoelf Prozent gemeint sind. */
-  const schritt = n < 5 ? 0.25 : 0.5;
-  const von = Math.max(schritt, abRunden(n * (1 - BREITE), schritt));
-  const bis = Math.max(von + schritt, aufRunden(n * (1 + BREITE), schritt));
+  const { von, bis } = spanne(n, 5);
   return { von, bis, text: `ca. ${euro(von)}–${euro(bis)} €` };
 }
 
 /**
- * Spanne für eine Summe. Die Schrittweite wächst mit dem Betrag (siehe unten): „ca. 330–430 €"
- * ist eine Aussage, „ca. 1.237–1.556 €" wäre wieder Scheingenauigkeit — und „ca. 30–60 €"
- * für 45 € wäre keine mehr.
+ * Spanne fuer eine Summe. Hoechstens Fuenfzigerschritte: „ca. 330–430 €" ist eine Aussage,
+ * „ca. 1.237–1.556 €" waere Scheingenauigkeit.
  */
 function summeSpanne(betrag) {
   const n = zahl(betrag);
   if (n === null) return null;
-  /* DIE SCHRITTWEITE FOLGT DEM BETRAG, sie steht nicht in einer Treppe.
-   *
-   * Feste Schwellen haben hier zweimal danebengelegen: Zuerst wechselte die Stufe bei 500 €,
-   * und 499 € bekam mit 430–560 eine engere Spanne als 500 € mit 400–600 — der groessere
-   * Betrag die groebere Aussage. Danach galt unter 1.000 € pauschal der Zehnerschritt, und
-   * eine Plansumme von 45 € wurde zu „ca. 30–60 €": 67 % breit, wo zwoelf Prozent gemeint
-   * sind. Kleine Plansummen sind bei kleinen Beeten der Normalfall (gemessen: 59,40 € und
-   * 98,50 €), und diese Zahl steht in Kopfzeile, Stueckliste, PDF und auf der geteilten Seite.
-   *
-   * Die Rundung nach aussen verbreitert die Spanne um hoechstens zwei Schritte. Damit die
-   * Gesamtbreite unter 35 % bleibt (2 × BREITE = 24 % plus Rundung), muss ein Schritt unter
-   * 5,5 % des Betrags liegen — genau das waehlt die Zeile unten, und zwar die groebste
-   * Stufe, die das noch einhaelt. Gedeckelt bei 50 €: „ca. 4.400–5.600 €" ist lesbar genug,
-   * und Hunderterschritte wuerden bei kleinen Plaenen nie greifen, aber gross aussehen.
-   * Der Selbsttest prueft seit 23.09.2026 die BREITE — dass der Betrag in der Spanne liegt,
-   * war die schwaechere Frage, die auch „ca. 0–1.000 €" bestanden haette. */
-  const STUFEN = [50, 25, 10, 5, 2, 1];
-  const schritt = STUFEN.find(st => st <= n * 0.055) || 1;
-  const von = Math.max(schritt, abRunden(n * (1 - BREITE), schritt));
-  const bis = Math.max(von + schritt, aufRunden(n * (1 + BREITE), schritt));
+  const { von, bis } = spanne(n, 50);
   const tausend = w => w.toLocaleString('de-DE');
   return { von, bis, text: `ca. ${tausend(von)}–${tausend(bis)} €` };
 }
 
 /* Selbsttest: node scripts/preis-spanne.js --selbsttest
- * Prueft die Eigenschaften, auf die sich die Aufrufer verlassen — nicht einzelne Wunschwerte. */
+ *
+ * ER LAEUFT UEBER BEREICHE, NICHT UEBER WUNSCHWERTE, und das ist der Kern.
+ * Bis zum 23.09.2026 prueften hier neun handverlesene Betraege, und alle neun lagen in den
+ * Luecken zwischen den Fehlern: 321 von 711 Live-Preisen verletzten die Breitenschranke,
+ * sieben lagen ausserhalb ihrer eigenen Spanne — und der Selbsttest meldete „bestanden".
+ * Eine Pruefung, die ihre Stichproben selbst aussucht, prueft das, woran der Autor gedacht
+ * hat. Jetzt wird jeder Cent-Betrag durchgerechnet, den die Seite ausgeben kann. */
 if (typeof require !== 'undefined' && require.main === module && process.argv.includes('--selbsttest')) {
   let fehler = 0;
   const ok = (bedingung, was) => { console.log((bedingung ? 'ok    ' : 'FEHLER') + '  ' + was); if (!bedingung) fehler++; };
 
-  for (const p of [2.2, 3.5, 6.9, 8, 12.4, 25, 99.9]) {
-    const s = einzelSpanne(p);
-    ok(s.von <= p && p <= s.bis, `${p} € liegt in der Spanne ${s.text}`);
-    ok(s.bis > s.von, `${p} €: Spanne ist nicht leer (${s.text})`);
-  }
-  for (const g of [12, 45, 98.5, 180, 380, 499, 500, 1240, 5000]) {
-    const s = summeSpanne(g);
-    ok(s.von <= g && g <= s.bis, `${g} € liegt in der Summenspanne ${s.text}`);
-  }
-  /* DIE EIGENSCHAFT, AUF DIE SICH DIE AUFRUFER VERLASSEN, ist nicht „der Betrag liegt drin“
-   * — das erfüllt auch „ca. 0–1000 €“. Es ist die Breite. 0,35 statt 0,24 (= 2 × BREITE)
-   * lässt Raum für die Rundung nach aussen, die bei kleinen Beträgen relativ am meisten
-   * zulädt; mehr ist keine Spanne mehr, sondern eine Ausrede. */
-  const MAX_BREITE = 0.35;
-  for (const p of [2.2, 3.5, 6.9, 8, 12.4, 25, 99.9]) {
-    const s = einzelSpanne(p);
-    ok((s.bis - s.von) / p <= MAX_BREITE,
-       `${p} €: Spanne ${s.text} ist höchstens ${MAX_BREITE * 100} % breit (${(((s.bis - s.von) / p) * 100).toFixed(0)} %)`);
-  }
-  for (const g of [12, 45, 98.5, 180, 380, 499, 500, 1240, 5000]) {
-    const s = summeSpanne(g);
-    ok((s.bis - s.von) / g <= MAX_BREITE,
-       `${g} €: Summenspanne ${s.text} ist höchstens ${MAX_BREITE * 100} % breit (${(((s.bis - s.von) / g) * 100).toFixed(0)} %)`);
-  }
+  /* AB HIER GILT DIE BREITENZUSAGE — darunter nicht, und zwar aus Arithmetik, nicht aus
+   * Nachlaessigkeit: ±12 % von 17 Cent sind 14,96 bis 19,04; nach aussen auf ganze Cent
+   * gerundet 14 bis 20, also 6 Cent = 35,3 %. Feiner als ein Cent geht Geld nicht.
+   * Nachgemessen ueber alle Cent-Betraege bis 5 €: oberhalb von 0,17 € reisst die Schranke
+   * kein einziges Mal, und 0,17 € ist der einzige Wert zwischen 0,15 und 0,18 €, der sie
+   * ueberschreitet — um 0,3 Prozentpunkte. Der guenstigste Preis im Bestand ist 0,16 € und
+   * landet bei 0,14–0,18 €, also 25 %. Die Einschlusszusage gilt bei JEDEM Betrag. */
+  const CENT_GRENZE = 0.18;
+
+  const durchlauf = (name, fn, von, bis, schritt, breiteAb) => {
+    let drinFehler = 0, breitFehler = 0, schlimmster = { n: null, anteil: 0 };
+    for (let i = Math.round(von / schritt); i <= Math.round(bis / schritt); i++) {
+      const n = Math.round(i * schritt * 100) / 100;
+      const s = fn(n);
+      if (!(s.von <= n && n <= s.bis)) { if (drinFehler++ === 0) console.log(`        erster Ausreisser: ${n} € liegt nicht in ${s.text}`); }
+      const anteil = (s.bis - s.von) / n;
+      if (n >= breiteAb) {
+        if (anteil > MAX_BREITE + 1e-9) { if (breitFehler++ === 0) console.log(`        erste zu breite: ${n} € → ${s.text} (${(anteil * 100).toFixed(0)} %)`); }
+        if (anteil > schlimmster.anteil) schlimmster = { n, anteil, text: s.text };
+      }
+    }
+    ok(drinFehler === 0, `${name}: jeder Betrag von ${von} bis ${bis} € liegt in seiner eigenen Spanne (${drinFehler} Ausreisser)`);
+    ok(breitFehler === 0, `${name}: keine Spanne breiter als ${MAX_BREITE * 100} % ab ${breiteAb} € (${breitFehler} Verletzungen, schlimmste ${schlimmster.n} € → ${schlimmster.text || '—'} = ${(schlimmster.anteil * 100).toFixed(0)} %)`);
+  };
+
+  // Stueckpreise: jeder Cent von 1 Cent bis 200 €. Der Bestand reicht von 0,16 bis rund 30 €.
+  durchlauf('Stueckpreis', einzelSpanne, 0.01, 200, 0.01, CENT_GRENZE);
+  // Plansummen: jeder Euro bis 10.000. Gemessene Plaene liegen zwischen 45 und 900 €.
+  durchlauf('Plansumme', summeSpanne, 1, 10000, 1, 1);
+
   ok(einzelSpanne(6.9).text === einzelSpanne(6.9).text, 'derselbe Betrag ergibt dieselbe Spanne');
   ok(einzelSpanne(0) === null && einzelSpanne(null) === null && einzelSpanne('x') === null,
      'ohne Preis kommt null zurueck, kein "ca. 0–0 €"');
-  ok(einzelSpanne(3).von < einzelSpanne(9).von, 'groesserer Betrag ergibt groessere Spanne');
+
+  /* UEBERLAPPUNG statt Monotonie. Naheliegend waere die Probe „die Untergrenze faellt nie,
+   * wenn der Betrag steigt". Sie ist hier falsch: Weil die groebste noch zulaessige Stufe
+   * gewaehlt wird, darf ein Cent mehr eine groebere Stufe erlauben und die Untergrenze
+   * dadurch etwas tiefer setzen (0,42 € → 0,36–0,48 €, 0,43 € → 0,35–0,50 €). Das ist
+   * kein Fehler, solange beide Spannen ihren Betrag enthalten und die Breite halten — beides
+   * wird oben geprueft.
+   * Was wirklich nicht passieren darf, ist ein SPRUNG: zwei benachbarte Betraege, deren
+   * Spannen einander nicht mehr beruehren. Dann saehe dieselbe Pflanze einen Cent teurer
+   * aus wie eine voellig andere Preisklasse. Genau das war der alte 499/500-Fehler. */
+  let sprung = null;
+  for (let c = 16; c <= 20000 && !sprung; c++) {
+    const a = einzelSpanne(c / 100), b = einzelSpanne((c + 1) / 100);
+    if (b.von > a.bis + 1e-9 || a.von > b.bis + 1e-9) {
+      sprung = `${(c / 100).toFixed(2)} € → ${a.text}, aber ${((c + 1) / 100).toFixed(2)} € → ${b.text}`;
+    }
+  }
+  ok(!sprung, `benachbarte Betraege haben ueberlappende Spannen${sprung ? ' — ' + sprung : ''}`);
+
+  /* Fliesskomma: glatte Vielfache duerfen die Obergrenze nicht eine Stufe weiter schieben. */
+  ok(summeSpanne(5000).bis === 5600, `5000 € ergibt ${summeSpanne(5000).text}, nicht eine Stufe weiter`);
+
   // Die Summe muss zur Kopfzeile passen: Eine Plansumme aus lauter Einzelpreisen liegt in
   // ihrer eigenen Summenspanne — sonst widersprechen sich Stueckliste und Gesamtangabe.
   const posten = [[6.9, 8], [3.5, 40], [12.4, 6]];

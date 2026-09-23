@@ -74,7 +74,14 @@ app.use((req, res, next) => {
 app.get('/index.html', (req, res) => res.redirect(301, '/'));
 
 // ─── Datenbank ────────────────────────────────────────────────────────────────
-const db = new Database(path.join(__dirname, 'stauden.db'));
+/* DB_PFAD ist ausschliesslich fuer Pruefskripte da, die den Server selbst starten
+ * (check:smoke). Der Smoke-Lauf ruft seit dem 23.09.2026 /api/plan auf, und jeder Aufruf
+ * schreibt eine Zeile in plan_statistik. Ohne eigenen Pfad landeten drei Testzeilen je
+ * Durchgang in derselben Datei wie die echten — im Deploy-Verzeichnis also in der
+ * Produktionsstatistik, die /admin/plaene auswertet. Dieselbe Fehlerklasse wie die
+ * geloeschten Nutzerzeilen beim Aufraeumen von Testdaten. Ohne die Variable bleibt alles
+ * wie bisher. */
+const db = new Database(process.env.DB_PFAD || path.join(__dirname, 'stauden.db'));
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS anfragen (
@@ -615,6 +622,28 @@ const STIL_SCHLAGWORT = {
 const stilSchlagwort = (stil) => STIL_SCHLAGWORT[String(stil == null ? '' : stil).trim()] || null;
 
 /*
+ * ZURUECKGEZOGENE STILE — nicht dasselbe wie ein erfundener Wert.
+ *
+ * Prairie und Japanisch wurden am 23.09.2026 aus der Auswahl genommen: Die Datenbank fuehrt
+ * fuer keine der 711 Zeilen eines der beiden Schlagwoerter, die Auswahl bot also Stile an,
+ * die die Daten nie bedienen konnten. Danach wies /api/plan sie mit HTTP 400 ab — richtig
+ * fuer „Raumstation", falsch fuer ein Lesezeichen, das vorgestern noch einen Plan lieferte.
+ * Der Kunde landete in einer Sackgasse statt bei einem Plan.
+ *
+ * Sie gelten deshalb weiter als BEKANNT, wirken aber wie „kein Stil": stilSchlagwort() gibt
+ * fuer sie null zurueck, die Stilbedingung entfaellt, und der Kunde erfaehrt es als Hinweis.
+ * Wer einen davon wieder aufnimmt, traegt ihn in STIL_SCHLAGWORT ein und sorgt fuer
+ * Pflanzen, die das Schlagwort tragen — diese Liste ist dann leer.
+ */
+const STIL_ZURUECKGEZOGEN = new Map([
+  ['Prairie-Stil / Naturalistisch', 'Prairie-Stil / Naturalistisch'],
+  ['Japanischer Garten',            'Japanischer Garten'],
+  ['Prairie',                       'Prairie-Stil / Naturalistisch'],
+  ['Japanisch',                     'Japanischer Garten'],
+]);
+const stilZurueckgezogen = (stil) => STIL_ZURUECKGEZOGEN.get(String(stil == null ? '' : stil).trim()) || null;
+
+/*
  * Prüft, ob ein Wert aus dem bekannten Vokabular stammt.
  *
  * Bis zum 09.08.2026 fehlte diese Prüfung ganz. Ein Test mit licht="Mondlicht",
@@ -708,26 +737,65 @@ const PLANBAR = `(wuchs IS NULL OR wuchs != 'invasiv')
       AND (winterhart_zone IS NULL OR winterhart_zone <= 7)
       AND (lebensdauer IS NULL OR lebensdauer != 'einjaehrig')`;
 
+/*
+ * DIE STANDORTBEDINGUNGEN, AN EINER STELLE GEBAUT.
+ *
+ * Bis zum 23.09.2026 standen sie nur in getPflanzenkandidaten — und die beiden Abfragen,
+ * die danach in dieselbe Kandidatenliste nachschuetten, hatten ihre eigenen, kuerzeren
+ * Fassungen: `licht LIKE ? AND ...` ohne Boden, ohne Stil, ohne Feuchte, ohne Lebensbereich.
+ * Gemessen am Livesystem: Ein Plan fuer „Mediterraner Garten" mit Pflegezeit „Minimal"
+ * lieferte 3 von 6 Arten ohne das Schlagwort Mediterran, und der Hinweis im selben
+ * Antwortkoerper sagte, gelockert worden sei nur bei den Begleitstauden. Der Stilfilter war
+ * also genau dann wirkungslos, wenn der Kunde eine Pflegezeit gewaehlt hatte — und niemand
+ * erfuhr es.
+ *
+ * Die Bausteine kommen deshalb aus dieser Funktion, und jede Abfrage, die Kandidaten in den
+ * Topf legt, setzt dieselben ein. Wer eine Bedingung aendert, aendert alle Pfade mit.
+ */
+/* Rollen-Filter als SQL (spiegelt die Logik aus buildSystemPrompt): erst das gepflegte Feld
+ * rolle_empfehlung, sonst nach Endhoehe. Steht auf Modulebene, weil nicht nur die
+ * Kandidatenabfrage sie braucht, sondern auch das Nachfuellen einer Rolle, die die
+ * Endhoehengrenze leergefiltert hat. notplanRolle() bildet dieselbe Regel in JS ab. */
+const ROLLE_FILTER = {
+  Leitstaude:    `(rolle_empfehlung = 'Leitstaude'    OR (rolle_empfehlung IS NULL AND COALESCE(hoehe_cm_max,50) >= 100))`,
+  Begleitstaude: `(rolle_empfehlung = 'Begleitstaude' OR (rolle_empfehlung IS NULL AND COALESCE(hoehe_cm_max,50) >= 50 AND COALESCE(hoehe_cm_max,50) < 100))`,
+  'Füllstaude':  `(rolle_empfehlung = 'Füllstaude'    OR (rolle_empfehlung IS NULL AND COALESCE(hoehe_cm_max,50) < 50))`,
+};
+
+function standortBedingungen(licht, boden, stil, standortBeschr) {
+  const lichtTerm    = LICHT_MAP[licht] || String(licht).split(' ')[0];
+  const bodenTerm    = BODEN_MAP[boden] || 'normal';
+  const stilTerm     = stilSchlagwort(stil);
+  const feuchtigkeit = getFeuchtigkeit(boden, standortBeschr);
+  const feuchTerms   = FEUCHT_COMPAT[feuchtigkeit] || ['normal'];
+  const feuchPh      = feuchTerms.map(() => '?').join(',');
+  const lbAus        = lbAusschluss(feuchtigkeit);
+
+  return {
+    lichtTerm, bodenTerm, stilTerm, feuchtigkeit, feuchTerms, feuchPh, lbAus,
+    LICHT_ARG: `%${lichtTerm}%`,
+    /* Kein Schlagwort → gar kein Stilfilter statt eines geratenen Begriffs. `stil LIKE
+     * '%Mediterraner Garten%'` traf null Zeilen und legte die genaue Abfrage lautlos lahm. */
+    STIL_WHERE:  stilTerm ? 'AND stil LIKE ?' : '',
+    STIL_ARGS:   stilTerm ? [`%${stilTerm}%`] : [],
+    BODEN_WHERE: 'AND (boden LIKE ? OR boden LIKE ?)',
+    BODEN_ARGS:  [`%${bodenTerm}%`, '%normal%'],
+    FEUCHT_WHERE: `AND (feuchtigkeit IN (${feuchPh}) OR feuchtigkeit IS NULL)`,
+    FEUCHT_ARGS:  feuchTerms,
+    LB_WHERE:    lbAus.map(() => "AND LOWER(COALESCE(lebensbereich,'')) NOT LIKE ?").join(' '),
+    LB_ARGS:     lbAus.map(t => `%${t}%`),
+  };
+}
+
 function getPflanzenkandidaten(licht, boden, stil, standortBeschr, kindersicher = false) {
   const pflanzenCount = db.prepare("SELECT COUNT(*) as n FROM pflanzen WHERE name_deutsch != 'Test-Pflanze'").get().n;
   if (pflanzenCount === 0) return [];
 
-  const lichtTerm   = LICHT_MAP[licht] || licht.split(' ')[0];
-  const bodenTerm   = BODEN_MAP[boden] || 'normal';
-  const stilTerm    = stilSchlagwort(stil);
-  const feuchtigkeit = getFeuchtigkeit(boden, standortBeschr);
-  const feuchTerms  = FEUCHT_COMPAT[feuchtigkeit] || ['normal'];
-  const feuchPlaceholders = feuchTerms.map(() => '?').join(',');
+  const bed = standortBedingungen(licht, boden, stil, standortBeschr);
+  const { lichtTerm, feuchtigkeit } = bed;
 
   const COLS = PLAN_COLS;
 
-  /* Kein Schlagwort → gar kein Stilfilter statt eines geratenen Begriffs. `stil LIKE
-   * '%Mediterraner Garten%'` traf null Zeilen und legte die genaue Abfrage lautlos lahm;
-   * ohne die Bedingung liefert sie wenigstens standortgerechte Kandidaten. Vorkommen kann
-   * das nur noch in /api/alternativ, wo der Stil optional ist — /api/plan prüft vorher
-   * gegen ERLAUBT_STIL, und diese Menge IST die Schlüsselmenge dieser Tabelle. */
-  const STIL_WHERE = stilTerm ? 'AND stil LIKE ?' : '';
-  const STIL_ARGS  = stilTerm ? [`%${stilTerm}%`] : [];
 
   /*
    * LEBENSBEREICH ALS BEDINGUNG (Hansen/Stahl).
@@ -758,29 +826,22 @@ function getPflanzenkandidaten(licht, boden, stil, standortBeschr, kindersicher 
    * Liste (siehe „LEBENSBEREICH DURCHSETZEN" in /api/plan). Hier zu filtern spart trotzdem
    * Zeilen und hält die Rollenabfragen sauber.
    */
-  const lbAus     = lbAusschluss(feuchtigkeit);
-  const LB_WHERE  = lbAus.map(() => "AND LOWER(COALESCE(lebensbereich,'')) NOT LIKE ?").join(' ');
-  const LB_ARGS   = lbAus.map(t => `%${t}%`);
+  const { LB_WHERE, LB_ARGS } = bed;
 
   // WHERE-Varianten (Vollmatch → Licht+Feucht → nur Licht). Lebensbereich und Winterhärte
-  // gelten in allen dreien.
-  const FULL_WHERE  = `licht LIKE ? AND (boden LIKE ? OR boden LIKE ?) ${STIL_WHERE}
-      AND (feuchtigkeit IN (${feuchPlaceholders}) OR feuchtigkeit IS NULL)
-      ${LB_WHERE} AND ${PLANBAR}`;
-  const FULL_ARGS   = [`%${lichtTerm}%`, `%${bodenTerm}%`, '%normal%', ...STIL_ARGS, ...feuchTerms, ...LB_ARGS];
+  // gelten in allen dreien. Die Bausteine kommen aus standortBedingungen(), damit die beiden
+  // Nachschuss-Abfragen weiter unten dieselben einsetzen können.
+  const FULL_WHERE  = `licht LIKE ? ${bed.BODEN_WHERE} ${bed.STIL_WHERE}
+      ${bed.FEUCHT_WHERE} ${LB_WHERE} AND ${PLANBAR}`;
+  const FULL_ARGS   = [bed.LICHT_ARG, ...bed.BODEN_ARGS, ...bed.STIL_ARGS, ...bed.FEUCHT_ARGS, ...LB_ARGS];
 
-  const LICHT_WHERE = `licht LIKE ?
-      AND (feuchtigkeit IN (${feuchPlaceholders}) OR feuchtigkeit IS NULL)
-      ${LB_WHERE} AND ${PLANBAR}`;
-  const LICHT_ARGS  = [`%${lichtTerm}%`, ...feuchTerms, ...LB_ARGS];
+  const LICHT_WHERE = `licht LIKE ? ${bed.FEUCHT_WHERE} ${LB_WHERE} AND ${PLANBAR}`;
+  const LICHT_ARGS  = [bed.LICHT_ARG, ...bed.FEUCHT_ARGS, ...LB_ARGS];
 
   const LAST_WHERE  = `licht LIKE ? ${LB_WHERE} AND ${PLANBAR}`;
-  const LAST_ARGS   = [`%${lichtTerm}%`, ...LB_ARGS];
+  const LAST_ARGS   = [bed.LICHT_ARG, ...LB_ARGS];
 
-  // Rollen-Filter (spiegelt die Logik aus buildSystemPrompt Zeile ~269)
-  const LEIT_F    = `(rolle_empfehlung = 'Leitstaude'    OR (rolle_empfehlung IS NULL AND COALESCE(hoehe_cm_max,50) >= 100))`;
-  const BEGLEIT_F = `(rolle_empfehlung = 'Begleitstaude' OR (rolle_empfehlung IS NULL AND COALESCE(hoehe_cm_max,50) >= 50 AND COALESCE(hoehe_cm_max,50) < 100))`;
-  const FUELL_F   = `(rolle_empfehlung = 'Füllstaude'    OR (rolle_empfehlung IS NULL AND COALESCE(hoehe_cm_max,50) < 50))`;
+  const { Leitstaude: LEIT_F, Begleitstaude: BEGLEIT_F, 'Füllstaude': FUELL_F } = ROLLE_FILTER;
 
   /*
    * Der Kindersicher-Filter sitzt hier und nicht weiter oben, damit ihn ALLE Ausweichpfade
@@ -828,13 +889,13 @@ function getPflanzenkandidaten(licht, boden, stil, standortBeschr, kindersicher 
    */
   const gelockerteRollen = new Set();
 
-  if (leit.length    < 3) { leit    = roleQuery(LICHT_WHERE, LICHT_ARGS, LEIT_F,    8);  aufgegeben.add('Bodentyp').add('Gartenstil'); gelockerteRollen.add('hohen Leitstauden'); }
-  if (begleit.length < 5) { begleit = roleQuery(LICHT_WHERE, LICHT_ARGS, BEGLEIT_F, 15); aufgegeben.add('Bodentyp').add('Gartenstil'); gelockerteRollen.add('mittelhohen Begleitstauden'); }
-  if (fuell.length   < 3) { fuell   = roleQuery(LICHT_WHERE, LICHT_ARGS, FUELL_F,   10); aufgegeben.add('Bodentyp').add('Gartenstil'); gelockerteRollen.add('niedrigen Füllstauden'); }
+  if (leit.length    < 3) { leit    = roleQuery(LICHT_WHERE, LICHT_ARGS, LEIT_F,    8);  aufgegeben.add('Bodentyp').add('Gartenstil'); gelockerteRollen.add('die hohen Leitstauden'); }
+  if (begleit.length < 5) { begleit = roleQuery(LICHT_WHERE, LICHT_ARGS, BEGLEIT_F, 15); aufgegeben.add('Bodentyp').add('Gartenstil'); gelockerteRollen.add('die mittelhohen Begleitstauden'); }
+  if (fuell.length   < 3) { fuell   = roleQuery(LICHT_WHERE, LICHT_ARGS, FUELL_F,   10); aufgegeben.add('Bodentyp').add('Gartenstil'); gelockerteRollen.add('die niedrigen Füllstauden'); }
 
-  if (leit.length    < 2) { leit    = roleQuery(LAST_WHERE, LAST_ARGS, LEIT_F,    8);  aufgegeben.add('Bodenfeuchte'); gelockerteRollen.add('hohen Leitstauden'); }
-  if (begleit.length < 3) { begleit = roleQuery(LAST_WHERE, LAST_ARGS, BEGLEIT_F, 15); aufgegeben.add('Bodenfeuchte'); gelockerteRollen.add('mittelhohen Begleitstauden'); }
-  if (fuell.length   < 2) { fuell   = roleQuery(LAST_WHERE, LAST_ARGS, FUELL_F,   10); aufgegeben.add('Bodenfeuchte'); gelockerteRollen.add('niedrigen Füllstauden'); }
+  if (leit.length    < 2) { leit    = roleQuery(LAST_WHERE, LAST_ARGS, LEIT_F,    8);  aufgegeben.add('Bodenfeuchte'); gelockerteRollen.add('die hohen Leitstauden'); }
+  if (begleit.length < 3) { begleit = roleQuery(LAST_WHERE, LAST_ARGS, BEGLEIT_F, 15); aufgegeben.add('Bodenfeuchte'); gelockerteRollen.add('die mittelhohen Begleitstauden'); }
+  if (fuell.length   < 2) { fuell   = roleQuery(LAST_WHERE, LAST_ARGS, FUELL_F,   10); aufgegeben.add('Bodenfeuchte'); gelockerteRollen.add('die niedrigen Füllstauden'); }
 
   // Deduplizieren und zusammenführen (Leit → Begleit → Füll)
   const seen = new Set();
@@ -874,7 +935,7 @@ function getPflanzenkandidaten(licht, boden, stil, standortBeschr, kindersicher 
    * ist schlimmer als ein Kunde mit einem Plan und einem ehrlichen Hinweis.
    * Der Vermerk ist Pflicht: Eine Bedingung, die still fällt, ist wieder eine Zusage ohne Regel.
    */
-  if (rest.length < 8 && lbAus.length) {
+  if (rest.length < 8 && bed.lbAus.length) {
     const ohneLb = restHolen(`licht LIKE ? AND ${PLANBAR}`, [`%${lichtTerm}%`]);
     if (ohneLb.length > rest.length) {
       console.warn('Lebensbereich-Ausschluss aufgegeben: %d statt %d Kandidaten bei licht=%j feuchte=%j',
@@ -974,9 +1035,8 @@ const NUTZUNG_REGELN = {
  * die PLANBAR-Regeln gelten weiter, „Kindersicher" ebenfalls — ein Schwerpunkt darf eine
  * Sicherheitszusage nicht aushebeln.
  */
-function ergaenzeNutzungskandidaten(kandidaten, nutzung, licht, kindersicher) {
+function ergaenzeNutzungskandidaten(kandidaten, nutzung, licht, kindersicher, bed, gelockertVermerk) {
   if (!Array.isArray(nutzung) || !nutzung.length) return { kandidaten, anweisungen: [] };
-  const lichtTerm = LICHT_MAP[licht] || String(licht).split(' ')[0];
   const bekannt = new Set(kandidaten.map(p => p.name_botanisch));
   const anweisungen = [];
 
@@ -984,11 +1044,31 @@ function ergaenzeNutzungskandidaten(kandidaten, nutzung, licht, kindersicher) {
     const regel = NUTZUNG_REGELN[wunsch];
     if (!regel) continue;                                  // „Kindersicher" läuft über den Filter
     let treffer;
+    /*
+     * ZWEISTUFIG, und die zweite Stufe wird VERMERKT.
+     *
+     * Diese Abfrage fragte bis zum 23.09.2026 nur nach Licht — kein Boden, kein Stil, keine
+     * Feuchte, kein Lebensbereich. Damit war der Stilfilter immer dann ausgehebelt, wenn der
+     * Kunde einen Schwerpunkt gewählt hatte, und der Plan enthielt Arten, die sein Stil gar
+     * nicht hergibt. Jetzt gelten erst alle Bedingungen; nur wenn dann zu wenig übrig
+     * bleibt, um den Schwerpunkt überhaupt zu bedienen, fallen Boden und Stil — und der
+     * Kunde erfährt es. Licht, Feuchte und Lebensbereich fallen NIE.
+     */
+    const holen = (where, args) => db.prepare(
+      `SELECT ${PLAN_COLS} FROM pflanzen WHERE licht LIKE ? AND (${regel.bedingung}) ${where} AND ${PLANBAR}`
+    ).all(bed.LICHT_ARG, ...args);
     try {
-      treffer = db.prepare(
-        `SELECT ${PLAN_COLS} FROM pflanzen
-         WHERE licht LIKE ? AND (${regel.bedingung}) AND ${PLANBAR}`
-      ).all(`%${lichtTerm}%`);
+      treffer = holen(`${bed.BODEN_WHERE} ${bed.STIL_WHERE} ${bed.FEUCHT_WHERE} ${bed.LB_WHERE}`,
+        [...bed.BODEN_ARGS, ...bed.STIL_ARGS, ...bed.FEUCHT_ARGS, ...bed.LB_ARGS]);
+      if (treffer.length < 3) {
+        const weiter = holen(`${bed.FEUCHT_WHERE} ${bed.LB_WHERE}`, [...bed.FEUCHT_ARGS, ...bed.LB_ARGS]);
+        if (weiter.length > treffer.length) {
+          console.warn('Schwerpunkt „%s": nur %d Arten mit Boden und Stil, ohne sie %d — gelockert',
+            wunsch, treffer.length, weiter.length);
+          treffer = weiter;
+          if (typeof gelockertVermerk === 'function') gelockertVermerk(wunsch);
+        }
+      }
     } catch (e) { console.warn('Nutzungsregel „%s" fehlgeschlagen: %s', wunsch, e.message); continue; }
 
     if (kindersicher) treffer = treffer.filter(p => istKindersicher(p.name_botanisch));
@@ -1827,7 +1907,7 @@ app.post('/api/plan', planHartLimiter, planLimiter, async (req, res) => {
   const unbekannt = [
     !bekannterWert(licht, ERLAUBT_LICHT) ? 'Lichtverhältnisse' : null,
     !bekannterWert(boden, ERLAUBT_BODEN) ? 'Bodentyp' : null,
-    !bekannterWert(stil, ERLAUBT_STIL)   ? 'Gartenstil' : null,
+    (!bekannterWert(stil, ERLAUBT_STIL) && !stilZurueckgezogen(stil)) ? 'Gartenstil' : null,
   ].filter(Boolean);
   if (unbekannt.length) {
     console.warn('Plananfrage mit unbekannten Werten abgelehnt: licht=%j boden=%j stil=%j', licht, boden, stil);
@@ -1853,10 +1933,29 @@ app.post('/api/plan', planHartLimiter, planLimiter, async (req, res) => {
   const gelockert = kandidaten.aufgegeben || [];
   // Leer heisst: alle Rollen betroffen (oder gar keine — dann ist auch `gelockert` leer).
   const gelockerteRollen = kandidaten.gelockerteRollen || [];
+  /* Vor den Nachschuessen festhalten: `gelockert` wird unten noch ergänzt, und danach lässt
+   * sich nicht mehr unterscheiden, ob die Auswahl selbst pauschal gelockert wurde oder erst
+   * ein Nachschuss. Der Hinweistext braucht genau diese Unterscheidung. */
+  const auswahlPauschalGelockert = gelockert.length > 0 && gelockerteRollen.length === 0;
+
+  /* Dieselben Bedingungen, mit denen die Kandidaten geholt wurden — die beiden Nachschüsse
+   * unten setzen sie ein, statt eigene, kürzere Fassungen zu bauen. Genau das war der Weg,
+   * auf dem der Stilfilter umgangen wurde. */
+  const bed = standortBedingungen(licht, boden, stil, standort_beschreibung);
+  /* Was ein Nachschuss fallen lassen musste, landet hier und damit im Hinweis an den Kunden.
+   * Ohne diesen Vermerk hätte der Satz „die übrigen Pflanzen entsprechen deiner Auswahl"
+   * genau dann gelogen, wenn er gebraucht wurde. */
+  const nachschussGelockert = new Set();
+  const vermerkeNachschuss = grund => {
+    nachschussGelockert.add(grund);
+    if (!gelockert.includes('Bodentyp')) gelockert.push('Bodentyp');
+    if (!gelockert.includes('Gartenstil')) gelockert.push('Gartenstil');
+  };
 
   // Die übrigen sieben Nutzungsschalter wirkten bis 09.08.2026 ebenfalls nicht auf die
   // Auswahl. Jetzt legen sie passende Arten in die Liste und erzeugen eine klare Anweisung.
-  const nutzungErgebnis = ergaenzeNutzungskandidaten(kandidaten, nutzung, licht, kindersicher);
+  const nutzungErgebnis = ergaenzeNutzungskandidaten(kandidaten, nutzung, licht, kindersicher, bed,
+    wunsch => vermerkeNachschuss(`Schwerpunkt „${wunsch}"`));
   kandidaten = nutzungErgebnis.kandidaten;
 
   /*
@@ -1872,10 +1971,29 @@ app.post('/api/plan', planHartLimiter, planLimiter, async (req, res) => {
   const pflegeGrenze = /minimal/i.test(String(pflegezeit || '')) ? 1
                      : /mittel/i.test(String(pflegezeit || ''))  ? 2 : null;
   if (pflegeGrenze) {
-    const lichtTerm = LICHT_MAP[licht] || String(licht).split(' ')[0];
-    let leicht = db.prepare(
-      `SELECT ${PLAN_COLS} FROM pflanzen WHERE licht LIKE ? AND pflege_sterne <= ? AND ${PLANBAR}
-       ORDER BY RANDOM() LIMIT ${kindersicher ? 45 : 15}`).all(`%${lichtTerm}%`, pflegeGrenze);
+    /*
+     * ZWEISTUFIG wie der Schwerpunkt-Nachschuss darueber, und aus demselben Grund. Diese
+     * Abfrage fragte bis zum 23.09.2026 nur `licht LIKE ? AND pflege_sterne <= ?` — und
+     * weil sie danach die stiltreuen Arten mit zu vielen Sternen wieder herausfiltert,
+     * blieben am Ende ueberwiegend Arten aus DIESEM Nachschuss stehen. Gemessen live:
+     * „Mediterraner Garten" + Pflegezeit „Minimal" ergab 3 von 6 Arten ohne das Schlagwort
+     * Mediterran, darunter eine Fuellstaude — und der Hinweis behauptete im selben
+     * Antwortkoerper, gelockert worden sei nur bei den Begleitstauden.
+     */
+    const pflegeHolen = (where, args) => db.prepare(
+      `SELECT ${PLAN_COLS} FROM pflanzen WHERE licht LIKE ? AND pflege_sterne <= ? ${where} AND ${PLANBAR}
+       ORDER BY RANDOM() LIMIT ${kindersicher ? 45 : 15}`).all(bed.LICHT_ARG, pflegeGrenze, ...args);
+    let leicht = pflegeHolen(`${bed.BODEN_WHERE} ${bed.STIL_WHERE} ${bed.FEUCHT_WHERE} ${bed.LB_WHERE}`,
+      [...bed.BODEN_ARGS, ...bed.STIL_ARGS, ...bed.FEUCHT_ARGS, ...bed.LB_ARGS]);
+    if (leicht.length < 8) {
+      const weiter = pflegeHolen(`${bed.FEUCHT_WHERE} ${bed.LB_WHERE}`, [...bed.FEUCHT_ARGS, ...bed.LB_ARGS]);
+      if (weiter.length > leicht.length) {
+        console.warn('Pflegegrenze ≤%d★: nur %d Arten mit Boden und Stil, ohne sie %d — gelockert',
+          pflegeGrenze, leicht.length, weiter.length);
+        leicht = weiter;
+        vermerkeNachschuss('Pflegezeit');
+      }
+    }
     if (kindersicher) leicht = leicht.filter(p => istKindersicher(p.name_botanisch));
     const schon = new Set(kandidaten.map(p => p.name_botanisch));
     kandidaten = kandidaten.concat(leicht.filter(p => !schon.has(p.name_botanisch)).slice(0, 15));
@@ -1953,12 +2071,25 @@ app.post('/api/plan', planHartLimiter, planLimiter, async (req, res) => {
    * eines Plans, ab 2 m² wieder 200. Ausgerechnet die kleinen Beete, um derentwillen die
    * Grenze eingebaut wurde, hätten ihr Auffangnetz verloren.
    *
-   * Deshalb wird die fehlende Rolle mit den KÜRZESTEN Vertretern wieder aufgefüllt, statt
-   * die Grenze ganz fallen zu lassen: 110 cm auf 1 m² sind zu hoch, 150 cm sind schlimmer.
+   * WIE AUFGEFÜLLT WIRD, und warum nicht so, wie es zuerst dastand: Der erste Versuch nahm
+   * die kürzesten Vertreter aus dem UNGEFILTERTEN Topf. Die sind aber alle zu hoch — das
+   * Live-Protokoll zeigte „Rolle Leitstaude wäre leer — 2 kürzeste Arten (ab 150 cm)
+   * bleiben drin", und die Schlussprüfung meldete das Ergebnis prömpt als harten Befund.
+   * Der Kunde las einen gelben Kasten über eine Entscheidung, die der Server selbst
+   * getroffen hatte.
+   *
+   * Jetzt wird in der Datenbank nach Arten DIESER Rolle UNTERHALB der Grenze gesucht: Wer
+   * rolle_empfehlung = 'Leitstaude' trägt und trotzdem klein bleibt, erfüllt beides. Erst
+   * wenn es die nicht gibt, kommen die kürzesten zu hohen zurück — und dann wird es dem
+   * Kunden als Lockerung gesagt, statt ihm den Befund als Fehler hinzustellen.
    */
   const { kante: beetKante, gemessen: kanteGemessen } = kanteFuer({ gartenflaeche: flaecheGeprueft, beetLaenge, beetBreite });
   const maxHoehe = maxHoeheFuer(flaecheGeprueft, beetKante);
   const maxArten = maxArtenFuer(flaecheGeprueft);
+  /* Wird wahr, wenn der Planer sehenden Auges eine zu hohe Art setzen musste. Dann ist der
+   * Befund der Schlussprüfung kein Vorwurf an das Modell, sondern eine Folge der Beetgrösse
+   * — und der Kunde bekommt das gesagt, statt einen Fehler gemeldet. */
+  let hoeheGelockert = false;
   if (maxHoehe) {
     const passend = kandidaten.filter(p => (p.hoehe_cm_max || 0) <= maxHoehe);
     if (passend.length >= MIN_KANDIDATEN * 2) {
@@ -1973,12 +2104,38 @@ app.post('/api/plan', planHartLimiter, planLimiter, async (req, res) => {
       const vorher = rollenTopf(kandidaten);
       const nachher = rollenTopf(passend);
       const ergaenzt = [];
+      const schon = new Set(kandidaten.map(p => p.name_botanisch));
       for (const rolle of ['Leitstaude', 'Begleitstaude', 'Füllstaude']) {
         if (nachher[rolle].length || !vorher[rolle].length) continue;
+
+        // Erst in der Datenbank: dieselbe Rolle, aber unter der Grenze. Standort, Feuchte und
+        // Lebensbereich gelten dabei weiter — es wird nachgefüllt, nicht aufgeweicht.
+        let passendeRolle = [];
+        try {
+          passendeRolle = db.prepare(
+            `SELECT ${PLAN_COLS} FROM pflanzen
+             WHERE licht LIKE ? ${bed.FEUCHT_WHERE} ${bed.LB_WHERE} AND ${ROLLE_FILTER[rolle]}
+               AND COALESCE(hoehe_cm_max, 50) <= ? AND ${PLANBAR}
+             ORDER BY hoehe_cm_max DESC LIMIT ${kindersicher ? 15 : 5}`
+          ).all(bed.LICHT_ARG, ...bed.FEUCHT_ARGS, ...bed.LB_ARGS, maxHoehe)
+            .filter(p => !schon.has(p.name_botanisch));
+          if (kindersicher) passendeRolle = passendeRolle.filter(p => istKindersicher(p.name_botanisch)).slice(0, 5);
+        } catch (e) { console.warn('Nachfüllen der Rolle %s fehlgeschlagen: %s', rolle, e.message); }
+
+        if (passendeRolle.length) {
+          passendeRolle.forEach(p => schon.add(p.name_botanisch));
+          ergaenzt.push(...passendeRolle);
+          console.log('Höhengrenze ≤%d cm: Rolle %s wäre leer — %d passende Art(en) aus der Datenbank nachgefüllt (bis %d cm)',
+            maxHoehe, rolle, passendeRolle.length, passendeRolle[0].hoehe_cm_max);
+          continue;
+        }
+
+        // Es gibt keine. Dann lieber eine zu hohe als gar keine Rolle — aber gesagt wird es.
         const kuerzeste = [...vorher[rolle]]
           .sort((a, b) => (a.hoehe_cm_max || 0) - (b.hoehe_cm_max || 0)).slice(0, 3);
         ergaenzt.push(...kuerzeste);
-        console.warn('Höhengrenze ≤%d cm: Rolle %s wäre leer — %d kürzeste Arten (ab %d cm) bleiben drin',
+        hoeheGelockert = true;
+        console.warn('Höhengrenze ≤%d cm: Rolle %s wäre leer und es gibt keine passende Art — %d kürzeste (ab %d cm) bleiben drin',
           maxHoehe, rolle, kuerzeste.length, kuerzeste[0] && kuerzeste[0].hoehe_cm_max);
       }
       if (passend.length < kandidaten.length) {
@@ -2067,6 +2224,14 @@ app.post('/api/plan', planHartLimiter, planLimiter, async (req, res) => {
   const bis = (n) => Math.min(n, artenObergrenze);
   const minFuell   = artenObergrenze >= 6 ? 2 : 1;
   const minBegleit = artenObergrenze >= 6 ? 3 : Math.max(1, artenObergrenze - 2);
+  /* Auch die Leitstauden-Obergrenze aus der Fläche, nicht aus einer festen Zahl. In der
+   * ROLLENVERGABE stand bis zum 23.09.2026 „max. 3 Arten … mind. 3 … mind. 2" hart im Text,
+   * während fünf Zeilen weiter oben dieselben Zahlen bereits aus maxArtenFuer kamen.
+   * Auf 1 m² verlangte derselbe Prompt „HÖCHSTENS 3 Arten" und zugleich mindestens sechs. */
+  const maxLeit  = Math.max(1, Math.min(3, artenObergrenze - minBegleit - minFuell));
+  const leitText = maxLeit === 1
+    ? '1 auffällige Strukturpflanze'
+    : `1–${maxLeit} auffällige Strukturpflanzen`;
 
   const vielfaltAnweisung = (() => {
     const eng = artenObergrenze < 6
@@ -2110,12 +2275,12 @@ ENDHÖHE: Keine Art über ${maxHoehe} cm Endhöhe. Die kürzeste Beetkante ${kan
 ${lieblingsList ? `WICHTIG ZU DEN LIEBLINGSPFLANZEN: Prüfe ob die gewünschten Pflanzen zum angegebenen Standort (${licht}, ${boden}, Feuchtigkeit: ${feuchtigkeit}) passen. Falls eine Pflanze nicht passt, weise im "tipps"-Feld explizit darauf hin und schlage eine Alternative vor. Dennoch: Baue alle Lieblingspflanzen ein, sofern irgendwie vertretbar.\n` : ''}${sichtseite && sichtseite.includes('Einseitig') ? 'ANORDNUNG: Einseitig einsehbares Beet — hohe Pflanzen (>80 cm) im Hintergrund, mittlere in der Mitte, niedrige (<40 cm) im Vordergrund. Im Feld "standort" jeder Pflanze angeben: "Hintergrund", "Mitte" oder "Vordergrund".' : ''}${sichtseite && sichtseite.includes('Rundbeet') ? 'ANORDNUNG: Rundbeet / Inselbeet — höchste Pflanzen in der Mitte, nach außen abnehmende Höhen. Im Feld "standort" angeben: "Mitte", "Mittelzone" oder "Rand".' : ''}${sichtseite && sichtseite.includes('Eckbeet') ? 'ANORDNUNG: Eckbeet — höchste Pflanzen an der Ecke/Rückwand, diagonal nach vorne-links und vorne-rechts abfallend. Im Feld "standort" angeben: "Ecke/Hintergrund", "Mitte" oder "Vordergrund".' : ''}
 ${vielfaltAnweisung} ${dichteAnweisung} Berechne Stückzahlen für ${gartenflaeche} m².
 STÜCKZAHLBERECHNUNG: Nutze das Feld "Ø[X]cm" (Ausbreitung) aus der Pflanzenliste für realistische Abstände. Formel: Stückzahl = zugewiesene Fläche / (Ø_cm/100)². Leitstauden erhalten 25–35% der Fläche geteilt durch ihre Stückzahl. Füllstauden füllen die restliche Fläche lückenlos.
-ROLLENPFLICHT — dein Plan ist ungültig ohne: mind. ${minFuell} Füllstauden-Art(en) (z.B. Storchschnabel, Katzenminze, Frauenmantel, Elfenblume, Immergrün, Gundermann, Waldsteinia) die alle freien Flächen lückenlos schließen; mind. ${minBegleit} Begleitstauden-Art(en) (mittlere Höhe, rahmen Leitstauden ein).${hoeheAnweisung}
+ROLLENPFLICHT — dieselben Zahlen wie oben, aus der Fläche abgeleitet. Dein Plan ist ungültig ohne: mind. ${minFuell} Füllstauden-Art(en) (z.B. Storchschnabel, Katzenminze, Frauenmantel, Elfenblume, Immergrün, Gundermann, Waldsteinia) die alle freien Flächen lückenlos schließen; mind. ${minBegleit} Begleitstauden-Art(en) (mittlere Höhe, rahmen Leitstauden ein).${hoeheAnweisung}
 ${geophytenKandidaten.length > 0 ? `GEOPHYTEN-SCHICHT (ZUSÄTZLICH, PFLICHT da angefordert): Wähle 2–4 Geophyten aus der bereitgestellten Geophyten-Liste. Diese kommen ON TOP zu allen Stauden dazu — sie ersetzen KEINE Staude, reduzieren NICHT deren Stückzahl und fließen NICHT in die Pflanzdichte-Berechnung ein. Vergib ihnen Rolle "Geophyt". Stückzahl pro Art: ${Math.round((gartenflaeche || 10) * 5)} ÷ Anzahl Geophyten-Arten (mind. 5 Stk/Art, in Gruppen à 7–15 gepflanzt). Pflanzzeit: Oktober–November im Herbst als Zwiebeln in den Boden zwischen die Stauden.` : ''}
 ${lieblingsList ? 'Die genannten Lieblingspflanzen MÜSSEN im Plan enthalten sein.' : ''}${budget ? ` Halte die Gesamtkosten unter ${budget} €.` : ''}
 ${kandidaten.length > 0 ? 'Wähle primär aus der bereitgestellten Pflanzenliste.' : ''}
 
-Vergib jeder Pflanze eine Rolle nach Hansen & Stahl: "Leitstaude" (1–3 auffällige Strukturpflanzen, max. 3 Arten), "Begleitstaude" (rahmt Leitstauden ein, mind. 3 Arten), "Füllstaude" (Bodendecker/Lückenfüller, mind. 2 Arten). Leitstauden sind visuelle Ankerpunkte, Begleitstauden der Rahmen, Füllstauden schließen alle Lücken lückenlos.
+Vergib jeder Pflanze eine Rolle nach Hansen & Stahl: "Leitstaude" (${leitText}), "Begleitstaude" (rahmt Leitstauden ein, mind. ${minBegleit} Art(en)), "Füllstaude" (Bodendecker/Lückenfüller, mind. ${minFuell} Art(en)). Leitstauden sind visuelle Ankerpunkte, Begleitstauden der Rahmen, Füllstauden schließen alle Lücken lückenlos.
 
 PFLANZKALENDER-HINWEIS: Im Feld "pflanzkalender" stehen nicht nur Blühzeiten, sondern auch Winterschmuck-Pflanzen. Im Abschnitt "Winter" alle Pflanzen aus dem Plan auflisten, die im Winter Zierwert haben: Gräser mit dekorativen Samenständen (z.B. Miscanthus, Pennisetum, Panicum, Calamagrostis), Stauden mit stehenbleibenden Fruchtständen oder markanter Silhouette (z.B. Rudbeckia, Echinacea, Sedum/Hylotelephium, Eryngium) sowie wintergrüne Bodendecker. Auch wenn keine Pflanze blüht — die Winter-Liste soll immer mindestens 2–3 Einträge haben, sofern solche Pflanzen im Plan enthalten sind.
 
@@ -2487,11 +2652,30 @@ JSON-Format:
      * zählt auf, was von SEINEN Eingaben fallengelassen wurde; der Lebensbereich ist eine
      * interne Fachbedingung und bekommt deshalb einen eigenen, verständlichen Hinweis.
      */
+    /*
+     * JEDE STELLE, AN DER GELOCKERT WURDE, WIRD GENANNT — sonst darf der Satz „die übrigen
+     * Pflanzen entsprechen deiner Auswahl" nicht fallen. Am 23.09.2026 fiel er trotzdem,
+     * während die Pflegezeit-Abfrage im Hintergrund Boden und Stil fallengelassen hatte:
+     * 3 von 6 Arten ohne das gewählte Stil-Schlagwort, darunter eine Füllstaude — also
+     * ausgerechnet eine Rolle, die der Satz als unberührt auswies.
+     */
+    /* Ein zurueckgezogener Stil ist eine Lockerung wie jede andere — der Kunde hat ihn
+     * angegeben und bekommt einen Plan ohne ihn. Ohne diesen Satz waere es wieder eine
+     * stille Aufgabe seiner Eingabe. */
+    const zurueckgezogen = stilZurueckgezogen(stil);
+    if (zurueckgezogen) hinweise.push({
+      art: 'gelockert',
+      text: `Den Gartenstil „${zurueckgezogen}" bieten wir nicht mehr an — in unserem Bestand `
+        + `gibt es keine Stauden, die ihm zugeordnet sind. Dieser Plan ist deshalb ohne `
+        + `Stilvorgabe entstanden; Standort, Boden und Feuchte gelten unverändert.`,
+    });
+
     const gelockertEingaben = gelockert.filter(g => g !== 'Lebensbereich');
+    const anlaesse = auswahlPauschalGelockert ? [] : [...gelockerteRollen, ...nachschussGelockert];
     if (gelockertEingaben.length) hinweise.push({
       art: 'gelockert',
-      text: gelockerteRollen.length
-        ? `Für die ${aufzaehlung(gelockerteRollen)} gab es zu deinen Angaben zu wenige Arten. `
+      text: anlaesse.length
+        ? `Für ${aufzaehlung(anlaesse)} gab es zu deinen Angaben zu wenige Arten. `
           + `Nur dort haben wir ${gelockertEingaben.length === 1 ? 'die Angabe' : 'die Angaben'} `
           + `${aufzaehlung(gelockertEingaben)} gelockert — die übrigen Pflanzen entsprechen deiner Auswahl. `
           + `Lichtverhältnisse und Winterhärte gelten durchgehend.`
@@ -2504,6 +2688,24 @@ JSON-Format:
       text: 'Für diesen Standort gab es zu wenige Stauden. Wir haben deshalb auch Arten aus abweichenden Lebensbereichen zugelassen — achte beim Giessen darauf, dass nicht alle dasselbe brauchen.',
     });
     for (const b of pruefung.befunde.filter(b => b.schwere === 'hart')) {
+      /*
+       * DIE ENDHÖHE AUF SEHR KLEINEN BEETEN IST KEIN FEHLER DES MODELLS, sondern eine
+       * Entscheidung des Planers. Unter rund 1,78 m² liegt die Grenze unter 100 cm, und für
+       * die Rolle Leitstaude gibt es dann unter Umständen gar keine Art darunter. Ohne eine
+       * Leitstaude gäbe es keinen Plan; also wird eine zu hohe zugelassen. Sie dem Kunden
+       * danach im gelben Kasten als Mangel zu melden, wäre ein Vorwurf für etwas, das der
+       * Server selbst getan hat — deshalb derselbe Sachverhalt, aber als Erklärung.
+       */
+      if (hoeheGelockert && b.regel === 'endhoehe') {
+        hinweise.push({
+          art: 'gelockert', regel: b.regel,
+          text: `Dein Beet ist klein. Für die Höhenstaffelung braucht es trotzdem eine große Staude, `
+            + `und unterhalb von ${b.maxHoehe} cm gibt es dafür keine passende Art. Wir haben deshalb `
+            + `bewusst eine höhere zugelassen: ${aufzaehlung(b.arten || [])}. Auf dieser Fläche wirkt sie `
+            + `wuchtig — wer das nicht möchte, lässt sie weg und pflanzt dafür mehr von den niedrigen.`,
+        });
+        continue;
+      }
       hinweise.push({ art: 'pruefung', regel: b.regel, text: b.text });
     }
 
@@ -2525,8 +2727,22 @@ JSON-Format:
 
 app.post('/api/alternativ', alternativLimiter, (req, res) => {
   const { licht, boden, standort_beschreibung, stil, rolle, ausschliessen,
-          gartenflaeche, beetLaenge, beetBreite } = req.body;
+          gartenflaeche, beetLaenge, beetBreite, nutzung } = req.body;
   if (!licht) return res.status(400).json({ error: 'licht erforderlich' });
+
+  /*
+   * KINDERSICHER GILT AUCH HIER — es ist eine Sicherheitszusage, kein Geschmack.
+   *
+   * /api/plan filtert die Kandidaten über istKindersicher() und zieht danach ein zweites
+   * Netz über den fertigen Plan. Diese Route kannte die Angabe bis zum 23.09.2026 gar nicht:
+   * Wer in einem als kindersicher angeforderten Plan auf „Alternative vorschlagen" klickte,
+   * konnte sich wortlos Eisenhut oder Fingerhut ins Beet holen. Der Bestand führt 141
+   * giftige und 22 stark giftige Arten. Genau derselbe Fehler wie damals im Planer, nur
+   * einen Ausgabepfad weiter — und der Kindersicher-Filter sitzt dort tief in roleQuery,
+   * damit ihn KEIN Ausweichpfad umgeht. Dieser hier war der letzte, der ihn umging.
+   */
+  const altKindersicher = Array.isArray(nutzung)
+    && nutzung.some(n => /kindersicher|kinderfreundlich/i.test(String(n)));
 
   /*
    * Dieselben Ableitungen wie im Planer (getPflanzenkandidaten), nicht eigene. Vorher standen
@@ -2592,8 +2808,17 @@ app.post('/api/alternativ', alternativLimiter, (req, res) => {
     rolle_empfehlung, kombinationspartner, winteraspekt, trockenheitstoleranz, inhalt_lang,
     ${BILD_SPALTEN_SQL}`;
 
-  const holen = (where, args) => db.prepare(`SELECT ${COLS} FROM pflanzen
-      WHERE ${where} ${exClause} ORDER BY RANDOM() LIMIT 1`).all(...args, ...(exclude || []))[0] || null;
+  /* Mehr holen und danach in JS filtern, wie im Planer: Die Einstufung in
+   * scripts/pflanzen-giftigkeit.js ist auf Gattungsebene kuratiert und liegt nicht als
+   * Spalte vor. Ohne Aufschlag käme bei LIMIT 1 oft gar nichts heraus — rund 29 % des
+   * Bestands fallen weg. */
+  const holen = (where, args) => {
+    const zeilen = db.prepare(`SELECT ${COLS} FROM pflanzen
+      WHERE ${where} ${exClause} ORDER BY RANDOM() LIMIT ${altKindersicher ? 20 : 1}`)
+      .all(...args, ...(exclude || []));
+    const erlaubt = altKindersicher ? zeilen.filter(p => istKindersicher(p.name_botanisch)) : zeilen;
+    return erlaubt[0] || null;
+  };
 
   // Gelockert wird über Stil und Boden — NIE über Licht und Feuchtigkeit. Das sind die beiden
   // Angaben, an denen eine Staude tatsächlich eingeht; Stil ist Geschmack, Boden lässt sich
@@ -2644,6 +2869,11 @@ app.post('/api/alternativ', alternativLimiter, (req, res) => {
       // der Nutzer gerade selbst ausgewechselt hat. Die Prüfung auf bild_url steckt in der
       // Ableitung (bildZeigbar), sie wird hier nicht noch einmal geschrieben.
       bild_herkunft: herkunftFuerJson(pflanze),
+      /* Die Giftangabe MUSS mit. Der Client ersetzt die Karte vollständig durch diese
+       * Antwort und baut die Sammelwarnung oben aus plan.pflanzen.filter(p => p.giftig).
+       * Ohne das Feld verschwände die Warnung für genau die Pflanze, die der Nutzer gerade
+       * selbst hereingeholt hat — und sie ist die einzige, über die er nichts gelesen hat. */
+      giftig: (() => { const g = giftigkeit(pflanze.name_botanisch); return g ? { stufe: g.stufe, text: g.text } : null; })(),
       rolle: rolle || (hoehe_cm >= 80 ? 'Leitstaude' : hoehe_cm >= 40 ? 'Begleitstaude' : 'Füllstaude'),
     }
   });
@@ -6685,8 +6915,8 @@ const BEISPIELE = [
     badge: 'Vollsonne · naturnah · 12 m²',
     intro: 'Ein naturnaher Garten mit Präriecharakter braucht wenig Pflege und bietet Bienen, Schmetterlingen und Vögeln Lebensraum das ganze Jahr. Dieses Beispiel kombiniert heimische Stauden mit naturnahen Gräsern für ein wildes, aber dennoch strukturiertes Beet.',
     intro2: 'Alle gewählten Pflanzen sind bienenfreundlich oder heimisch in Deutschland. Die Samenstände bleiben im Winter stehen — ein wichtiger Aspekt für Insekten und die Winteroptik des Gartens.',
-    cta_params: '?licht=Vollsonne+%286%2B+h%29&stil=Natur%2FWildgarten&standort=Naturgarten+Präriecharakter+heimische+Stauden+Insektenparadies',
-    seo_text: 'Naturgarten Beispiele mit heimischen Pflanzen sind besonders gefragt. Für naturnahe Beete eignen sich: Sonnenhut (Echinacea), Schafgarbe (Achillea millefolium), Storchschnabel (Geranium), Ziersalbei (Salvia nemorosa) und Chinaschilf (Miscanthus).',
+    cta_params: '?licht=Vollsonne+%286%2B+h%29&standort=Naturgarten+Präriecharakter+heimische+Stauden+Insektenparadies',
+    seo_text: 'Naturgarten Beispiele mit heimischen Pflanzen sind besonders gefragt. Heimisch und für naturnahe Beete geeignet sind: Schafgarbe (Achillea millefolium), Storchschnabel (Geranium), Wiesen-Salbei (Salvia pratensis) und Wilde Karde (Dipsacus fullonum). Häufig dazugestellt, aber nicht heimisch: Sonnenhut (Echinacea, Nordamerika) und Chinaschilf (Miscanthus, Ostasien).',
   },
   {
     slug: 'teichrand',
@@ -6730,7 +6960,7 @@ const BEISPIELE = [
     badge: 'Romantisch · Halbschatten/Sonne · 8 m²',
     intro: 'Der Cottage-Stil steht für üppige, naturnahe Beete mit romantischem Charakter — viele Blütenfarben, weiche Formen und ein wenig kontrolliertes Chaos. Dieses Beispiel zeigt ein typisches Cottage-Garten-Beet in Pastelltönen mit Rosa, Lila und Weiß.',
     intro2: 'Die Auswahl vereint klassische Englische-Garten-Pflanzen mit robusten Stauden, die auch in Deutschland problemlos gedeihen. Duftende Stauden, Schmetterlingsmagnet-Pflanzen und lange Blütezeiten sind die Merkmale dieser Kombination.',
-    cta_params: '?stil=Cottage%2FEnglisch&standort=Romantischer+Cottage-Garten+Pastelltöne+Rosa+Lila+Weiß',
+    cta_params: '?standort=Romantischer+Cottage-Garten+Pastelltöne+Rosa+Lila+Weiß',
     seo_text: 'Cottage-Garten Bepflanzungsbeispiele für romantische Staudenbeete. Typisch für den Cottage-Stil: Phlox, Rittersporn (Delphinium), Fingerhut (Digitalis), Malve (Malva), Frauenmantel (Alchemilla) und Glockenblume (Campanula).',
   },
   {

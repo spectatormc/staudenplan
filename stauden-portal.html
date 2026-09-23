@@ -2260,7 +2260,21 @@
     document.getElementById('flaeche-manuell').style.display = mode === 'manuell' ? 'block' : 'none';
     document.getElementById('flaeche-zeichnen').classList.toggle('active', mode === 'zeichnen');
     formData.flaeche_form = mode;
-    if (mode === 'zeichnen') { initCanvas(); updateCanvasArea(); }
+    /* Die Kantenmasse aus dem L×B-Modus zurücksetzen, sobald gezeichnet wird.
+     *
+     * Seit dem 23.09.2026 leitet der Planer die Endhöhengrenze aus der KURZEN KANTE ab, nicht
+     * mehr aus der Wurzel der Fläche. Blieben beetLaenge/beetBreite beim Moduswechsel stehen,
+     * ginge zu einer gezeichneten Fläche von 20 m² weiter eine Breite von 0,64 m mit — der
+     * Prompt verlangte dann „keine Art über 48 cm" auf einem großen Beet, und die
+     * Schlussprüfung beanstandete jede Staude darüber. setDimMode tut dasselbe beim Wechsel
+     * auf „m²"; hier fehlte es, weil vor dieser Änderung niemand die Felder gelesen hat.
+     * Das Zeichenwerkzeug liefert nur eine Fläche, keine Kanten — also gibt es hier keine. */
+    if (mode === 'zeichnen') {
+      formData.beetLaenge = null;
+      formData.beetBreite = null;
+      initCanvas();
+      updateCanvasArea();
+    }
   }
 
   function onCanvasClick(e) {
@@ -4583,6 +4597,9 @@ __PLAN_PRUEFEN_JS__
           // durchgesetzt hatte.
           gartenflaeche: formData.gartenflaeche,
           beetLaenge: formData.beetLaenge, beetBreite: formData.beetBreite,
+          // Ohne die Schwerpunkte kennt der Server die Angabe „Kindersicher" nicht, und der
+          // Tausch koennte in ein Familienbeet holen, was der Planer dort ausgeschlossen hat.
+          nutzung: formData.nutzung,
           rolle: p.rolle,
           ausschliessen: currentPlan.pflanzen.map(pp => pp.name_botanisch)
         })

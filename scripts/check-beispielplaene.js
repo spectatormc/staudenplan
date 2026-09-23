@@ -70,13 +70,22 @@ function fachwerte(nameBot) {
   if (!name) return null;
   const treffer = exakt.get(name);
   if (treffer) return treffer;
-  const teile = name.split(/\s+/);
+  /* DER HYBRID-MARKER MUSS RAUS, genau wie in pflanzeNachschlagen (stauden-server.js):
+   * Die Datenbank fuehrt Hybride ohne "x" ("Nepeta faassenii"), die Plandateien mit.
+   * Ohne diese Zeile wird aus "Calamagrostis x acutiflora" der Suchbegriff
+   * "Calamagrostis x", der nichts trifft — und die Pruefung rechnet still mit der
+   * gemittelten Hoehe aus der JSON-Datei weiter. Vier Arten in den acht Beispielplaenen
+   * tragen den Marker, darunter ausgerechnet die, die am 23.09.2026 das zu hohe
+   * Chinaschilf ersetzt hat. Zwei Nachschlaege, die sich unterscheiden, sind zwei
+   * Wahrheiten. */
+  const teile = name.split(/\s+/).filter(t => t && t !== 'x' && t !== 'X' && t !== '×');
   if (teile.length < 2) return null;                       // reine Gattung: kein Artbezug
   const art = `${teile[0]} ${teile[1]}`;
   return artweise.get(art, `${art} %`) || null;
 }
 
-let hartGesamt = 0, ohneFachwerte = 0;
+let hartGesamt = 0, ohneFachwerte = 0, artenGesamt = 0;
+const fehlendeNamen = [];
 console.log('\n--- Pruefung: halten die Beispielplaene die Planerregeln ein? ---');
 console.log(`Datenbank: ${db.name} (${zeilenZahl} Zeilen)\n`);
 
@@ -86,7 +95,8 @@ for (const { slug, flaeche } of beispiele) {
   const roh = JSON.parse(fs.readFileSync(datei, 'utf8'));
   const pflanzen = (roh.pflanzen || []).map(p => {
     const f = fachwerte(p.name_botanisch);
-    if (!f) ohneFachwerte++;
+    artenGesamt++;
+    if (!f) { ohneFachwerte++; fehlendeNamen.push(p.name_botanisch || p.name_deutsch || '(ohne Namen)'); }
     return {
       name_deutsch: p.name_deutsch, name_botanisch: p.name_botanisch,
       rolle: p.rolle, stueckzahl: p.stueckzahl,
@@ -110,9 +120,31 @@ for (const { slug, flaeche } of beispiele) {
   for (const b of weich) console.log(`             weich  ${b.regel}: ${b.text}`);
 }
 
+/*
+ * FEHLENDE DECKUNG IST EIN FEHLSCHLAG, kein Hinweis.
+ *
+ * Die Sperre oben zaehlt Zeilen in der Datenbank — sie sagt nichts darueber, ob die Arten
+ * DIESER Plaene darin stehen. Ohne Treffer laufen drei der sechs Regeln (Feuchte,
+ * Lebensbereich, teilweise Endhoehe) ins Leere, und der Lauf meldete trotzdem "0 harte
+ * Befunde": Er saehe am wenigsten, wenn am meisten fehlt. Genau die Pruefung, die nicht
+ * fehlschlagen kann. Ein einzelner Ausfall darf vorkommen (eine Art wurde umbenannt), mehr
+ * als jede zehnte heisst, dass der Nachschlag nicht mehr zu den Daten passt.
+ */
+const DECKUNG_MIN = 0.9;
+const gefunden = artenGesamt - ohneFachwerte;
+console.log(`\nArten mit Fachwerten aus der Datenbank: ${gefunden} von ${artenGesamt}`);
 if (ohneFachwerte) {
-  console.log(`\nHinweis: ${ohneFachwerte} Art(en) aus den Beispieldateien stehen nicht in der Datenbank.`);
-  console.log('Fuer sie galt nur die gemittelte Hoehe aus der Datei; Feuchte und Lebensbereich blieben leer.');
+  console.log('Fuer die uebrigen galt nur die gemittelte Hoehe aus der Datei; Feuchte und');
+  console.log('Lebensbereich blieben leer — drei der sechs Regeln pruefen dort nichts.');
+  for (const name of fehlendeNamen.slice(0, 10)) console.log(`   nicht gefunden: ${name}`);
+  if (fehlendeNamen.length > 10) console.log(`   … und ${fehlendeNamen.length - 10} weitere`);
+}
+if (artenGesamt && gefunden / artenGesamt < DECKUNG_MIN) {
+  console.error(`\nFEHLER: nur ${Math.round(gefunden / artenGesamt * 100)} % der Arten wurden in der`
+    + ` Datenbank gefunden (verlangt: ${DECKUNG_MIN * 100} %).`);
+  console.error('Ein bestandener Lauf waere hier kein Freispruch, sondern ein blinder Fleck.');
+  db.close();
+  process.exit(1);
 }
 
 console.log(`\nHarte Befunde ueber alle Beispielseiten: ${hartGesamt}`);

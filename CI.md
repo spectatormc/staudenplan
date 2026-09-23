@@ -25,17 +25,27 @@ Run after backend changes:
 
 This runs:
 1. check:smoke (starts local server and checks key routes)
-2. check:selbsttest (self-tests of the three data checks; no database or pins required)
+2. check:selbsttest (self-tests of the data checks and of the two rule modules
+   `scripts/preis-spanne.js` and `scripts/plan-pruefen.js`; no database or pins required)
+
+`check:smoke` ruft seit dem 23.09.2026 auch `/api/plan` fuer kleine Beete auf (1,0 / 1,5 /
+2,0 m²) und prueft die Rollenabdeckung des Notplans. Zwei Dinge halten die Zusage
+„laeuft ohne Produktionsdaten" trotzdem aufrecht:
+* Der Lauf arbeitet auf einer KOPIE von `stauden.db` in einem Temp-Verzeichnis (`DB_PFAD`).
+  Jeder `/api/plan`-Aufruf schreibt eine Zeile in `plan_statistik`; ohne Kopie landeten
+  Testzeilen in der Produktionsstatistik.
+* Fehlt `stauden.db` (frischer Runner) oder hat sie zu wenige Zeilen, meldet der Lauf
+  `UEBERSPRUNGEN (keine Pflanzendaten)` mit Begruendung und laeuft weiter.
 
 ## Datenpruefungen (nur auf dem Server, `npm run ci:daten`)
 
-Drei Pruefungen halten Fehlerklassen fest, die zwischen August und September 2026 mehrfach
+Vier Pruefungen halten Fehlerklassen fest, die zwischen August und September 2026 mehrfach
 aufgetreten sind. Sie gehoeren NICHT in `ci:smoke` und nicht in den Release-Gate `ci:strict`,
 sondern auf den Server ins Deploy-Verzeichnis — vor dem Neustart bzw. vor dem naechsten Lauf
 von `scripts/pins-erzeugen.js`.
 
-Der Grund ist derselbe fuer alle drei und steht in ihren Kopfkommentaren: Ein CI-Runner hat
-nach `npm ci` weder `stauden.db` noch `public/pins/` (beides steht in `.gitignore`). Alle drei
+Der Grund ist derselbe fuer alle vier und steht in ihren Kopfkommentaren: Ein CI-Runner hat
+nach `npm ci` weder `stauden.db` noch `public/pins/` (beides steht in `.gitignore`). Alle vier
 scheitern dort mit Absicht an ihrer Leerlaufsperre, statt „bestanden" zu melden. Eine Pruefung,
 die nichts gesehen hat, darf nicht bestehen — sonst sagt ein gruenes CI nur aus, dass nichts
 geprueft wurde. Deshalb ist `ci:smoke` unveraendert geblieben: Es muss ohne Produktionsdaten
@@ -46,6 +56,13 @@ durchlaufen koennen.
 | `scripts/check-ki-kennzeichnung.js` | `check:ki` | Produktions-`stauden.db`, freien Port | vor jedem Deploy, der Bilder, Templates oder `scripts/bild-herkunft.js` beruehrt |
 | `scripts/check-pin-deckung.js` | `check:pins` | gefuelltes `public/pins/` | vor jedem Lauf von `pins-erzeugen.js`, der neue Pins veroeffentlichungsreif macht |
 | `scripts/check-pin-metadaten.js` | `check:pin-meta` | gefuelltes `public/pins/` | nach jedem Lauf von `pins-erzeugen.js` |
+| `scripts/check-beispielplaene.js` | `check:beispiele` | Produktions-`stauden.db` | vor jedem Deploy, der `scripts/plan-pruefen.js`, die Schwellen darin oder einen Beispielplan beruehrt |
+
+Ausserhalb der Kette laeuft `scripts/check-lebensbereich.js` (`npm run check:lebensbereich`).
+Sie ist bewusst NICHT in `ci:daten`: Sie meldet einen offenen Befund, den unsere eigenen Daten
+nicht entscheiden koennen (`Clematis x durandii`), und ein Gate, das jede Nacht rot ist, liest
+nach zwei Wochen niemand mehr. Der Grund steht im Kopf der Datei. Sobald die Zeile geklaert
+ist, gehoert sie zurueck in die Kette.
 
 1. `check:ki` — Traegt jeder Ausgabepfad mit KI-Bild die Kennzeichnung, und traegt sie kein
    anderer? Startet den Server als Kindprozess (Port ueber `KI_PRUEF_PORT`, Vorgabe 3311) und

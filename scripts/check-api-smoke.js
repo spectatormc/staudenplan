@@ -1,5 +1,8 @@
 const http = require('http');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
+const Database = require('better-sqlite3');
 const { spawn } = require('child_process');
 
 const projectRoot = path.resolve(__dirname, '..');
@@ -35,6 +38,38 @@ async function waitForServer(timeoutMs = 30000) {
   return false;
 }
 
+/*
+ * EIGENE KOPIE DER DATENBANK, und zwar aus zwei Gruenden.
+ *
+ * 1. Der Lauf SCHREIBT seit dem 23.09.2026: Jeder /api/plan-Aufruf legt eine Zeile in
+ *    plan_statistik an. Ohne Kopie landeten drei Testzeilen je Durchgang in derselben
+ *    Datei wie die echten Plaene — im Deploy-Verzeichnis also in der Statistik, die
+ *    /admin/plaene auswertet, mit Flaechen von 1 bis 2 m². Testdaten gehoeren nicht in
+ *    die Produktionsdaten, auch nicht schreibend "nur ein bisschen".
+ * 2. Die Kopie kann fehlen. stauden.db steht in .gitignore; auf einem frischen CI-Runner
+ *    gibt es sie nicht. Dann laeuft dieser Lauf OHNE die Planpruefungen weiter und sagt
+ *    es — CI.md sagt an dieser Stelle zu, dass check:smoke ohne Produktionsdaten laeuft.
+ *    Ein "UEBERSPRUNGEN" mit Grund ist ehrlich; ein FAIL waere falsch, und ein stilles
+ *    Bestehen waere schlimmer als beides.
+ */
+const quellDb = path.join(projectRoot, 'stauden.db');
+const testDb = path.join(os.tmpdir(), `staudenplan-smoke-${process.pid}.db`);
+let planPruefbar = false;
+try {
+  if (fs.existsSync(quellDb)) {
+    fs.copyFileSync(quellDb, testDb);
+    const n = new Database(testDb, { readonly: true });
+    const zeilen = n.prepare("SELECT COUNT(*) AS n FROM pflanzen WHERE name_deutsch != 'Test-Pflanze'").get().n;
+    n.close();
+    planPruefbar = zeilen >= 50;
+    if (!planPruefbar) console.log(`(Planpruefungen uebersprungen: nur ${zeilen} Pflanzen in stauden.db)`);
+  } else {
+    console.log('(Planpruefungen uebersprungen: stauden.db ist nicht vorhanden — steht in .gitignore)');
+  }
+} catch (err) {
+  console.log(`(Planpruefungen uebersprungen: stauden.db nicht lesbar — ${err.message})`);
+}
+
 (async () => {
   /* Der Schluessel wird bewusst unbrauchbar gemacht. Dann faellt /api/plan in den Notplan,
    * und genau der ist hier zu pruefen: Er ist der Ausgabepfad ohne Modell, er kostet nichts,
@@ -42,7 +77,12 @@ async function waitForServer(timeoutMs = 30000) {
    * bei jedem Durchgang etwas anderes pruefen. */
   const child = spawn('node', ['stauden-server.js'], {
     cwd: projectRoot,
-    env: { ...process.env, PORT: String(port), OPENAI_API_KEY: 'sk-smoke-ungueltig-erzwingt-notplan' },
+    env: {
+      ...process.env,
+      PORT: String(port),
+      OPENAI_API_KEY: 'sk-smoke-ungueltig-erzwingt-notplan',
+      ...(planPruefbar ? { DB_PFAD: testDb } : {}),
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
@@ -92,7 +132,8 @@ async function waitForServer(timeoutMs = 30000) {
      * nur keine einzige hohe.
      */
     console.log('--- Notplan auf kleinen Beeten (Rollenabdeckung) ---');
-    for (const flaeche of [1.0, 1.5, 2.0]) {
+    if (!planPruefbar) console.log('UEBERSPRUNGEN (keine Pflanzendaten) — siehe Hinweis oben');
+    for (const flaeche of (planPruefbar ? [1.0, 1.5, 2.0] : [])) {
       try {
         const res = await request('/api/plan', {
           gartenflaeche: flaeche, licht: 'Vollsonne (6+ h)', boden: 'Lehmig / schwer',
@@ -120,6 +161,11 @@ async function waitForServer(timeoutMs = 30000) {
     child.kill('SIGINT');
     setTimeout(() => {
       if (!child.killed) child.kill('SIGKILL');
+      // Die Kopie samt WAL-Beidateien wegraeumen. Ein Fehlschlag hier darf den Lauf nicht
+      // umwerten — das Ergebnis steht schon fest.
+      for (const datei of [testDb, `${testDb}-wal`, `${testDb}-shm`]) {
+        try { if (fs.existsSync(datei)) fs.unlinkSync(datei); } catch (_) {}
+      }
     }, 1500);
   }
 })();

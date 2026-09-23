@@ -136,7 +136,9 @@ function maxHoeheFuer(flaeche, kante) {
 
 /* Deutsches Dezimalkomma. Die Befundtexte gehen seit 23.09.2026 an den Kunden — „2.6 m²“
  * liest sich dort wie ein Tippfehler, und „0.64 m“ wie eine Zahl aus einer Tabelle. */
-const mZahl = (n, stellen = 1) => n.toFixed(stellen).replace(/0$/, '').replace(/\.$/, '').replace('.', ',');
+/* Nachlaufende Nullen ALLE abschneiden, nicht nur eine: .replace(/0$/) machte aus "1,00"
+ * die Zeichenkette "1,0", und der Kundentext las "ein Beet mit 1,0 m kurzer Kante". */
+const mZahl = (n, stellen = 1) => n.toFixed(stellen).replace(/0+$/, '').replace(/\.$/, '').replace('.', ',');
 
 const teile = feld => String(feld || '').toLowerCase().split(/[|,]/).map(s => s.trim()).filter(Boolean);
 const zahl = w => { const n = Number(w); return Number.isFinite(n) ? n : null; };
@@ -150,7 +152,9 @@ const zahl = w => { const n = Number(w); return Number.isFinite(n) ? n : null; }
  */
 function planPruefen(plan, anfrage = {}) {
   const befunde = [];
-  const melde = (regel, schwere, text) => befunde.push({ regel, schwere, text });
+  /* `mehr` haengt maschinenlesbar an, was der Text nur in Prosa nennt — der Aufrufer soll
+   * die Namen nicht aus dem Satz zurueckparsen muessen, wenn er ihn anders einleiten will. */
+  const melde = (regel, schwere, text, mehr) => befunde.push({ regel, schwere, text, ...mehr });
 
   const pflanzen = Array.isArray(plan && plan.pflanzen) ? plan.pflanzen : [];
   const flaeche = zahl(anfrage.gartenflaeche);
@@ -184,9 +188,11 @@ function planPruefen(plan, anfrage = {}) {
     if (zuHoch.length) {
       const wo = gemessen ? `ein Beet mit ${mZahl(kante, 2)} m kurzer Kante`
                : `ein Beet von ${mZahl(flaeche)} m²`;
+      const namen = zuHoch.map(p => `${p.name_deutsch || p.name_botanisch} (${p.hoehe_cm_max} cm)`);
       melde('endhoehe', 'hart',
         `${zuHoch.length} Art(en) werden höher als ${maxHoehe} cm und erschlagen ${wo}: `
-        + zuHoch.map(p => `${p.name_deutsch || p.name_botanisch} (${p.hoehe_cm_max} cm)`).join(', ') + '.');
+        + namen.join(', ') + '.',
+        { arten: namen, maxHoehe });
     }
   }
 
