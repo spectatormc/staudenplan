@@ -2482,6 +2482,10 @@ JSON-Format:
         const bildZeile = zeigbar(dbP) ? dbP : null;
         if (artTreffer) fachwerte.set(nameBot, {
           hoehe_cm_max: dbP.hoehe_cm_max, feuchtigkeit: dbP.feuchtigkeit, lebensbereich: dbP.lebensbereich,
+          // `stil` nur fuer die Nachrechnung unten: Das Modell ist nicht an die Kandidaten-
+          // liste gebunden und kann Arten frei ergaenzen. Ob der Plan zum gewaehlten Stil
+          // passt, laesst sich deshalb erst am FERTIGEN Plan sagen, nicht an der Auswahl.
+          stil: dbP.stil,
         });
         /* Endhoehe, Feuchte und Lebensbereich gehen MIT an den Browser. Nicht zur Anzeige —
          * der Browser rechnet die Schlusspruefung nach jedem Tausch neu, und ohne diese drei
@@ -2672,17 +2676,60 @@ JSON-Format:
 
     const gelockertEingaben = gelockert.filter(g => g !== 'Lebensbereich');
     const anlaesse = auswahlPauschalGelockert ? [] : [...gelockerteRollen, ...nachschussGelockert];
+
+    /*
+     * NACHGERECHNET STATT BEHAUPTET: Traegt der fertige Plan den gewaehlten Stil?
+     *
+     * Der Satz „die übrigen Pflanzen entsprechen deiner Auswahl" ist eine Aussage über die
+     * KANDIDATENLISTE. Das Modell ist an sie aber nicht gebunden — es darf Arten frei
+     * ergänzen, und tut es. Live gemessen am 23.09.2026: Nach der Abdichtung beider
+     * Nachschüsse blieb bei „Mediterran" eine Füllstaude ohne das Schlagwort im Plan, und
+     * die Rolle war im Hinweis ausdrücklich als unberührt ausgewiesen. Der Satz darf
+     * deshalb nur fallen, wenn er am fertigen Plan nachgerechnet wurde.
+     *
+     * Gezählt wird nur, was sich zählen lässt: Arten mit Artbezug in der Datenbank. Eine
+     * vom Modell erfundene Art hat keinen Stileintrag — sie gilt hier als unbekannt, nicht
+     * als passend.
+     */
+    const stilSchlag = stilSchlagwort(stil);
+    const stilFremd = stilSchlag
+      ? (Array.isArray(plan.pflanzen) ? plan.pflanzen : [])
+          .filter(p => (p.rolle || '') !== 'Geophyt')
+          .filter(p => {
+            const f = fachwerte.get((p.name_botanisch || '').trim());
+            return !f || !String(f.stil || '').toLowerCase().includes(stilSchlag.toLowerCase());
+          })
+      : [];
     if (gelockertEingaben.length) hinweise.push({
       art: 'gelockert',
       text: anlaesse.length
         ? `Für ${aufzaehlung(anlaesse)} gab es zu deinen Angaben zu wenige Arten. `
-          + `Nur dort haben wir ${gelockertEingaben.length === 1 ? 'die Angabe' : 'die Angaben'} `
-          + `${aufzaehlung(gelockertEingaben)} gelockert — die übrigen Pflanzen entsprechen deiner Auswahl. `
+          + `Dort haben wir ${gelockertEingaben.length === 1 ? 'die Angabe' : 'die Angaben'} `
+          + `${aufzaehlung(gelockertEingaben)} gelockert. `
+          + (stilFremd.length
+              ? `${stilFremd.length === 1 ? 'Eine Art im Plan ist' : `${stilFremd.length} Arten im Plan sind`} `
+                + `dem Stil „${stil}" bei uns nicht zugeordnet: `
+                + `${aufzaehlung(stilFremd.map(p => p.name_deutsch || p.name_botanisch))}. `
+              : 'Alle Pflanzen im Plan sind dem gewählten Stil zugeordnet. ')
           + `Lichtverhältnisse und Winterhärte gelten durchgehend.`
         : `Für die gewählte Kombination gab es zu wenige passende Stauden. Wir haben `
           + `${gelockertEingaben.length === 1 ? 'die Angabe' : 'die Angaben'} ${aufzaehlung(gelockertEingaben)} `
           + `bei der Auswahl gelockert — Lichtverhältnisse und Winterhärte gelten unverändert.`,
     });
+    /* DER STILBEFUND BRAUCHT AUCH DEN FALL OHNE LOCKERUNG. Wurde nichts gelockert, gab es
+     * bis hierhin gar keinen Hinweis — und genau so trat der Fehler auf: Ein Plan für
+     * „Modern / Minimalistisch" lieferte drei von sechs Arten ohne das Schlagwort, mit
+     * hinweise: [] und gelockert: undefined. Der Kunde hat einen Stil gewählt; wenn der Plan
+     * ihn nicht durchgängig trägt, gehört das gesagt, ganz gleich woran es lag. */
+    if (stilFremd.length && !gelockertEingaben.length) hinweise.push({
+      art: 'gelockert',
+      text: `${stilFremd.length === 1 ? 'Eine Art in diesem Plan ist' : `${stilFremd.length} Arten in diesem Plan sind`} `
+        + `dem Gartenstil „${stil}" bei uns nicht zugeordnet: `
+        + `${aufzaehlung(stilFremd.map(p => p.name_deutsch || p.name_botanisch))}. `
+        + `Sie passen zu Standort und Boden, geben dem Beet aber eine andere Handschrift — `
+        + `wer streng beim Stil bleiben will, tauscht sie über „Alternative vorschlagen".`,
+    });
+
     if (gelockert.includes('Lebensbereich')) hinweise.push({
       art: 'gelockert',
       text: 'Für diesen Standort gab es zu wenige Stauden. Wir haben deshalb auch Arten aus abweichenden Lebensbereichen zugelassen — achte beim Giessen darauf, dass nicht alle dasselbe brauchen.',
