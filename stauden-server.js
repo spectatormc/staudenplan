@@ -814,13 +814,27 @@ function getPflanzenkandidaten(licht, boden, stil, standortBeschr, kindersicher 
    */
   const aufgegeben = new Set();
 
-  if (leit.length    < 3) { leit    = roleQuery(LICHT_WHERE, LICHT_ARGS, LEIT_F,    8);  aufgegeben.add('Bodentyp').add('Gartenstil'); }
-  if (begleit.length < 5) { begleit = roleQuery(LICHT_WHERE, LICHT_ARGS, BEGLEIT_F, 15); aufgegeben.add('Bodentyp').add('Gartenstil'); }
-  if (fuell.length   < 3) { fuell   = roleQuery(LICHT_WHERE, LICHT_ARGS, FUELL_F,   10); aufgegeben.add('Bodentyp').add('Gartenstil'); }
+  /*
+   * WELCHE ROLLE gelockert wurde, wird mitgeschrieben — nicht nur DASS gelockert wurde.
+   *
+   * Die Lockerung greift je Rolle einzeln: Reichen die Begleitstauden nicht, wird NUR deren
+   * Liste neu geholt; Leit- und Füllstauden behalten ihre genaue Auswahl. Der Hinweis an den
+   * Kunden sagte trotzdem pauschal „Wir haben Bodentyp und Gartenstil gelockert“, als wäre
+   * der ganze Plan ohne seine Angaben entstanden. Gemessen am 23.09.2026 auf dem Server:
+   * Vollsonne + sandig + Mediterran hat 17 passende Leitstauden und 26 Füllstauden, aber nur
+   * 4 Begleitstauden (Schwelle 5). Gelockert wurde also ein Drittel, gesagt wurde alles.
+   * Das ist dieselbe Sorte Fehler wie eine Zusage ohne Regel, nur in die andere Richtung:
+   * Der Text behauptet mehr Schaden, als der Code anrichtet.
+   */
+  const gelockerteRollen = new Set();
 
-  if (leit.length    < 2) { leit    = roleQuery(LAST_WHERE, LAST_ARGS, LEIT_F,    8);  aufgegeben.add('Bodenfeuchte'); }
-  if (begleit.length < 3) { begleit = roleQuery(LAST_WHERE, LAST_ARGS, BEGLEIT_F, 15); aufgegeben.add('Bodenfeuchte'); }
-  if (fuell.length   < 2) { fuell   = roleQuery(LAST_WHERE, LAST_ARGS, FUELL_F,   10); aufgegeben.add('Bodenfeuchte'); }
+  if (leit.length    < 3) { leit    = roleQuery(LICHT_WHERE, LICHT_ARGS, LEIT_F,    8);  aufgegeben.add('Bodentyp').add('Gartenstil'); gelockerteRollen.add('hohe Leitstauden'); }
+  if (begleit.length < 5) { begleit = roleQuery(LICHT_WHERE, LICHT_ARGS, BEGLEIT_F, 15); aufgegeben.add('Bodentyp').add('Gartenstil'); gelockerteRollen.add('mittelhohe Begleitstauden'); }
+  if (fuell.length   < 3) { fuell   = roleQuery(LICHT_WHERE, LICHT_ARGS, FUELL_F,   10); aufgegeben.add('Bodentyp').add('Gartenstil'); gelockerteRollen.add('niedrige Füllstauden'); }
+
+  if (leit.length    < 2) { leit    = roleQuery(LAST_WHERE, LAST_ARGS, LEIT_F,    8);  aufgegeben.add('Bodenfeuchte'); gelockerteRollen.add('hohe Leitstauden'); }
+  if (begleit.length < 3) { begleit = roleQuery(LAST_WHERE, LAST_ARGS, BEGLEIT_F, 15); aufgegeben.add('Bodenfeuchte'); gelockerteRollen.add('mittelhohe Begleitstauden'); }
+  if (fuell.length   < 2) { fuell   = roleQuery(LAST_WHERE, LAST_ARGS, FUELL_F,   10); aufgegeben.add('Bodenfeuchte'); gelockerteRollen.add('niedrige Füllstauden'); }
 
   // Deduplizieren und zusammenführen (Leit → Begleit → Füll)
   const seen = new Set();
@@ -832,12 +846,19 @@ function getPflanzenkandidaten(licht, boden, stil, standortBeschr, kindersicher 
 
   // Die Liste der gelockerten Bedingungen reist als Eigenschaft mit, damit die Route sie
   // ohne zweiten Rückgabewert weiterreichen kann.
-  const mitVermerk = liste => { liste.aufgegeben = [...aufgegeben]; return liste; };
+  const mitVermerk = liste => {
+    liste.aufgegeben = [...aufgegeben];
+    // Alle drei Rollen betroffen heisst: der ganze Topf. Dann ist die Aufzaehlung ueberfluessig.
+    liste.gelockerteRollen = gelockerteRollen.size === 3 ? [] : [...gelockerteRollen];
+    return liste;
+  };
 
   if (kandidaten.length >= 8) return mitVermerk(kandidaten);
 
-  // Absoluter Fallback: alle passenden Pflanzen nach Licht
+  // Absoluter Fallback: alle passenden Pflanzen nach Licht. Er ersetzt die GANZE Liste,
+  // also ist auch keine Rolle mehr ausgenommen — die Aufzaehlung wird leer (= alle).
   aufgegeben.add('Bodentyp').add('Gartenstil').add('Bodenfeuchte');
+  gelockerteRollen.clear();
   const restHolen = (where, args) => {
     const rows = db.prepare(
       `SELECT ${COLS} FROM pflanzen WHERE ${where} ORDER BY RANDOM() LIMIT ${kindersicher ? 105 : 35}`
@@ -1830,6 +1851,8 @@ app.post('/api/plan', planHartLimiter, planLimiter, async (req, res) => {
   // Sofort sichern: Die Liste wird gleich per concat erweitert, und dabei geht die
   // angehängte Eigenschaft verloren.
   const gelockert = kandidaten.aufgegeben || [];
+  // Leer heisst: alle Rollen betroffen (oder gar keine — dann ist auch `gelockert` leer).
+  const gelockerteRollen = kandidaten.gelockerteRollen || [];
 
   // Die übrigen sieben Nutzungsschalter wirkten bis 09.08.2026 ebenfalls nicht auf die
   // Auswahl. Jetzt legen sie passende Arten in die Liste und erzeugen eine klare Anweisung.
@@ -2467,7 +2490,14 @@ JSON-Format:
     const gelockertEingaben = gelockert.filter(g => g !== 'Lebensbereich');
     if (gelockertEingaben.length) hinweise.push({
       art: 'gelockert',
-      text: `Für die gewählte Kombination gab es zu wenige passende Stauden. Wir haben ${gelockertEingaben.length === 1 ? 'die Angabe' : 'die Angaben'} ${aufzaehlung(gelockertEingaben)} bei der Auswahl gelockert — Lichtverhältnisse und Winterhärte gelten unverändert.`,
+      text: gelockerteRollen.length
+        ? `Für die ${aufzaehlung(gelockerteRollen)} gab es zu deinen Angaben zu wenige Arten. `
+          + `Nur dort haben wir ${gelockertEingaben.length === 1 ? 'die Angabe' : 'die Angaben'} `
+          + `${aufzaehlung(gelockertEingaben)} gelockert — die übrigen Pflanzen entsprechen deiner Auswahl. `
+          + `Lichtverhältnisse und Winterhärte gelten durchgehend.`
+        : `Für die gewählte Kombination gab es zu wenige passende Stauden. Wir haben `
+          + `${gelockertEingaben.length === 1 ? 'die Angabe' : 'die Angaben'} ${aufzaehlung(gelockertEingaben)} `
+          + `bei der Auswahl gelockert — Lichtverhältnisse und Winterhärte gelten unverändert.`,
     });
     if (gelockert.includes('Lebensbereich')) hinweise.push({
       art: 'gelockert',
