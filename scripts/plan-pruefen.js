@@ -61,10 +61,18 @@ const HOEHE_ZU_KANTE = 0.75;
  *
  * `ziel` ist die Mitte, an der die Korrektur ausrichtet; `min`/`max` ist das Band, innerhalb
  * dessen nichts gemeldet und nichts korrigiert wird. */
+/* ZWEI ZAHLENPAARE JE STUFE, und der Unterschied ist wichtig:
+ *   zusage    was dem Kunden auf der Auswahlkarte versprochen wird („Locker 2–3 Pfl./m²").
+ *             Diese Zahlen gehen in den Prompt und in jeden Text, den er liest.
+ *   min/max   die Spanne, innerhalb derer NICHTS beanstandet und NICHTS korrigiert wird.
+ *             Sie ist etwas weiter, weil zwischen Vorgabe, Modell und Rundung Luft liegt.
+ * Beides auseinanderzuhalten ist nötig, weil sonst eines von beidem falsch wäre: Wer dem
+ * Kunden „2–4" sagt, widerspricht der Karte; wer bei 3,9 in der Stufe „locker" einen Befund
+ * meldet, beanstandet eine Rundung. */
 const DICHTE_STUFEN = {
-  locker: { ziel: 2.5, min: 2,   max: 4  },
-  normal: { ziel: 4,   min: 3,   max: 6  },
-  dicht:  { ziel: 7,   min: 5.5, max: 10 },
+  locker: { ziel: 2.5, zusage: [2, 3], min: 2,   max: 4  },
+  normal: { ziel: 4,   zusage: [3, 5], min: 3,   max: 6  },
+  dicht:  { ziel: 7,   zusage: [6, 8], min: 5.5, max: 10 },
 };
 const DICHTE_STANDARD = 'normal';
 
@@ -241,13 +249,13 @@ function planPruefen(plan, anfrage = {}) {
     if (dichte < stufe.min) {
       melde('dichte', 'weich',
         `${mZahl(dichte)} Pflanzen je m² (${gesamtStueck} auf ${mZahl(flaeche)} m²). `
-        + `Für die Stufe „${wieGewaehlt}" sind ${mZahl(stufe.min)} bis ${mZahl(stufe.max)} vorgesehen; `
+        + `Für die Stufe „${wieGewaehlt}" sind ${mZahl(stufe.zusage[0])} bis ${mZahl(stufe.zusage[1])} vorgesehen; `
         + `darunter bleibt der Boden jahrelang offen und verkrautet.`,
         { jeM2: dichte, ziel: stufe.ziel, richtung: 'zu_duenn' });
     } else if (dichte > stufe.max) {
       melde('dichte', 'weich',
         `${mZahl(dichte)} Pflanzen je m². Für die Stufe „${wieGewaehlt}" sind höchstens `
-        + `${mZahl(stufe.max)} vorgesehen; darüber stehen die Stauden sich im Weg.`,
+        + `${mZahl(stufe.zusage[1])} vorgesehen; darüber stehen die Stauden sich im Weg.`,
         { jeM2: dichte, ziel: stufe.ziel, richtung: 'zu_dicht' });
     }
   }

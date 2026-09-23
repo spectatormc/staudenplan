@@ -21,6 +21,10 @@ const { giftigkeit, istKindersicher, kindersicherGrund } = require('./scripts/pf
  * der er gefolgt ist. lbAusschluss() filtert ausserdem schon die Kandidatenliste. */
 const { planPruefen, lbAusschluss, maxArtenFuer, maxHoeheFuer, kanteFuer,
         dichteStufe, dichteStufeName, dichteZielFuer } = require('./scripts/plan-pruefen');
+/* Das Budget wird an EINER Stelle durchgesetzt, und dieselbe Datei wird in die
+ * ausgelieferte Seite eingesetzt — der Dichteschalter im Browser lief sonst daran
+ * vorbei und machte aus einem gekappten Plan wieder einen ungekappten. */
+const { budgetKappen } = require('./scripts/budget-kappen');
 /* Preise als Spanne statt als Betrag. Dieselbe Datei wird beim Ausliefern von
  * stauden-portal.html in die Seite eingesetzt (__PREIS_SPANNE_JS__) — der Browser rechnet
  * die Plansumme nach jedem Dichte-Klick neu und muss dabei dieselbe Spanne bilden. */
@@ -1527,6 +1531,12 @@ app.get('/', (req, res) => {
      * dieselbe Regel nach, statt eine zweite abzutippen. */
     html = html.replace('__PLAN_PRUEFEN_JS__',
       () => fs.readFileSync(path.join(__dirname, 'scripts/plan-pruefen.js'), 'utf8'));
+    /* Und die Budgetkappung, aus demselben Grund: Der Dichteschalter rechnet die Stueckzahlen
+     * im Browser neu und lief bis zum 23.09.2026 an der Grenze vorbei, die der Server gerade
+     * durchgesetzt hatte — ein Klick auf den bereits markierten Knopf machte aus einem auf
+     * 300 € gekappten Plan wieder einen ueber 1.700 €. */
+    html = html.replace('__BUDGET_KAPPEN_JS__',
+      () => fs.readFileSync(path.join(__dirname, 'scripts/budget-kappen.js'), 'utf8'));
 
   // FAQ (targetet reale Search-Console-Queries: "bepflanzungsplan erstellen", "beetplaner
   // online kostenlos", "staudenbeet planen online", "stauden pro m²") — HTML + FAQPage-Schema.
@@ -2270,7 +2280,11 @@ ENDHÖHE: Keine Art über ${maxHoehe} cm Endhöhe. Die kürzeste Beetkante ${kan
     const zusatz = name === 'locker' ? 'Großzügige Abstände, etwas offener Boden sichtbar.'
                  : name === 'dicht'  ? 'Lückenlose Flächendeckung, kein freier Boden.'
                  : 'Gute Flächendeckung mit natürlicher Wirkung.';
-    return `Pflanzdichte: ${name} (${st.min}–${st.max} Pflanzen/m²). GESAMTZAHL: ${dichteZiel} Pflanzen `
+    /* Die Spanne der AUSWAHLKARTE, nicht das intern geweitete Band — und mit Dezimalkomma.
+     * Sonst stuende im deutschen Prompt „5.5–10" und der Kunde bekaeme spaeter eine andere
+     * Zahl genannt als die Karte, auf die er geklickt hat. */
+    const spanne = st.zusage.map(z => String(z).replace('.', ',')).join('–');
+    return `Pflanzdichte: ${name} (${spanne} Pflanzen/m²). GESAMTZAHL: ${dichteZiel} Pflanzen `
       + `für ${gartenflaeche} m² — das ist die Summe aller Stückzahlen, nicht die Artenzahl. `
       + `Bei wenigen Arten heißt das entsprechend große Gruppen je Art. ${zusatz}`;
   })();
@@ -2458,6 +2472,10 @@ JSON-Format:
      * ALS NACHSCHLAGETABELLE, NICHT ALS FERTIGE LISTE: Nach dieser Stelle fallen noch Arten
      * weg (Kindersicher-Netz) und Stückzahlen ändern sich (Budget-Kappung). Eine hier fertig
      * gebaute Liste würde einen Plan prüfen, den der Kunde so nie bekommt. */
+    /* Wird unten in den Hinweisen gebraucht: Ein Budget, das sich nicht einhalten liess,
+     * muss der Kunde erfahren. Still darueber hinwegzugehen waere eine Zusage ohne Regel. */
+    let budgetErgebnis = null;
+
     const fachwerte = new Map();
     if (Array.isArray(plan.pflanzen)) {
       plan.pflanzen = plan.pflanzen.map(p => {
@@ -2561,8 +2579,47 @@ JSON-Format:
        * 80 m² angibt, bekommt ein dünnes Beet und den weichen Dichtebefund dazu — das ist
        * dann wahr und nicht zu beheben.
        */
+      /* ROLLEN NORMALISIEREN, BEVOR danach gefiltert wird. Die Ausnahme der Geophyten haengt
+       * an einem exakten Zeichenkettenvergleich auf einen Wert, den das Modell frei schreibt.
+       * Schreibt es „Geophyten" oder „Zwiebel", zaehlten die Zwiebeln in die Dichte, wuerden
+       * mitskaliert und von der Budgetkappung anders behandelt — die Prompt-Bitte „fliessen
+       * NICHT in die Pflanzdichte ein" waere von keiner Regel gedeckt. Vier bekannte Werte,
+       * alles andere bleibt, wie es kam (und faellt dann in die Rolle „unbekannt"). */
+      const ROLLE_ALIAS = {
+        geophyt: 'Geophyt', geophyten: 'Geophyt', zwiebel: 'Geophyt', zwiebelpflanze: 'Geophyt',
+        blumenzwiebel: 'Geophyt', knolle: 'Geophyt',
+        leitstaude: 'Leitstaude', leitpflanze: 'Leitstaude', strukturpflanze: 'Leitstaude',
+        begleitstaude: 'Begleitstaude', begleitpflanze: 'Begleitstaude',
+        fuellstaude: 'Füllstaude', 'füllstaude': 'Füllstaude', bodendecker: 'Füllstaude',
+      };
+      for (const p of plan.pflanzen) {
+        const k = String(p.rolle || '').trim().toLowerCase();
+        if (ROLLE_ALIAS[k] && ROLLE_ALIAS[k] !== p.rolle) {
+          console.warn('rolle normalisiert: %j → %s (%s)', p.rolle, ROLLE_ALIAS[k], p.name_botanisch);
+          p.rolle = ROLLE_ALIAS[k];
+        }
+      }
+
+      /* STÜCKZAHL 0 IST KEINE STÜCKZAHL. Das Muster im Prompt zeigt „stueckzahl": 0 als
+       * Platzhalter, und das Modell uebernimmt das gelegentlich woertlich. Ohne diese Zeile
+       * griffe die Dichtekorrektur nicht (ihre Bedingung ist `ist > 0`) und der Plan ginge
+       * mit null Exemplaren je Art hinaus — der Rest des Codes rechnet ueberall mit
+       * `stueckzahl || 1` weiter und merkt es deshalb nicht. */
+      for (const p of plan.pflanzen) {
+        if (!(Number(p.stueckzahl) > 0)) {
+          console.warn('stueckzahl %j → 1 (%s)', p.stueckzahl, p.name_botanisch);
+          p.stueckzahl = 1;
+        }
+      }
+
       const dichteStauden = () => plan.pflanzen.filter(p => (p.rolle || '') !== 'Geophyt');
-      if (dichteZiel && Array.isArray(plan.pflanzen) && plan.pflanzen.length) {
+      /* NICHT BEIM NOTPLAN. buildNotplan skaliert selbst auf dichteZielFuer, und zwar mit
+       * seinen eigenen Mindestmengen (Leit 3 / Begleit 2 / Füll 5). Eine zweite Korrektur
+       * rechnet mit anderen Untergrenzen und zerlegt genau die Gruppen, die der Notplan
+       * absichtlich gebildet hat — auf kleinen Flächen hebt sein eigener Boden die Dichte
+       * ueber das Band, und die zweite Runde zieht sie wieder herunter. Ein Ausgabepfad,
+       * eine Korrektur. */
+      if (dichteZiel && !notplan && Array.isArray(plan.pflanzen) && plan.pflanzen.length) {
         const st = dichteStufe(dichte);
         const ist = dichteStauden().reduce((s, p) => s + (Number(p.stueckzahl) || 0), 0);
         const jeM2 = ist / flaecheGeprueft;
@@ -2585,22 +2642,25 @@ JSON-Format:
       // kein frei erfundener Modell-String mehr.
       const gesamt = () => plan.pflanzen.reduce((s, p) => s + (p.preis_stueck_eur || 0) * (p.stueckzahl || 1), 0);
 
-      // Budget deterministisch erzwingen (Eval: Modell hält es von sich aus nie ein).
-      // Stückzahlen in Prio-Reihenfolge kappen (Füll → Begleit → Leit → Geophyt), immer
-      // die teuerste reduzierbare Art, min. 1 pro Art — Leitstauden/Struktur zuletzt.
-      const budgetNum = Number(budget);
-      if (Number.isFinite(budgetNum) && budgetNum > 0) {
-        const prio = ['Füllstaude', 'Begleitstaude', 'Leitstaude', 'Geophyt'];
-        let guard = 0;
-        while (gesamt() > budgetNum && guard++ < 1000) {
-          let target = null;
-          for (const rolle of prio) {
-            const cands = plan.pflanzen.filter(p => (p.rolle || '') === rolle && (p.stueckzahl || 1) > 1 && (p.preis_stueck_eur || 0) > 0);
-            if (cands.length) { target = cands.sort((a, b) => b.preis_stueck_eur - a.preis_stueck_eur)[0]; break; }
-          }
-          if (!target) break; // alles bei Stückzahl 1 → nicht weiter kürzbar
-          target.stueckzahl -= 1;
-        }
+      /*
+       * Budget deterministisch erzwingen (Eval: Modell hält es von sich aus nie ein).
+       *
+       * Die Rechnung steht seit dem 23.09.2026 in scripts/budget-kappen.js — hier stand sie
+       * als Schleife, die je Durchlauf EIN Exemplar abtrug und nach 1000 Durchläufen aufgab.
+       * Solange das Modell rund 70 Stück lieferte, war dieser Zähler folgenlos. Seit die
+       * Pflanzdichte davor nachgezogen wird, sind es auf grossen Flächen mehrere tausend, und
+       * die Kappung gab mitten in der Arbeit still auf: 200 m² „dicht" bei Budget 600 €
+       * ergaben nachgerechnet 2.924 €, 400 m² sogar 10.914 €.
+       *
+       * Die Datei wird ausserdem in den Browser eingesetzt — der Dichteschalter dort lief
+       * sonst an derselben Grenze vorbei.
+       */
+      budgetErgebnis = budgetKappen(plan.pflanzen, budget);
+      if (budgetErgebnis.noetig) {
+        console.log('budget %s €: %d → %d Stück, %s → %s €%s',
+          budget, budgetErgebnis.stueckVorher, budgetErgebnis.stueckNachher,
+          budgetErgebnis.vorher.toFixed(0), budgetErgebnis.nachher.toFixed(0),
+          budgetErgebnis.erreicht ? '' : ' — NICHT ERREICHT');
       }
 
       // Gesamtkosten serverseitig aus (DB-)Preisen × Stückzahl — konsistent mit dem Frontend.
@@ -2701,6 +2761,22 @@ JSON-Format:
      * einzelnen Feld verdrängt zwangsläufig einer den anderen.
      */
     const hinweise = [];
+    /*
+     * EIN NICHT EINGEHALTENES BUDGET IST EIN HARTER BEFUND. Der Schieber sagt eine Obergrenze
+     * zu; kann der Plan sie nicht einhalten, weil schon die Mindestmengen darueber liegen,
+     * muss das dastehen. Bis zum 23.09.2026 gab die Kappung in diesem Fall stumm auf und der
+     * Kunde las einen Betrag, der sein Budget um ein Vielfaches ueberstieg.
+     */
+    if (budgetErgebnis && budgetErgebnis.noetig && !budgetErgebnis.erreicht) {
+      hinweise.push({
+        art: 'pruefung', regel: 'budget',
+        /* Das Budget als glatte Zahl — es ist die Angabe des Kunden, keine Schätzung von uns.
+         * Unsere Summe bekommt die Spanne, weil sie eine Schätzung ist. */
+        text: `Dein Budget von ${Math.round(Number(budget))} € reicht für dieses Beet nicht: Schon mit der `
+          + `kleinstmöglichen Stückzahl je Art kommen wir auf ${(summeSpanne(budgetErgebnis.nachher) || {}).text || Math.round(budgetErgebnis.nachher) + ' €'}. `
+          + `Eine kleinere Fläche, weniger Arten oder eine lockerere Pflanzung bringen den Plan in deinen Rahmen.`,
+      });
+    }
     /*
      * Der Notplan-Satz nennt nur, was buildNotplan WIRKLICH durchsetzt: Rollenverteilung und
      * Artenzahl nach Fläche. „Höhenstaffelung und Blütenfolge stimmen“ stand bis zum
@@ -3154,16 +3230,35 @@ app.post('/api/anfrage', anfrageLimiter, async (req, res) => {
    * Herkunft des Plans und die gelockerten Angaben standen bereits auf dem Bildschirm, als er
    * ihn abgeschickt hat; sie hier zu wiederholen macht die Mail länger, nicht ehrlicher.
    */
-  const planHinweise = Array.isArray(ki_plan?._hinweise) ? ki_plan._hinweise : [];
+  /*
+   * DER TEXT KOMMT AUS DEM ANFRAGEKÖRPER, nicht vom Server. ki_plan wird unverändert
+   * entgegengenommen und gespeichert; die Hinweise darin hat der Browser gebildet. Deshalb
+   * drei Dinge:
+   *   - `h` kann null sein. `_hinweise: [null]` liess diese Route bis zum 23.09.2026 mit
+   *     HTTP 500 antworten: Die Anfrage stand dann in der Datenbank, aber weder Betreiber
+   *     noch Kunde bekamen eine Mail. Die drei Geschwisterstellen, die dasselbe Feld lesen,
+   *     hatten den Schutz — nur die Mail nicht.
+   *   - Anzahl und Länge werden gekappt. Ohne Deckel bläht ein einziger Aufruf die Mail um
+   *     bis zu zwei Megabyte auf. Der Schwesterendpunkt /api/plan-teilen lehnt aus demselben
+   *     Grund alles über 200.000 Zeichen ab.
+   *   - Die Überschrift sagte „standen auch auf der Ergebnisseite". Das ist eine Zusage über
+   *     einen Text, den der Server nie gesehen hat, in einer Mail an eine frei wählbare
+   *     Adresse. Sie ist weg.
+   */
+  const HINWEIS_MAX = 12, HINWEIS_LAENGE = 600;
+  const planHinweise = (Array.isArray(ki_plan?._hinweise) ? ki_plan._hinweise : [])
+    .filter(h => h && typeof h === 'object' && typeof h.text === 'string' && h.text.trim())
+    .slice(0, HINWEIS_MAX);
   const hinweisBlock = (liste, ueberschrift) => liste.length
     ? `\n${ueberschrift}\n` + liste.map(h =>
-        `  • ${h.art === 'pruefung' ? 'Fachlicher Hinweis: ' : ''}${String(h.text || '').replace(/\s+/g, ' ')}`
+        `  • ${h.art === 'pruefung' ? 'Fachlicher Hinweis: ' : ''}`
+        + h.text.replace(/\s+/g, ' ').slice(0, HINWEIS_LAENGE)
       ).join('\n') + '\n'
     : '';
   const hinweiseFuerBetreiber = hinweisBlock(planHinweise,
-    'Hinweise, die der Planer zu diesem Plan ausgegeben hat:');
+    'Hinweise aus dem Planer, wie der Browser sie zu diesem Plan angezeigt hat:');
   const hinweiseFuerKunde = hinweisBlock(planHinweise.filter(h => h.art === 'pruefung'),
-    'Fachliche Hinweise zu Ihrem Plan (standen auch auf der Ergebnisseite):');
+    'Fachliche Hinweise zu Ihrem Plan:');
 
   // Ein Empfänger, ein Zweck: Bis zum 23.09.2026 war dieser Text an eine Gärtnerei adressiert
   // und bat sie um ein Angebot; der Betreiber bekam denselben Wortlaut als Durchschlag. Die
@@ -3703,7 +3798,13 @@ app.get('/admin/anfragen', (req, res) => {
     if (a.ki_plan) {
       try {
         const plan = JSON.parse(a.ki_plan);
-        const n = Array.isArray(plan.pflanzen) ? plan.pflanzen.length : 0;
+        const arten = Array.isArray(plan.pflanzen) ? plan.pflanzen : [];
+        const n = arten.length;
+        /* ARTEN und EXEMPLARE getrennt. Hier stand nur „N Pflanzen" — gemeint war die
+         * ARTENzahl. Bei den alten Stückzahlen fiel das kaum auf; seit die Pflanzdichte
+         * nachgezogen wird, stand „7 Pflanzen" neben einem Plan mit mehreren hundert
+         * Exemplaren. An dieser Zeile entscheidet jemand, was er dem Kunden antwortet. */
+        const stueck = arten.reduce((s, p) => s + (Number(p.stueckzahl) || 1), 0);
         /* BEWUSST EIN GENAUER BETRAG, keine Spanne. Diese Ansicht ist die interne
          * Kalkulation hinter dem Anmeldeschutz; wer hier ein Angebot rechnet, braucht die
          * Zahl, die im Plan steht. Die Spanne gilt fuer das, was der Kunde sieht. */
@@ -3715,14 +3816,15 @@ app.get('/admin/anfragen', (req, res) => {
          * harten (`pruefung`): Die Herkunft des Plans und gelockerte Angaben sind fuer die
          * Antwort an den Kunden zweitrangig, ein fachlicher Mangel nicht. */
         const befunde = (Array.isArray(plan._hinweise) ? plan._hinweise : [])
-          .filter(h => h && h.art === 'pruefung');
+          .filter(h => h && h.art === 'pruefung' && typeof h.text === 'string')
+          .slice(0, 12);
         const marke = befunde.length
-          ? ` <span title="${esc(befunde.map(h => h.text).join(' — '))}" `
+          ? ` <span title="${esc(befunde.map(h => String(h.text).slice(0, 300)).join(' — '))}" `
             + `style="background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:6px;`
             + `padding:1px 6px;font-size:.75rem;white-space:nowrap">⚠ ${befunde.length} Befund`
             + `${befunde.length === 1 ? '' : 'e'}</span>`
           : '';
-        planInfo = esc(`${n} Pflanzen${kosten ? ' · ' + kosten : ''}`) + marke;
+        planInfo = esc(`${n} Art(en) · ${stueck} Stück${kosten ? ' · ' + kosten : ''}`) + marke;
       } catch { planInfo = '(Plan nicht lesbar)'; }
     }
     const garten = [a.gartenflaeche ? a.gartenflaeche + ' m²' : '', a.licht, a.stil].filter(Boolean).map(esc).join(' · ');
@@ -7542,7 +7644,9 @@ function calcPlacementsSSR(pflanzen, bedW, bedH, opts) {
   // ── 2. Füllstauden: Jitter-Grid in freie Flächen (Matrixbepflanzung) ──────
   const fuellArten = pflanzen.filter(p => getRolle(p) === 'fuell');
   if (fuellArten.length > 0) {
-    const plantsPerM2 = dichte === 'locker' ? 2.5 : dichte === 'dicht' ? 7 : 4;
+    // Aus scripts/plan-pruefen.js, nicht abgetippt — genau diese Doppelung hat der Notplan
+    // schon einmal teuer gemacht.
+    const plantsPerM2 = dichteStufe(dichte).ziel;
     const aiTotal = fuellArten.reduce((s, p) => s + (p.stueckzahl || 1), 0);
     const minByDichte = Math.round(gartenflaeche * plantsPerM2) - all.length;
     const totalFuell = Math.min(600, Math.max(aiTotal, Math.max(0, minByDichte)));

@@ -1295,8 +1295,12 @@
         <span style="font-size:.9rem;color:var(--text-light)">Maximale Gesamtkosten</span>
         <span class="budget-value" id="budget-display">Kein Limit</span>
       </div>
-      <input type="range" id="budget-slider" min="0" max="600" step="25" value="0" oninput="updateBudget(this.value)">
-      <div class="budget-labels"><span>Kein Limit</span><span>150 €</span><span>300 €</span><span>450 €</span><span>600 €</span></div>
+      <!-- Die Obergrenze lag bis zum 23.09.2026 bei 600 €, waehrend das Formular Flaechen bis
+           10.000 m² zulaesst. Seit die Pflanzdichte nachgezogen wird, kostet schon ein Beet
+           von 80 m² rund 1.700 € — jede realistische Angabe dafuer war gar nicht einstellbar,
+           und die 600 € fuehrten genau in die Kappung, die dann nicht mehr reichte. -->
+      <input type="range" id="budget-slider" min="0" max="5000" step="50" value="0" oninput="updateBudget(this.value)">
+      <div class="budget-labels"><span>Kein Limit</span><span>1.000 €</span><span>2.500 €</span><span>5.000 €</span></div>
     </div>
 
     <div class="form-group">
@@ -2224,7 +2228,10 @@
   function updateBudget(val) {
     const v = parseInt(val);
     formData.budget = v > 0 ? v : null;
-    document.getElementById('budget-display').textContent = v > 0 ? `bis ${v} €` : 'Kein Limit';
+    // Tausenderpunkt, seit der Schieber bis 5.000 geht — „bis 2500 €" liest sich als Zahl
+    // aus einer Tabelle, nicht als Betrag.
+    document.getElementById('budget-display').textContent =
+      v > 0 ? `bis ${v.toLocaleString('de-DE')} €` : 'Kein Limit';
   }
 
   async function proPlanErstellen() {
@@ -2829,6 +2836,16 @@ __PLAN_PRUEFEN_JS__
     window.dichteStufe    = dichteStufe;
   })();
 
+  /* BUDGETKAPPUNG, dieselbe Datei wie auf dem Server. Der Dichteschalter unten rechnet die
+   * Stueckzahlen neu; ohne diese Regel lief er an der Grenze vorbei, die der Server gerade
+   * durchgesetzt hatte. Gemessen am 23.09.2026: ein auf 300 EUR gekappter Plan mit 56 Stueck
+   * wurde durch einen Klick auf den BEREITS MARKIERTEN Knopf "Normal" wieder zu 320 Stueck
+   * und rund 1.700 EUR — still, und die Zahl reiste in PDF, geteilten Plan und Anfrage-Mail. */
+  (function () {
+__BUDGET_KAPPEN_JS__
+    window.budgetKappen = budgetKappen;
+  })();
+
   /* Bildet die Befunde der Art 'pruefung' neu und laesst 'notplan' und 'gelockert' stehen —
    * die beiden sagen etwas ueber die ENTSTEHUNG des Plans und werden durch einen Tausch nicht
    * falsch. Die Reihenfolge bleibt erhalten (Herkunft zuerst, Befunde darunter).
@@ -3319,7 +3336,10 @@ __PLAN_PRUEFEN_JS__
     // ── 2. Füllstauden: Jitter-Grid in freie Flächen (Matrixbepflanzung) ──────
     const fuellArten = pflanzen.filter(p => getRolle(p) === 'fuell');
     if (fuellArten.length > 0) {
-      const plantsPerM2 = formData.dichte === 'locker' ? 2.5 : formData.dichte === 'dicht' ? 7 : 4;
+      // Aus der eingesetzten scripts/plan-pruefen.js, nicht abgetippt. Der Rueckfall gilt
+      // nur, falls das Modul einmal fehlt — dann stimmt wenigstens die Standardstufe.
+      const plantsPerM2 = (typeof window.dichteStufe === 'function')
+        ? window.dichteStufe(formData.dichte).ziel : 4;
       const aiTotal = fuellArten.reduce((s, p) => s + (p.stueckzahl || 1), 0);
       const minByDichte = Math.round((formData.gartenflaeche || 10) * plantsPerM2) - all.length;
       const totalFuell = Math.max(aiTotal, Math.max(0, minByDichte));
@@ -4333,7 +4353,12 @@ __PLAN_PRUEFEN_JS__
     btn.classList.add('active');
     currentPlan.pflanzen.forEach((p, i) => {
       if (p.rolle === 'Geophyt') return; // Geophyten haben eigene Dichte, nicht vom Slider ändern
-      p.stueckzahl = Math.max(1, Math.round(_baseStueck[i] * factor));
+      /* Die Leitstauden-Mindestmenge 3 gilt auch hier. Sie wird an drei anderen Stellen
+       * durchgesetzt (Planer, Alternativtausch, Budgetkappung); nur dieser Schalter kannte
+       * sie nicht und liess auf 2,56 m² nach einem Klick auf „Locker" eine einzelne
+       * Leitstaude stehen. Eine Leitstaude allein liest sich nicht als Struktur. */
+      const untergrenze = p.rolle === 'Leitstaude' ? 3 : 1;
+      p.stueckzahl = Math.max(untergrenze, Math.round(_baseStueck[i] * factor));
       const se = document.getElementById('stueck-' + i);
       const pe = document.getElementById('preis-' + i);
       if (se) se.textContent = '× ' + p.stueckzahl + ' Stück';
@@ -4342,6 +4367,25 @@ __PLAN_PRUEFEN_JS__
       // wieder zu einem Preis machen.
       if (pe) pe.textContent = preisText((p.preis_stueck_eur||0) * p.stueckzahl);
     });
+    /*
+     * DAS BUDGET GILT AUCH NACH EINEM KLICK. Der Server kappt auf die Angabe des Kunden;
+     * dieser Schalter rechnete die Stueckzahlen danach neu und lief an der Grenze vorbei.
+     * Dieselbe Datei wie auf dem Server, damit beide Seiten dasselbe Ergebnis liefern.
+     */
+    if (typeof window.budgetKappen === 'function' && formData.budget) {
+      const r = window.budgetKappen(currentPlan.pflanzen, formData.budget);
+      if (r.noetig) {
+        // Die Anzeige der einzelnen Karten muss der Kappung folgen, sonst steht in der Karte
+        // eine andere Zahl als in der Stueckliste darunter.
+        currentPlan.pflanzen.forEach((p, i) => {
+          const se = document.getElementById('stueck-' + i);
+          const pe = document.getElementById('preis-' + i);
+          if (se) se.textContent = '× ' + p.stueckzahl + ' Stück';
+          if (pe) pe.textContent = preisText((p.preis_stueck_eur || 0) * p.stueckzahl);
+        });
+      }
+    }
+
     // Staudenzahl nur über Nicht-Geophyten (Kachel ist mit "Stauden" beschriftet);
     // Gesamtkosten über alle. Kacheln über stabile data-Attribute, nicht Positionsindex
     // (mit Geophyten verschiebt sich sonst der Index → Zwiebel-Kachel würde überschrieben).
