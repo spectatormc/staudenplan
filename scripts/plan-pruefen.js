@@ -441,6 +441,29 @@ if (typeof require !== 'undefined' && require.main === module && process.argv.in
   ok(planPruefen({ pflanzen: [{ name_deutsch: 'X', stueckzahl: 3 }] }, {}).befunde.length === 0,
      'ohne Flaechenangabe werden die flaechenabhaengigen Regeln uebersprungen statt geraten');
 
+  /*
+   * DIE ZWEITE POL-LISTE. scripts/lebensbereiche.js fuehrt `pol` je Bereich; hier stehen die
+   * Paare. Beide kodieren dasselbe und koennen auseinanderlaufen — diese Probe faengt das ab.
+   * Sie laeuft nur unter Node: Im Browser ist diese Datei eingesetzter Quelltext ohne require,
+   * und genau deshalb gibt es die Doppelung ueberhaupt.
+   */
+  try {
+    const lb = require('./lebensbereiche');
+    const polVon = art => Object.keys(lb.BEREICHE)
+      .filter(n => lb.BEREICHE[n].pol === art).map(n => n.toLowerCase()).sort();
+    const hierTrocken = [...LB_POL_TROCKEN].sort();
+    const hierNass = [...LB_POL_NASS].sort();
+    ok(JSON.stringify(polVon('trocken')) === JSON.stringify(hierTrocken),
+       `trockener Pol deckungsgleich mit lebensbereiche.js (hier: ${hierTrocken.join(', ')} — dort: ${polVon('trocken').join(', ')})`);
+    ok(JSON.stringify(polVon('nass')) === JSON.stringify(hierNass),
+       `nasser Pol deckungsgleich mit lebensbereiche.js (hier: ${hierNass.join(', ')} — dort: ${polVon('nass').join(', ')})`);
+    const unbekannt = [...LB_POL_TROCKEN, ...LB_POL_NASS]
+      .filter(n => !Object.keys(lb.BEREICHE).some(b => b.toLowerCase() === n));
+    ok(unbekannt.length === 0, `jeder Pol-Name ist ein Bereich aus dem Vokabular${unbekannt.length ? ' — unbekannt: ' + unbekannt.join(', ') : ''}`);
+  } catch (e) {
+    ok(false, `Abgleich mit scripts/lebensbereiche.js nicht moeglich: ${e.message}`);
+  }
+
   console.log(fehler ? `\n${fehler} Fehler` : '\n--- Selbsttest bestanden ---');
   process.exit(fehler ? 1 : 0);
 }

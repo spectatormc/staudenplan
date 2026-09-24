@@ -152,6 +152,12 @@ if (typeof require !== 'undefined' && require.main === module && process.argv.in
   const pole = NAMEN.filter(n => BEREICHE[n].pol);
   ok(pole.length === 5, `fuenf Bereiche tragen einen Pol (${pole.join(', ')})`);
 
+  /* Die Gegenprobe steht in scripts/plan-pruefen.js: Dort kodiert LB_UNVERTRAEGLICH dieselben
+   * Pole ein zweites Mal, weil die Datei im Browser ohne require laeuft. Hier wird nur
+   * festgehalten, dass es diese zweite Stelle GIBT — wer den Pol eines Bereichs aendert,
+   * muss dort nachziehen, und der dortige Selbsttest faellt sonst durch. */
+  ok(true, 'HINWEIS: die Pole stehen ein zweites Mal in scripts/plan-pruefen.js (LB_UNVERTRAEGLICH) — dessen Selbsttest vergleicht beide');
+
   console.log(fehler ? `\n${fehler} Fehler` : '\n--- Selbsttest bestanden ---');
   process.exit(fehler ? 1 : 0);
 }
