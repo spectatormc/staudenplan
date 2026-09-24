@@ -51,6 +51,28 @@ const nur = (feld, wert) => {
  * „weich" heißt: ungewöhnlich, aber es gibt Ausnahmen — die laufen nur mit --alle mit. */
 const REGELN = [
   {
+    /* DIE SPIEGELREGEL zu „Gehölz + nur Sonne" weiter unten. Sie fehlte bis zum 24.09.2026,
+     * und dadurch liefen 28 Zeilen durch das nächtliche Gate: Wurmfarn, Frauenfarn,
+     * Hirschzungenfarn, Haselwurz, Einbeere, Trillium, Maiglöckchen, Aronstab, Pachysandra
+     * — alles Waldbodenpflanzen, alle mit licht='Schatten', alle auf „Gehölzrand,Waldsaum".
+     *
+     * Die Ursache liegt nicht in diesen Zeilen, sondern im Erzeugungs-Prompt: „Gehölz" stand
+     * dort nie zur Auswahl (siehe scripts/lebensbereiche.js). Die Regel findet also die
+     * Spitze eines größeren Defekts — sie ist trotzdem richtig, weil jede einzelne Zeile
+     * für sich unmöglich ist: Ein Saum ist hell, eine reine Schattenpflanze steht nicht
+     * darauf. */
+    name: 'heller Bereich ohne Gehölz + nur Schatten',
+    hart: true,
+    grund: 'Freifläche, Steppenheide, Steinanlage und Offener Rohboden sind voll besonnt, '
+      + 'Gehölzrand und Waldsaum sind die HELLEN Ränder von Gehölzen. Für eine Staude, die '
+      + 'nur Schatten verträgt, ist der Bereich „Gehölz“ — der Schatten UNTER den Bäumen. '
+      + 'Steht keiner davon in der Zeile, widerspricht sie sich.',
+    trifft: p => nur(p.licht, 'schatten')
+      && ['freifläche', 'steppenheide', 'steinanlage', 'offener rohboden', 'gehölzrand', 'waldsaum']
+           .some(b => String(p.lebensbereich || '').toLowerCase().includes(b))
+      && !String(p.lebensbereich || '').toLowerCase().split(/[|,]/).map(t => t.trim()).includes('gehölz'),
+  },
+  {
     name: 'Steppenheide + feucht/nass',
     hart: true,
     grund: 'Die Steppenheide ist der trocken-warme, magere, meist kalkreiche Lebensbereich. '
