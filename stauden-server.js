@@ -1567,7 +1567,22 @@ app.get('/', (req, res) => {
     <div class="seo-intro-inner">
       <h2>Bepflanzungsplan online kostenlos erstellen — KI-gestützt & individuell</h2>
       <p>Ein professioneller <strong>Bepflanzungsplan</strong> ist die Grundlage für ein schönes, pflegeleichtes Staudenbeet. Unser KI-Gartenplaner erstellt dir in wenigen Minuten einen maßgeschneiderten Plan — abgestimmt auf Standort, Bodentyp, Gartenstil und deine persönlichen Wünsche. Mit über <strong>${planbarCount} geprüften, winterharten Stauden</strong> für deutsche Gärten.</p>
-      <p>Anders als generische KI-Tools nutzt unser Planer eine kuratierte Pflanzendatenbank mit echten Staudenexperten-Wissen: Lebensbereiche nach Hansen &amp; Stahl, ökologisch wertvolle Heimische, bewährte Pflanzenkombinationen. Das Ergebnis ist ein <strong>Bepflanzungsplan der wirklich funktioniert</strong> — mit Stückliste, grafischem Plan und Pflanzkalender.</p>
+      <!--
+        DIESER ABSATZ SAGTE BIS ZUM 24.09.2026 „Lebensbereiche nach Hansen & Stahl“ und
+        „echtes Staudenexperten-Wissen“. Beides war unwahr: Die Spalte „lebensbereich“ ist
+        von gpt-4o erzeugt, aus unseren eigenen Nachbarfeldern und mit einer Vokabelliste,
+        in der fünf der zehn Bereiche fehlten (siehe scripts/lebensbereiche.js). Bei einer
+        gewerblichen Seite ist eine unwahre Angabe über ein wesentliches Merkmal der
+        Leistung nicht nur unschön, sondern § 5 UWG — und sie stand hier, unabhängig von
+        jeder Frage, ob wir fremde Daten übernehmen dürfen.
+
+        Was jetzt dasteht, ist geprüft: Die Winterhärte, die Endhöhen und die Giftigkeit
+        sind auditiert und werden nächtlich nachgeprüft (npm run ci:daten); die
+        Schlussprüfung rechnet jeden Plan nach. Das Standortsystem nach Hansen/Stahl wird
+        BENANNT, weil wir danach arbeiten — aber nicht mehr als Herkunft der Werte
+        ausgegeben.
+      -->
+      <p>Anders als generische KI-Tools rechnet unser Planer nach: Jeder Plan wird gegen die Beetgröße geprüft — Artenzahl, Endhöhe, Pflanzdichte und unvereinbare Standortansprüche — und was nicht aufgeht, steht als Hinweis über dem Plan statt unter den Tisch zu fallen. Die ${planbarCount} Stauden sind auf Winterhärte, Endhöhe und Giftigkeit geprüft, giftige Arten sind gekennzeichnet. Das Ergebnis ist ein <strong>nachvollziehbarer Bepflanzungsplan</strong> — mit Stückliste, grafischem Plan und Pflanzkalender.</p>
       <p style="margin-top:16px;font-size:.88rem;color:#666;border-top:1px solid #dde8e0;padding-top:14px">💡 <strong>Was kostet Gartenplanung?</strong> Einen Überblick über typische Kosten für Gartenplanung findest du bei <a href="https://gartenbau-kosten.de/gartenplanung/gartenplanung-kosten/" target="_blank" rel="noopener" style="color:#2d6a4f;font-weight:600">gartenbau-kosten.de →</a></p>
     </div>
   </section>
